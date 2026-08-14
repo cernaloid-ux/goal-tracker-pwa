@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "name": "цель-pwa",
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": ".",
+  "functions": {
+    "api/sync.js":                  { "maxDuration": 10 },
+    "api/telegram-webhook.js":      { "maxDuration": 10 },
+    "api/cron-notifications.js":    { "maxDuration": 30 }
+  },
+  "crons": [
+    {
+      "path":     "/api/cron-notifications?type=morning",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path":     "/api/cron-notifications?type=night",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path":     "/api/cron-notifications?type=reminders",
+      "schedule": "* * * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options",    "value": "nosniff" },
+        { "key": "X-Frame-Options",           "value": "DENY" },
+        { "key": "Referrer-Policy",           "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
+  ]
+}
