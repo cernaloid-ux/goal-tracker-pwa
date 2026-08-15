@@ -2045,4 +2045,3 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 2000);
   console.log('[ЦЕЛЬ v3.0] ✅ Инициализация завершена');
 });
-git push
