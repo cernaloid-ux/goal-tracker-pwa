@@ -1,4 +1,8 @@
-/**
+import os, json
+
+os.makedirs('/Users/user/Downloads/Календарь cernavation/api', exist_ok=True)
+
+sync_js = """/**
  * api/sync.js — Vercel KV 2-way Cloud Sync
  * GET  /api/sync?userId=XXX  → returns stored state
  * POST /api/sync             → saves merged state
@@ -67,9 +71,9 @@ async function notifyTelegram(state) {
   );
   if (!overdue.length) return;
   const text =
-    `⏰ *Цель — Просрочено ${overdue.length} задач*\n\n` +
-    overdue.slice(0, 5).map(g => `• ${g.title}`).join('\n') +
-    (overdue.length > 5 ? `\n...и ещё ${overdue.length - 5}` : '');
+    `⏰ *Цель — Просрочено ${overdue.length} задач*\\n\\n` +
+    overdue.slice(0, 5).map(g => `• ${g.title}`).join('\\n') +
+    (overdue.length > 5 ? `\\n...и ещё ${overdue.length - 5}` : '');
   try {
     await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
       method: 'POST',
@@ -157,3 +161,22 @@ export default async function handler(req, res) {
 
   return res.status(405).json({ error: 'Method not allowed' });
 }
+"""
+
+with open('/Users/user/Downloads/Календарь cernavation/api/sync.js', 'w', encoding='utf-8') as f:
+    f.write(sync_js)
+print('api/sync.js written:', len(sync_js), 'bytes')
+
+vercel_cfg = {
+    "version": 2,
+    "functions": {
+        "api/sync.js": {"memory": 256, "maxDuration": 10}
+    },
+    "routes": [
+        {"src": "/api/(.*)", "dest": "/api/$1"},
+        {"src": "/(.*)", "dest": "/$1"}
+    ]
+}
+with open('/Users/user/Downloads/Календарь cernavation/vercel.json', 'w', encoding='utf-8') as f:
+    json.dump(vercel_cfg, f, indent=2, ensure_ascii=False)
+print('vercel.json written')
