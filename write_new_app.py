@@ -1,4 +1,10 @@
-/* ══════════════════════════════════════════════════════════
+#!/usr/bin/env python3
+# write_new_app.py — writes the new app.js for ЦЕЛЬ PWA v3
+import os, sys
+
+TARGET = os.path.join(os.path.dirname(__file__), 'app.js')
+
+CODE = r'''/* ══════════════════════════════════════════════════════════
    ЦЕЛЬ PWA — app.js v3.0  (Apple HIG + Dynamic Island Nav)
    Bulletproof init · Demo data · Vercel KV 2-Way Sync
    ══════════════════════════════════════════════════════════ */
@@ -2045,4 +2051,48 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 2000);
   console.log('[ЦЕЛЬ v3.0] ✅ Инициализация завершена');
 });
-git push
+'''
+
+print(f"Writing {len(CODE)} bytes to {TARGET}...")
+with open(TARGET, 'w', encoding='utf-8') as f:
+    f.write(CODE)
+
+# Verify
+import os
+size = os.path.getsize(TARGET)
+print(f"✅ Done. File size: {size} bytes ({size/1024:.1f} KB)")
+
+# Quick sanity checks
+with open(TARGET, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+checks = [
+    ('DOMContentLoaded', 'Init block'),
+    ('island-btn', 'Island nav'),
+    ('ring-fill', 'Timer ring ID (new)'),
+    ('ring-time', 'Timer time ID (new)'),
+    ('toast-stack', 'Toast stack (new)'),
+    ('task-list', 'Task list'),
+    ('loadDemoData', 'Demo data function'),
+    ('scheduleKVSync', 'KV sync'),
+    ('try {', 'try/catch safety'),
+]
+
+print("\nSanity checks:")
+all_ok = True
+for needle, desc in checks:
+    found = needle in content
+    status = "✅" if found else "❌"
+    print(f"  {status} {desc}: '{needle}'")
+    if not found: all_ok = False
+
+print(f"\n{'✅ ALL CHECKS PASSED' if all_ok else '❌ SOME CHECKS FAILED'}")
+print(f"\nLines: {content.count(chr(10))}")
+
+# Check OLD problematic IDs are NOT present
+old_ids = ['popup-stack', 'search-bar-wrap', 'ring-fill-el', 'timer-time-display', 'timer-time-sub', 'timer-cat-badge']
+print("\nOld IDs (should be absent):")
+for old_id in old_ids:
+    found = old_id in content
+    status = "✅ absent" if not found else "⚠️ STILL PRESENT"
+    print(f"  {status}: '{old_id}'")
