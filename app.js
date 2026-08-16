@@ -179,14 +179,20 @@ const SyncManager = (() => {
   let kvTimer=null, badgeTimer=null;
 
   function getUid() {
+    const host = window.location.hostname;
+    if (host === 'cernavation.vercel.app' || host === 'localhost') {
+      localStorage.setItem('lifeos-uid', 'master_admin_id');
+      return 'master_admin_id';
+    }
     let uid = localStorage.getItem('lifeos-uid');
-    if (!uid) { uid='u_'+Date.now().toString(36)+rnd(); localStorage.setItem('lifeos-uid',uid); }
+    if (!uid) { uid = 'guest_' + Date.now().toString(36) + rnd(); localStorage.setItem('lifeos-uid', uid); }
     return uid;
   }
   function setBadge(cls,text) {
-    const b = document.getElementById('sync-badge');
-    if (!b) return; b.className='sync-badge '+cls; b.textContent=text;
+    const b = document.querySelector('.drawer-sync');
+    if (!b) return; b.className='drawer-sync '+(cls!=='hidden'?cls:''); b.textContent=cls!=='hidden'?text:'';
   }
+
   async function doSync() {
     setBadge('syncing','↑ Синхронизация…');
     try {
@@ -224,19 +230,31 @@ const SyncManager = (() => {
 })();
 
 /* ═══════════════════════════════════════════════════════════
-   VIEW ROUTER  (адаптирован под index.html v3: .view[data-view] + .island-btn)
+   VIEW ROUTER  (Drawer архитектура: .view[data-view] + .drawer-link)
 ═══════════════════════════════════════════════════════════ */
+const VIEW_TITLES = { tasks:'Задачи', calendar:'Календарь', timer:'Фокус-таймер', sleep:'Сон и Рутины', profile:'Профиль' };
 const ViewRouter = {
   switchTo(view) {
     StateManager.set('currentView', view);
-    // index.html v3 uses <section class="view" data-view="tasks"> + class "hidden"
+    // Sections
     document.querySelectorAll('.view[data-view]').forEach(el => {
       el.classList.toggle('hidden', el.dataset.view !== view);
     });
-    // Island nav
-    document.querySelectorAll('.island-btn[data-view]').forEach(btn => {
+    // Drawer links
+    document.querySelectorAll('.drawer-link[data-view]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.view === view);
     });
+    // Update header title
+    const hdrTitle = document.getElementById('hdr-title');
+    if (hdrTitle) hdrTitle.textContent = VIEW_TITLES[view] || view;
+    // Show/hide search & sort only on tasks
+    const searchBtn = document.getElementById('btn-search-toggle');
+    const sortBtn   = document.getElementById('btn-sort');
+    if (searchBtn) searchBtn.style.display = view==='tasks' ? '' : 'none';
+    if (sortBtn)   sortBtn.style.display   = view==='tasks' ? '' : 'none';
+    // Close drawer if open
+    document.getElementById('drawer')?.classList.remove('open');
+    document.getElementById('drawer-overlay')?.classList.remove('show');
     try {
       if (view==='tasks')    { TaskController.render(); renderTagFilterRow(); }
       if (view==='calendar') CalendarController.render();
@@ -385,15 +403,25 @@ const TaskController = {
     const titleInp=document.getElementById('task-title-input'); if(titleInp) titleInp.value=g?.title||'';
     const notesInp=document.getElementById('task-notes-input'); if(notesInp) notesInp.value=g?.notes||'';
     document.querySelectorAll('#priority-ctrl .seg-btn').forEach(btn=>btn.classList.toggle('active',btn.dataset.priority===(g?.priority||'mid')));
-    const dInp=document.getElementById('task-date-input');
-    if(dInp) {
-      if(g?.scheduledAt) { const d=new Date(g.scheduledAt); dInp.value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-      else dInp.value='';
+    const dInp = document.getElementById('task-date-input');
+    const startInp = document.getElementById('task-start-time-input');
+    const endInp = document.getElementById('task-end-time-input');
+    if (g?.scheduledAt) {
+      const d = new Date(g.scheduledAt);
+      if (dInp) dInp.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      if (startInp) startInp.value = `${pad(d.getHours())}:00`;
+      if (endInp) {
+        const endTs = g.scheduledAt + (g.duration_min || 0) * 60000;
+        const de = new Date(endTs);
+        endInp.value = g.duration_min ? `${pad(de.getHours())}:${pad(de.getMinutes())}` : '';
+      }
+    } else {
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      if (dInp) dInp.value = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}`;
+      if (startInp) startInp.value = `${pad(new Date().getHours())}:00`;
+      if (endInp) endInp.value = '';
     }
     const catSel=document.getElementById('task-category-select'); if(catSel) catSel.value=g?.cat||'business';
-    const dh=document.getElementById('dur-h'), dm=document.getElementById('dur-m');
-    if(dh) dh.value=Math.floor((g?.duration_min||25)/60);
-    if(dm) dm.value=(g?.duration_min||25)%60;
     const loc=document.getElementById('task-location-input'); if(loc) loc.value=g?.location||'';
     const tr=document.getElementById('task-travel-input'); if(tr) tr.value=g?.travelTime||0;
     const co=document.getElementById('task-cost-input'); if(co) co.value=g?.cost||0;
@@ -411,10 +439,15 @@ const TaskController = {
     const prioBtn=document.querySelector('#priority-ctrl .seg-btn.active');
     const cat=document.getElementById('task-category-select')?.value||'business';
     const dateVal=document.getElementById('task-date-input')?.value;
-    const scheduledAt=dateVal?new Date(dateVal).getTime():null;
-    const dh=parseInt(document.getElementById('dur-h')?.value||'0');
-    const dm=parseInt(document.getElementById('dur-m')?.value||'25');
-    const durMin=(dh*60+dm)||25;
+    const startVal=document.getElementById('task-start-time-input')?.value;
+    const endVal=document.getElementById('task-end-time-input')?.value;
+    let scheduledAt=null;
+    if(dateVal && startVal) scheduledAt=new Date(`${dateVal}T${startVal}`).getTime();
+    let durMin=0;
+    if(startVal && endVal){
+      const s=new Date(`1970-01-01T${startVal}`), e=new Date(`1970-01-01T${endVal}`);
+      durMin=Math.max(0,Math.round((e-s)/60000));
+    }
     const goals=StateManager.get('goals'); const id=StateManager.get('editingTaskId');
     const data={
       title, notes:document.getElementById('task-notes-input')?.value.trim()||'',
@@ -512,19 +545,34 @@ function renderTagFilterRow() {
    CALENDAR CONTROLLER
 ═══════════════════════════════════════════════════════════ */
 const CalendarController = {
-  _calDate: new Date(), _view: 'month',
+  _calDate: new Date(), _view: 'month', _nowTimer: null,
   init() { StateManager.subscribe(()=>{ if(StateManager.get('currentView')==='calendar') this.render(); }); },
-  setView(v) { this._view=v; document.querySelectorAll('.cal-tab').forEach(b=>b.classList.toggle('active',b.dataset.calView===v)); this.render(); },
-  prev() { if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()-1); else this._calDate.setDate(this._calDate.getDate()-7); this.render(); },
-  next() { if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()+1); else this._calDate.setDate(this._calDate.getDate()+7); this.render(); },
+  setView(v) {
+    this._view=v;
+    document.querySelectorAll('.cal-tab').forEach(b=>b.classList.toggle('active',b.dataset.calView===v));
+    this.render();
+  },
+  prev() {
+    if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()-1);
+    else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()-7);
+    else this._calDate.setDate(this._calDate.getDate()-1);
+    this.render();
+  },
+  next() {
+    if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()+1);
+    else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()+7);
+    else this._calDate.setDate(this._calDate.getDate()+1);
+    this.render();
+  },
   render() {
     const c=document.getElementById('cal-container'), n=document.getElementById('cal-nav-title');
     if(!c||!n) return;
     if(this._view==='month') this._renderMonth(c,n);
-    else if(this._view==='week') this._renderWeek(c,n);
-    else this._renderDay(c,n);
+    else if(this._view==='week') this._renderTimeline(c,n,7);
+    else this._renderTimeline(c,n,1);
   },
   _renderMonth(c,n) {
+    if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
     const y=this._calDate.getFullYear(), m=this._calDate.getMonth();
     n.textContent=this._calDate.toLocaleString('ru-RU',{month:'long',year:'numeric'});
     const first=new Date(y,m,1).getDay(), offset=(first===0)?6:first-1, dim=new Date(y,m+1,0).getDate();
@@ -541,39 +589,89 @@ const CalendarController = {
       const dayTasks=tasksByDay[d]||[];
       dayTasks.slice(0,4).forEach(g=>{const dot=document.createElement('div'); dot.className='cal-dot'; dot.style.background=catColor(g); cell.appendChild(dot);});
       if(dayTasks.length>4){const more=document.createElement('div'); more.className='cal-more'; more.textContent=`+${dayTasks.length-4}`; cell.appendChild(more);}
-      cell.addEventListener('click',()=>{ const dInp=document.getElementById('task-date-input'); if(dInp) dInp.value=`${y}-${pad(m+1)}-${pad(d)}T09:00`; TaskController.openModal(); });
+      cell.addEventListener('click',()=>{ TaskController.openModal(); });
       grid.appendChild(cell);
     }
     c.appendChild(grid);
   },
-  _renderWeek(c,n) {
-    const sow=new Date(this._calDate); sow.setDate(this._calDate.getDate()-((this._calDate.getDay()+6)%7));
-    n.textContent=`Нед. ${sow.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})}`;
-    c.innerHTML=''; const grid=document.createElement('div'); grid.className='cal-week-grid'; const tKey=dateKey();
-    for(let i=0;i<7;i++){
-      const d=new Date(sow); d.setDate(sow.getDate()+i); const dk=dateKey(d.getTime());
-      const col=document.createElement('div'); col.className=`cal-week-col${dk===tKey?' today':''}`;
-      col.innerHTML=`<div class="cal-week-day">${d.toLocaleString('ru-RU',{weekday:'short',day:'numeric'})}</div>`;
-      StateManager.get('goals').filter(g=>!g.done&&g.scheduledAt&&dateKey(g.scheduledAt)===dk).sort((a,b)=>(a.scheduledAt||0)-(b.scheduledAt||0)).forEach(g=>{
-        const t=document.createElement('div'); t.className='cal-week-task'; t.style.borderLeftColor=catColor(g); t.textContent=g.title.substring(0,22);
-        t.addEventListener('click',()=>TaskController.openDetail(g.id)); col.appendChild(t);
-      });
-      grid.appendChild(col);
+  _renderTimeline(c,n,days) {
+    const HOUR_H=56, TOTAL_H=24*HOUR_H, TIME_W=44;
+    let startDate=new Date(this._calDate); startDate.setHours(0,0,0,0);
+    if(days===7) startDate.setDate(startDate.getDate()-((startDate.getDay()+6)%7));
+    if(days===7){
+      const endD=new Date(startDate.getTime()+6*86400000);
+      n.textContent=startDate.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})+' — '+endD.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+    } else {
+      n.textContent=this._calDate.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
     }
-    c.appendChild(grid);
-  },
-  _renderDay(c,n) {
-    n.textContent=this._calDate.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
-    c.innerHTML=''; const dk=dateKey(this._calDate.getTime());
-    const dayTasks=StateManager.get('goals').filter(g=>!g.done&&g.scheduledAt&&dateKey(g.scheduledAt)===dk).sort((a,b)=>(a.scheduledAt||0)-(b.scheduledAt||0));
-    if(!dayTasks.length){c.innerHTML='<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-title">Нет задач</div></div>'; return;}
-    dayTasks.forEach(g=>{
-      const card=document.createElement('div'); card.className='cal-day-task'; card.style.borderLeftColor=catColor(g);
-      card.innerHTML=`<div class="cdt-time">${fmtTime(g.scheduledAt)}</div><div class="cdt-title">${esc(g.title)}</div>`;
-      card.addEventListener('click',()=>TaskController.openDetail(g.id)); c.appendChild(card);
+    const dayTasks=Array.from({length:days},(_,i)=>{
+      const dk=dateKey(startDate.getTime()+i*86400000);
+      return StateManager.get('goals').filter(g=>!g.done&&g.scheduledAt&&dateKey(g.scheduledAt)===dk);
     });
+    c.innerHTML='';
+    const wrap=document.createElement('div'); wrap.className='tl-wrap'; c.appendChild(wrap);
+    // header
+    const hdr=document.createElement('div'); hdr.className='tl-header'; hdr.style.paddingLeft=TIME_W+'px';
+    const tKey=dateKey();
+    for(let i=0;i<days;i++){
+      const d=new Date(startDate.getTime()+i*86400000);
+      const dk=dateKey(d.getTime());
+      const dh=document.createElement('div'); dh.className='tl-day-hdr';
+      dh.innerHTML=`<span class="tl-wday">${d.toLocaleString('ru-RU',{weekday:'short'})}</span><span class="tl-dnum${dk===tKey?' today':''}">${d.getDate()}</span>`;
+      hdr.appendChild(dh);
+    }
+    wrap.appendChild(hdr);
+    // body
+    const body=document.createElement('div'); body.className='tl-body'; wrap.appendChild(body);
+    // gutter
+    const gutter=document.createElement('div'); gutter.className='tl-gutter'; gutter.style.width=TIME_W+'px'; gutter.style.height=TOTAL_H+'px';
+    for(let h=0;h<24;h++){
+      const lbl=document.createElement('div'); lbl.className='tl-hour-lbl'; lbl.style.top=(h*HOUR_H-7)+'px';
+      lbl.textContent=h===0?'':pad(h)+':00'; gutter.appendChild(lbl);
+    }
+    body.appendChild(gutter);
+    // columns
+    const cols=document.createElement('div'); cols.className='tl-cols'; body.appendChild(cols);
+    for(let i=0;i<days;i++){
+      const col=document.createElement('div'); col.className='tl-col'; col.style.height=TOTAL_H+'px';
+      for(let h=0;h<24;h++){const ln=document.createElement('div'); ln.className='tl-hline'; ln.style.top=(h*HOUR_H)+'px'; col.appendChild(ln);}
+      dayTasks[i].forEach(g=>{
+        const st=new Date(g.scheduledAt);
+        const topPx=((st.getHours()*60+st.getMinutes())/60)*HOUR_H;
+        const dm=g.duration_min||30;
+        const hPx=Math.max(24,(dm/60)*HOUR_H-2);
+        const color=catColor(g);
+        const block=document.createElement('div'); block.className='tl-task';
+        block.style.cssText=`top:${topPx}px;height:${hPx}px;border-left-color:${color};background:${color}28;`;
+        const endTs=g.scheduledAt+dm*60000;
+        block.innerHTML=`<span class="tl-task-title">${esc(g.title)}</span><span class="tl-task-time">${pad(st.getHours())}:${pad(st.getMinutes())} – ${pad(new Date(endTs).getHours())}:${pad(new Date(endTs).getMinutes())}</span>`;
+        block.addEventListener('click',()=>TaskController.openDetail(g.id));
+        col.appendChild(block);
+      });
+      cols.appendChild(col);
+    }
+    // now line
+    this._placeNowLine(cols, HOUR_H, days, startDate);
+    if(this._nowTimer) clearInterval(this._nowTimer);
+    this._nowTimer=setInterval(()=>this._placeNowLine(cols, HOUR_H, days, startDate), 60000);
+    // scroll to current hour
+    setTimeout(()=>{ body.scrollTop=Math.max(0,(new Date().getHours()-1)*HOUR_H); },60);
+  },
+  _placeNowLine(colsEl, HOUR_H, days, startDate) {
+    colsEl.querySelectorAll('.tl-now-line').forEach(e=>e.remove());
+    const now=new Date(), dk=dateKey(now.getTime());
+    let idx=-1;
+    for(let i=0;i<days;i++){if(dateKey(startDate.getTime()+i*86400000)===dk){idx=i;break;}}
+    if(idx<0) return;
+    const topPx=((now.getHours()*60+now.getMinutes())/60)*HOUR_H;
+    const colW=colsEl.offsetWidth/days;
+    const line=document.createElement('div'); line.className='tl-now-line';
+    line.style.cssText=`top:${topPx}px;left:${idx*colW}px;width:${colW}px;`;
+    line.innerHTML='<div class="tl-now-dot"></div>';
+    colsEl.appendChild(line);
   },
 };
+
 
 /* ═══════════════════════════════════════════════════════════
    ROUTINE MANAGER  (Sleep / Soft Alarms / Morning Chain)
@@ -1080,22 +1178,35 @@ function resetData() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GLOBAL EVENTS — адаптировано под Island Nav (index.html v3)
+   GLOBAL EVENTS — Drawer архитектура
 ═══════════════════════════════════════════════════════════ */
 function initGlobalEvents() {
 
-  // ── ISLAND NAV ──
-  try { document.querySelectorAll('.island-btn[data-view]').forEach(btn=>{ btn.addEventListener('click',()=>ViewRouter.switchTo(btn.dataset.view)); }); } catch(e){console.warn('[nav]',e);}
-
-  // ── CREATE + LONG-PRESS VOICE ──
+  // ── DRAWER TOGGLE (Hamburger) ──
   try {
-    const createBtn=document.getElementById('btn-create');
-    let pressTimer=null;
-    createBtn?.addEventListener('pointerdown',()=>{ pressTimer=setTimeout(()=>openModal('modal-voice'),600); });
-    createBtn?.addEventListener('pointerup',()=>clearTimeout(pressTimer));
-    createBtn?.addEventListener('click',()=>{ if(!pressTimer) return; clearTimeout(pressTimer); TaskController.openModal(); });
-    // Fallback simple click
-    createBtn?.addEventListener('click',()=>{ if(document.getElementById('modal-task')?.classList.contains('open')) return; TaskController.openModal(); });
+    const drawerEl  = document.getElementById('drawer');
+    const overlayEl = document.getElementById('drawer-overlay');
+    function openDrawer()  { drawerEl?.classList.add('open');    overlayEl?.classList.add('show'); }
+    function closeDrawer() { drawerEl?.classList.remove('open'); overlayEl?.classList.remove('show'); }
+    document.getElementById('btn-drawer-toggle')?.addEventListener('click', openDrawer);
+    overlayEl?.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', e => { if(e.key==='Escape') closeDrawer(); });
+  } catch(e){console.warn('[drawer]',e);}
+
+  // ── DRAWER NAV LINKS ──
+  try {
+    document.querySelectorAll('.drawer-link[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => ViewRouter.switchTo(btn.dataset.view));
+    });
+  } catch(e){console.warn('[drawer-nav]',e);}
+
+  // ── CREATE btn (tap = new task, long-press = voice) ──
+  try {
+    const createBtn = document.getElementById('btn-create');
+    let pressTimer = null, triggered = false;
+    createBtn?.addEventListener('pointerdown', () => { triggered=false; pressTimer=setTimeout(()=>{ triggered=true; openModal('modal-voice'); }, 600); });
+    createBtn?.addEventListener('pointerup',   () => clearTimeout(pressTimer));
+    createBtn?.addEventListener('click',       () => { if(!triggered) TaskController.openModal(); });
   } catch(e){console.warn('[create]',e);}
 
   // ── SEARCH ──

@@ -1,4 +1,543 @@
-/* ════════════════════════════════════════════════════════
+#!/usr/bin/env python3
+# build_ui.py — записывает index.html и styles.css (Drawer-архитектура)
+
+import os
+BASE = os.path.dirname(__file__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+HTML = r'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Life OS">
+  <meta name="description" content="Life OS — трекер задач, таймер, календарь, привычки">
+  <title>Life OS — Умный Планировщик</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ══ DRAWER OVERLAY ══ -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+
+  <!-- ══ DRAWER ══ -->
+  <nav class="drawer" id="drawer" aria-label="Основная навигация">
+    <div class="drawer-header">
+      <div class="drawer-logo">🧠 Life OS</div>
+      <div class="drawer-sync" id="sync-badge"></div>
+    </div>
+    <ul class="drawer-nav">
+      <li><button class="drawer-link active" data-view="tasks">
+        <span class="dl-icon">☑️</span><span class="dl-label">Задачи</span>
+      </button></li>
+      <li><button class="drawer-link" data-view="calendar">
+        <span class="dl-icon">📅</span><span class="dl-label">Календарь</span>
+      </button></li>
+      <li><button class="drawer-link" data-view="timer">
+        <span class="dl-icon">⏱</span><span class="dl-label">Фокус-таймер</span>
+      </button></li>
+      <li><button class="drawer-link" data-view="sleep">
+        <span class="dl-icon">🌙</span><span class="dl-label">Сон и Рутины</span>
+      </button></li>
+      <li><button class="drawer-link" data-view="profile">
+        <span class="dl-icon">👤</span><span class="dl-label">Профиль</span>
+      </button></li>
+    </ul>
+    <div class="drawer-footer">
+      <button class="drawer-settings-btn" id="btn-settings">⚙️ Настройки</button>
+    </div>
+  </nav>
+
+  <!-- ══ APP SHELL ══ -->
+  <div class="app-shell" id="app-shell">
+
+    <!-- GLOBAL HEADER -->
+    <header class="global-header" id="global-header">
+      <button class="hdr-icon-btn" id="btn-drawer-toggle" aria-label="Меню">
+        <span class="hamburger"></span>
+        <span class="hamburger"></span>
+        <span class="hamburger"></span>
+      </button>
+      <div class="hdr-center">
+        <div class="hdr-title" id="hdr-title">Задачи</div>
+        <div class="hdr-subtitle" id="tasks-view-subtitle">Загрузка…</div>
+      </div>
+      <div class="hdr-right">
+        <button class="hdr-icon-btn" id="btn-search-toggle" aria-label="Поиск">🔍</button>
+        <button class="hdr-icon-btn" id="btn-sort" aria-label="Сортировка">⇅</button>
+        <button class="hdr-icon-btn create-btn" id="btn-create" aria-label="Создать задачу">+</button>
+      </div>
+    </header>
+
+    <!-- SEARCH BAR -->
+    <div class="search-wrap" id="search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Поиск задач…" autocomplete="off">
+        <button class="search-clear" id="search-clear">✕</button>
+      </div>
+    </div>
+
+    <!-- ══ VIEWS ══ -->
+
+    <!-- VIEW: TASKS -->
+    <section class="view" data-view="tasks" id="view-tasks">
+      <div class="filter-nav">
+        <div class="seg-ctrl" id="task-filter-ctrl" role="tablist">
+          <button class="seg-btn active" data-filter="today" role="tab">Сегодня</button>
+          <button class="seg-btn" data-filter="tomorrow" role="tab">Завтра</button>
+          <button class="seg-btn" data-filter="week" role="tab">Неделя</button>
+          <button class="seg-btn" data-filter="all" role="tab">Все</button>
+          <button class="seg-btn" data-filter="done" role="tab">✓ Готово</button>
+        </div>
+      </div>
+      <div class="tag-filter-row" id="tag-filter-row"></div>
+      <div class="sunday-banner hidden" id="sunday-banner">😴 Воскресенье — день отдыха. Стрик заморожен.</div>
+      <div class="task-list" id="task-list" role="list"></div>
+    </section>
+
+    <!-- VIEW: CALENDAR -->
+    <section class="view hidden" data-view="calendar" id="view-calendar">
+      <div class="cal-toolbar">
+        <div class="cal-tabs">
+          <button class="cal-tab active" data-cal-view="month">Месяц</button>
+          <button class="cal-tab" data-cal-view="week">Неделя</button>
+          <button class="cal-tab" data-cal-view="day">День</button>
+        </div>
+        <div class="cal-nav">
+          <button class="cal-nav-btn" id="cal-prev">‹</button>
+          <div class="cal-nav-title" id="cal-nav-title"></div>
+          <button class="cal-nav-btn" id="cal-next">›</button>
+        </div>
+      </div>
+      <div class="cal-container" id="cal-container"></div>
+    </section>
+
+    <!-- VIEW: TIMER -->
+    <section class="view hidden" data-view="timer" id="view-timer">
+      <div class="timer-inner">
+        <div class="timer-mode-ctrl">
+          <button class="timer-mode-btn active" data-mode="countdown">⏳ Таймер</button>
+          <button class="timer-mode-btn" data-mode="pomodoro">🍅 Помодоро</button>
+          <button class="timer-mode-btn" data-mode="stopwatch">⏱ Секундомер</button>
+        </div>
+        <div class="timer-goal-card">
+          <div class="tgc-label">Текущая задача</div>
+          <div class="tgc-row">
+            <div class="tgc-name" id="timer-goal-name">Не выбрана</div>
+            <button class="tgc-btn" id="btn-pick-timer-goal">Выбрать</button>
+          </div>
+        </div>
+        <div class="timer-ring-wrap" id="timer-ring-wrap">
+          <svg class="timer-ring-svg" viewBox="0 0 200 200">
+            <circle class="ring-track" cx="100" cy="100" r="88"/>
+            <circle class="ring-fill" cx="100" cy="100" r="88" id="ring-fill"/>
+          </svg>
+          <div class="ring-center">
+            <div class="ring-cat-badge" id="ring-cat-badge">Бизнес</div>
+            <div class="ring-time" id="ring-time">25:00</div>
+            <div class="ring-pct" id="ring-pct">0%</div>
+          </div>
+        </div>
+        <div class="subtask-rings" id="subtask-rings"></div>
+        <div class="timer-controls">
+          <button class="t-ctrl secondary" id="btn-timer-reset">↺</button>
+          <button class="t-ctrl primary" id="btn-timer-play">▶</button>
+          <button class="t-ctrl success-c" id="btn-timer-done">✓</button>
+        </div>
+        <div class="pomo-status hidden" id="pomo-status-wrap">
+          <div class="pomo-phase" id="pomo-phase-label">📚 Фокус</div>
+          <div class="pomo-dots" id="pomo-dots"></div>
+        </div>
+        <div class="pomo-settings hidden" id="pomo-settings">
+          <div class="pomo-row"><span>Работа</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-work-dec">−</button><span id="pomo-work-val">25</span>м<button class="pomo-adj" id="pomo-work-inc">+</button></div></div>
+          <div class="pomo-row"><span>Короткий перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-short-dec">−</button><span id="pomo-short-val">5</span>м<button class="pomo-adj" id="pomo-short-inc">+</button></div></div>
+          <div class="pomo-row"><span>Длинный перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-long-dec">−</button><span id="pomo-long-val">15</span>м<button class="pomo-adj" id="pomo-long-inc">+</button></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW: SLEEP -->
+    <section class="view hidden" data-view="sleep" id="view-sleep">
+      <div class="sleep-scroll">
+        <div class="sleep-section">
+          <div class="sleep-section-title">💤 Режим сна</div>
+          <div class="form-row2">
+            <div class="form-group"><label class="form-label" for="sleep-bedtime">Отбой</label><input class="form-input" type="time" id="sleep-bedtime" value="23:00"></div>
+            <div class="form-group"><label class="form-label" for="sleep-waketime">Подъём</label><input class="form-input" type="time" id="sleep-waketime" value="07:00"></div>
+          </div>
+          <div class="form-row2">
+            <div class="form-group"><label class="form-label" for="routine-evening-prep">Подготовка ко сну (мин)</label><input class="form-input center" type="number" id="routine-evening-prep" min="0" value="30"></div>
+            <div class="form-group"><label class="form-label" for="routine-evening-gratitude">Благодарность (мин)</label><input class="form-input center" type="number" id="routine-evening-gratitude" min="0" value="15"></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">Мягкий будильник</div>
+            <label class="toggle-switch"><input type="checkbox" id="soft-alarm-enabled" checked><span class="toggle-track"></span></label>
+          </div>
+        </div>
+        <div class="sleep-section">
+          <div class="sleep-section-title">☀️ Утренняя цепочка</div>
+          <div class="form-row2">
+            <div class="form-group"><label class="form-label" for="routine-morning-water">Вода (мин после подъёма)</label><input class="form-input center" type="number" id="routine-morning-water" min="0" value="5"></div>
+            <div class="form-group"><label class="form-label" for="routine-morning-brush">Зубы (мин)</label><input class="form-input center" type="number" id="routine-morning-brush" min="0" value="10"></div>
+          </div>
+          <button class="btn btn-primary btn-full" id="btn-save-sleep">💾 Сохранить настройки сна</button>
+          <button class="btn btn-secondary btn-full" id="btn-morning-routine" style="margin-top:8px">☀️ Запустить утреннюю цепочку</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW: PROFILE -->
+    <section class="view hidden" data-view="profile" id="view-profile">
+      <div class="profile-scroll">
+        <div class="profile-hero">
+          <div class="profile-avatar">🏆</div>
+          <div class="profile-info">
+            <div class="profile-name">Мой профиль</div>
+            <div class="profile-level" id="profile-level">🌱 Новичок</div>
+          </div>
+          <div class="profile-gems">
+            <div class="profile-gem-count" id="profile-gem-count">0</div>
+            <span>💎</span>
+            <button class="hdr-icon-btn" id="btn-cart" aria-label="Корзина">🛒</button>
+            <button class="hdr-icon-btn" id="btn-purchases" aria-label="Покупки">🧾</button>
+          </div>
+        </div>
+        <div class="profile-stats">
+          <div class="pstat"><div class="pstat-val" id="stat-streak">0</div><div class="pstat-label">🔥 Стрик</div></div>
+          <div class="pstat"><div class="pstat-val" id="stat-done-today">0</div><div class="pstat-label">✅ Сегодня</div></div>
+          <div class="pstat"><div class="pstat-val" id="stat-total-done">0</div><div class="pstat-label">📊 Всего</div></div>
+        </div>
+        <div class="streak-card" id="streak-card"></div>
+        <div class="p-section">
+          <div class="p-section-header">
+            <div class="p-section-title">🎯 Большие цели</div>
+            <button class="p-section-action" id="btn-add-macro">+ Добавить</button>
+          </div>
+          <div class="macro-list" id="macro-list"></div>
+        </div>
+        <div class="p-section">
+          <div class="p-section-header"><div class="p-section-title">🏪 Магазин наград</div></div>
+          <div class="store-grid" id="store-grid"></div>
+        </div>
+        <div class="p-section">
+          <div class="p-section-header">
+            <div class="p-section-title">📜 История</div>
+            <button class="p-section-action" id="btn-clear-history">Очистить</button>
+          </div>
+          <div class="history-list" id="history-list"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /app-shell -->
+
+  <!-- ══ FOCUS OVERLAY ══ -->
+  <div class="focus-overlay" id="focus-overlay">
+    <button class="focus-exit" id="btn-focus-exit">✕</button>
+    <div class="focus-badge" id="focus-badge">Бизнес</div>
+    <div class="focus-task-title" id="focus-task-title"></div>
+    <div class="focus-time-display" id="focus-time-display">25:00</div>
+    <div class="focus-controls">
+      <button class="t-ctrl secondary" id="btn-focus-pause">▶</button>
+      <button class="t-ctrl success-c" id="btn-focus-done">✓</button>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: TASK ══ -->
+  <div class="modal-overlay" id="modal-task" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title" id="modal-task-title">Новая задача</div>
+        <button class="modal-close" data-close="modal-task">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="nlp-hint hidden" id="nlp-hint"></div>
+        <div class="form-group">
+          <label class="form-label" for="task-title-input">Название</label>
+          <input class="form-input lg" type="text" id="task-title-input" placeholder="Напиши задачу… (NLP активен)" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="task-notes-input">Заметки</label>
+          <textarea class="form-input" id="task-notes-input" rows="3" placeholder="Детали, ссылки…"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Приоритет</label>
+          <div class="seg-ctrl" id="priority-ctrl">
+            <button class="seg-btn" data-priority="high">🔴 Высокий</button>
+            <button class="seg-btn active" data-priority="mid">🟡 Средний</button>
+            <button class="seg-btn" data-priority="low">⚪ Низкий</button>
+          </div>
+        </div>
+        <div class="form-row2">
+          <div class="form-group">
+            <label class="form-label" for="task-date-input">Дата и время</label>
+            <input class="form-input" type="datetime-local" id="task-date-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="task-category-select">Категория</label>
+            <select class="form-select" id="task-category-select">
+              <option value="business">💼 Бизнес</option>
+              <option value="health">💪 Здоровье</option>
+              <option value="study">📚 Учёба</option>
+              <option value="creative">🎨 Творчество</option>
+              <option value="life">🌱 Жизнь</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Длительность</label>
+          <div class="dur-row">
+            <div class="dur-field"><input class="form-input center" type="number" id="dur-h" min="0" max="23" value="0"><span class="dur-unit">часы</span></div>
+            <div class="dur-field"><input class="form-input center" type="number" id="dur-m" min="0" max="59" value="25"><span class="dur-unit">мин</span></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="task-location-input">📍 Место</label>
+          <input class="form-input" type="text" id="task-location-input" placeholder="Офис, кафе…">
+        </div>
+        <div class="form-row2">
+          <div class="form-group">
+            <label class="form-label" for="task-travel-input">🚗 Дорога (мин)</label>
+            <input class="form-input center" type="number" id="task-travel-input" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="task-cost-input">💰 Бюджет</label>
+            <input class="form-input center" type="number" id="task-cost-input" min="0" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Теги</label>
+          <div class="tags-picker" id="task-tags-picker"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Цвет</label>
+          <div class="color-pal" id="task-color-pal"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Напоминания</label>
+          <div class="rem-row" id="task-reminders"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Подзадачи</label>
+          <div class="st-input-list" id="subtask-input-list"></div>
+          <button class="st-add" id="btn-add-subtask">+ Добавить подзадачу</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Участники</label>
+          <div class="parts-list" id="participants-list"></div>
+          <div class="part-add-row">
+            <input class="form-input sm" type="text" id="participant-input" placeholder="Имя участника">
+            <button class="part-add-btn" id="btn-add-participant">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger hidden" id="btn-delete-task">Удалить</button>
+        <button class="btn btn-secondary" data-close="modal-task">Отмена</button>
+        <button class="btn btn-primary" id="btn-save-task">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: DETAIL ══ -->
+  <div class="modal-overlay" id="modal-task-detail" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title" id="td-title"></div>
+        <button class="modal-close" data-close="modal-task-detail">✕</button>
+      </div>
+      <div class="modal-body" id="task-detail-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-td-timer">⏱ Фокус</button>
+        <button class="btn btn-secondary" id="btn-td-edit">✏️ Изменить</button>
+        <button class="btn btn-success" id="btn-td-done">✅ Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: VOICE ══ -->
+  <div class="modal-overlay" id="modal-voice" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title">🎙 Голосовой ввод</div>
+        <button class="modal-close" data-close="modal-voice">✕</button>
+      </div>
+      <div class="voice-state-wrap">
+        <div id="voice-state-idle">
+          <div class="voice-orb-wrap"><button class="voice-orb" id="btn-voice-start">🎙️</button></div>
+          <div class="voice-prompt">Нажми микрофон и скажи задачу</div>
+          <div class="voice-hints">
+            <div class="voice-hint-title">Примеры:</div>
+            <div class="voice-hint-row">«Встреча завтра в 15:00 @работа на 1 час»</div>
+            <div class="voice-hint-row">«Купить продукты сегодня p1»</div>
+          </div>
+          <div class="voice-or">или</div>
+          <div class="voice-api-row">
+            <input class="form-input" type="text" id="voice-text-input" placeholder="Введи задачу текстом…">
+            <button class="btn btn-primary btn-full" id="btn-voice-text-parse" style="margin-top:8px">Создать задачу</button>
+          </div>
+        </div>
+        <div id="voice-state-listening" class="hidden">
+          <div class="voice-pulse-wrap">
+            <div class="v-pulse-ring"></div><div class="v-pulse-ring"></div><div class="v-pulse-ring"></div>
+            <div class="voice-mic-icon">🎙️</div>
+          </div>
+          <div class="voice-transcript" id="voice-transcript-text">Слушаю…</div>
+          <button class="btn btn-danger btn-full" id="btn-voice-stop">⏹ Остановить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: SETTINGS ══ -->
+  <div class="modal-overlay" id="modal-settings" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title">⚙️ Настройки</div>
+        <button class="modal-close" data-close="modal-settings">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <div class="settings-section-title">Внешний вид</div>
+          <div class="settings-row">
+            <div class="settings-row-label">Тема</div>
+            <div class="theme-ctrl">
+              <button class="theme-btn active" data-theme="dark">Тёмная</button>
+              <button class="theme-btn" data-theme="light">Светлая</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Теги</div>
+          <div id="tags-manager"></div>
+          <div class="tag-add-row">
+            <div id="new-tag-color-pal" class="tag-color-pal"></div>
+            <input class="form-input sm" type="text" id="new-tag-name" placeholder="Название тега">
+            <button class="btn btn-primary btn-sm" id="btn-add-tag">+</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Telegram-бот</div>
+          <div class="form-group">
+            <label class="form-label" for="tg-bot-token">Bot Token</label>
+            <input class="form-input" type="text" id="tg-bot-token" placeholder="1234567:ABC…">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tg-chat-id">Chat ID</label>
+            <input class="form-input" type="text" id="tg-chat-id" placeholder="123456789">
+          </div>
+          <button class="btn btn-primary" id="btn-save-tg">Сохранить</button>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Данные</div>
+          <div class="settings-row">
+            <div class="settings-row-label">Экспорт</div>
+            <button class="settings-btn" id="btn-export-data">💾 JSON</button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">Сброс</div>
+            <button class="settings-btn danger" id="btn-reset-data">🗑 Очистить всё</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">🎮 Демо</div>
+          <div class="settings-row">
+            <div class="settings-row-label">Тестовые данные</div>
+            <button class="settings-btn" id="btn-load-demo">🎮 Загрузить</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primary" data-close="modal-settings">Готово</button></div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: MACRO ══ -->
+  <div class="modal-overlay" id="modal-macro" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title" id="macro-modal-title">Новая цель</div>
+        <button class="modal-close" data-close="modal-macro">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="macro-edit-id">
+        <div class="form-group"><label class="form-label" for="macro-title">Название</label><input class="form-input lg" type="text" id="macro-title" placeholder="Запустить стартап…"></div>
+        <div class="form-group"><label class="form-label" for="macro-deadline">Дедлайн</label><input class="form-input" type="date" id="macro-deadline"></div>
+        <div class="form-group"><label class="form-label" for="macro-gems-reward">Награда 💎</label><input class="form-input center" type="number" id="macro-gems-reward" min="1" value="50"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-macro">Отмена</button>
+        <button class="btn btn-primary" id="btn-save-macro">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: GOAL PICKER ══ -->
+  <div class="modal-overlay" id="modal-goal-picker" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title">Выбери задачу</div>
+        <button class="modal-close" data-close="modal-goal-picker">✕</button>
+      </div>
+      <div class="modal-body"><div id="goal-picker-list"></div></div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: CART ══ -->
+  <div class="modal-overlay" id="modal-cart" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title">🛒 Корзина</div>
+        <button class="modal-close" data-close="modal-cart">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="cart-list"></div>
+        <div class="cart-total-row"><span>Итого</span><span id="cart-total">0 💎</span></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-cart">Отмена</button>
+        <button class="btn btn-primary" id="btn-checkout">Купить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: PURCHASES ══ -->
+  <div class="modal-overlay" id="modal-purchases" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag"></div>
+      <div class="modal-hdr">
+        <div class="modal-title">🧾 Покупки</div>
+        <button class="modal-close" data-close="modal-purchases">✕</button>
+      </div>
+      <div class="modal-body"><div id="purchases-list"></div></div>
+      <div class="modal-footer"><button class="btn btn-primary" data-close="modal-purchases">Закрыть</button></div>
+    </div>
+  </div>
+
+  <!-- ══ GLOBAL UI ══ -->
+  <div id="toast-stack" aria-live="polite"></div>
+  <div id="done-flash" class="done-flash"></div>
+  <div id="alarm-stack"></div>
+
+</div><!-- /app -->
+<script src="app.js"></script>
+</body>
+</html>
+'''
+
+# ─────────────────────────────────────────────────────────────────────────────
+CSS = r'''/* ════════════════════════════════════════════════════════
    LIFE OS PWA — styles.css v4.0
    Apple HIG · Drawer Nav · 8pt Grid · Dark/Light
 ════════════════════════════════════════════════════════ */
@@ -216,7 +755,7 @@ ul{list-style:none;}
 /* ════════════════════════════════════════════════════════
    TASKS VIEW
 ════════════════════════════════════════════════════════ */
-.filter-nav{flex-shrink:0;padding:var(--s1) var(--s2) 6px;margin-top:20px;}
+.filter-nav{flex-shrink:0;padding:var(--s1) var(--s2) 6px;}
 .seg-ctrl{
   display:flex;background:var(--fill4);border-radius:var(--r-sm);
   padding:2px;gap:2px;overflow-x:auto;
@@ -254,14 +793,12 @@ ul{list-style:none;}
 
 /* ── TASK CARD ── */
 .task-card{
-  position:relative;border-radius:var(--r-md);
+  position:relative;background:var(--bg2);border-radius:var(--r-md);
   cursor:pointer;overflow:hidden;
   animation:slideUp .2s ease both;
   border:.5px solid var(--sep-o);
   transition:transform var(--tx-fast),box-shadow var(--tx-fast);
-  background:var(--bg2);
 }
-.task-card:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.25);}
 .task-card:active{transform:scale(.988);}
 .task-card.done{opacity:.45;}
 .task-card.done .task-title{text-decoration:line-through;color:var(--lbl3);}
@@ -681,101 +1218,82 @@ textarea.form-input{resize:none;line-height:1.5;}
   #btn-drawer-toggle{display:none;}
   .app-shell{margin-left:0;}
 }
+'''
 
-/* ════════════════════════════════════════════════════════
-   TIMELINE (Google Calendar Style) — Week & Day views
-════════════════════════════════════════════════════════ */
-/* Override cal-container for timeline: no extra padding, flex column */
-.cal-container:has(.tl-wrap){padding:0;overflow:hidden;}
+# ─────────────────────────────────────────────────────────────────────────────
+print('Writing index.html...')
+with open(os.path.join(BASE, 'index.html'), 'w', encoding='utf-8') as f:
+    f.write(HTML)
 
-.tl-wrap{
-  display:flex;flex-direction:column;height:100%;overflow:hidden;
-}
+print('Writing styles.css...')
+with open(os.path.join(BASE, 'styles.css'), 'w', encoding='utf-8') as f:
+    f.write(CSS)
 
-/* sticky day-header row */
-.tl-header{
-  display:flex;flex-shrink:0;
-  border-bottom:.5px solid var(--sep-o);
-  background:var(--bg);
-  padding:6px 0 6px;
-}
-.tl-day-hdr{
-  flex:1;display:flex;flex-direction:column;
-  align-items:center;gap:3px;
-  cursor:pointer;
-}
-.tl-wday{font-size:10px;font-weight:700;color:var(--lbl3);text-transform:uppercase;letter-spacing:.05em;}
-.tl-dnum{
-  width:28px;height:28px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  font-size:14px;font-weight:600;color:var(--lbl1);
-  transition:background var(--tx-fast);
-}
-.tl-dnum.today{background:var(--accent);color:#fff;font-weight:800;}
+html_size = os.path.getsize(os.path.join(BASE, 'index.html'))
+css_size  = os.path.getsize(os.path.join(BASE, 'styles.css'))
+print(f'\n✅ index.html → {html_size:,} bytes ({html_size/1024:.1f} KB)')
+print(f'✅ styles.css  → {css_size:,} bytes ({css_size/1024:.1f} KB)')
 
-/* scrollable body */
-.tl-body{
-  flex:1;overflow-y:auto;display:flex;
-  position:relative;
-}
+# ── Sanity checks ──
+with open(os.path.join(BASE, 'index.html'), 'r', encoding='utf-8') as f:
+    html = f.read()
+with open(os.path.join(BASE, 'styles.css'), 'r', encoding='utf-8') as f:
+    css = f.read()
 
-/* hour label gutter */
-.tl-gutter{
-  flex-shrink:0;position:relative;
-  border-right:.5px solid var(--sep-o);
-}
-.tl-hour-lbl{
-  position:absolute;right:6px;
-  font-size:9px;font-weight:600;color:var(--lbl3);
-  font-variant-numeric:tabular-nums;
-  white-space:nowrap;
-}
+html_checks = [
+    ('id="drawer"',           'Drawer element'),
+    ('id="drawer-overlay"',   'Drawer overlay'),
+    ('id="btn-drawer-toggle"','Hamburger btn'),
+    ('class="drawer-link"',   'Drawer links'),
+    ('data-view="tasks"',     'Tasks view'),
+    ('data-view="calendar"',  'Calendar view'),
+    ('data-view="timer"',     'Timer view'),
+    ('data-view="sleep"',     'Sleep view'),
+    ('data-view="profile"',   'Profile view'),
+    ('id="btn-create"',       'Create btn'),
+    ('id="ring-fill"',        'Timer ring'),
+    ('id="ring-time"',        'Ring time'),
+    ('id="task-list"',        'Task list'),
+    ('id="toast-stack"',      'Toast stack'),
+    ('id="btn-save-task"',    'Save task btn'),
+    ('id="btn-load-demo"',    'Demo btn'),
+    ('id="modal-settings"',   'Settings modal'),
+    ('id="modal-task"',       'Task modal'),
+    ('id="focus-overlay"',    'Focus overlay'),
+    ('id="sleep-bedtime"',    'Sleep bedtime'),
+]
+css_checks = [
+    ('.drawer{',       'Drawer CSS'),
+    ('.drawer-link',   'Drawer link CSS'),
+    ('.global-header', 'Global header CSS'),
+    ('.task-card{',    'Task card CSS'),
+    ('.cal-month-grid','Calendar grid CSS'),
+    ('.timer-inner',   'Timer CSS'),
+    ('.sleep-section', 'Sleep section CSS'),
+    ('.profile-hero',  'Profile hero CSS'),
+    ('.toggle-track',  'Toggle switch CSS'),
+    ('.focus-overlay', 'Focus overlay CSS'),
+    ('.modal-overlay', 'Modal CSS'),
+]
+old_ids = ['island-nav','island-btn','island-create','ib-icon','ib-label']
 
-/* columns area */
-.tl-cols{
-  flex:1;display:flex;position:relative;
-}
-.tl-col{
-  flex:1;position:relative;
-  border-right:.5px solid var(--sep-o);
-}
-.tl-col:last-child{border-right:none;}
+print('\n── HTML checks ──')
+ok = True
+for needle, desc in html_checks:
+    found = needle in html
+    print(f"  {'✅' if found else '❌'} {desc}")
+    if not found: ok = False
 
-/* hour grid lines */
-.tl-hline{
-  position:absolute;left:0;right:0;height:.5px;
-  background:var(--sep-o);
-}
+print('\n── CSS checks ──')
+for needle, desc in css_checks:
+    found = needle in css
+    print(f"  {'✅' if found else '❌'} {desc}")
+    if not found: ok = False
 
-/* task block */
-.tl-task{
-  position:absolute;left:2px;right:2px;
-  border-left:3px solid;border-radius:var(--r-xs);
-  padding:3px 5px;
-  display:flex;flex-direction:column;justify-content:flex-start;gap:1px;
-  cursor:pointer;
-  overflow:hidden;
-  transition:filter var(--tx-fast),transform var(--tx-fast);
-  box-shadow:0 1px 4px rgba(0,0,0,.15);
-}
-.tl-task:hover{filter:brightness(1.12);transform:scaleX(.98);}
-.tl-task:active{transform:scale(.97);}
-.tl-task-title{
-  font-size:10px;font-weight:700;color:var(--lbl1);
-  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
-  line-height:1.3;
-}
-.tl-task-time{
-  font-size:9px;color:var(--lbl2);font-variant-numeric:tabular-nums;
-}
+print('\n── Old Island IDs (должны отсутствовать) ──')
+for old in old_ids:
+    found = old in html
+    print(f"  {'⚠️  FOUND' if found else '✅ absent'}: {old!r}")
+    if found: ok = False
 
-/* current time indicator */
-.tl-now-line{
-  position:absolute;pointer-events:none;z-index:10;
-  height:2px;background:var(--sys-red);
-}
-.tl-now-dot{
-  position:absolute;left:-4px;top:50%;transform:translateY(-50%);
-  width:8px;height:8px;border-radius:50%;
-  background:var(--sys-red);
-}
+print(f'\n{"✅ ВСЕ ПРОВЕРКИ ПРОШЛИ" if ok else "❌ ЕСТЬ ПРОБЛЕМЫ"}\n')
