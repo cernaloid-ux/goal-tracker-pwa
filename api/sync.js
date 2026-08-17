@@ -1,9 +1,9 @@
 /**
- * api/sync.js — Vercel KV 2-way Cloud Sync  v2.1
- * GET  /api/sync?userId=XXX  → returns stored state (userId больше не влияет на ключ)
- * POST /api/sync             → saves merged state
+ * api/sync.js — Vercel KV 2-way Cloud Sync  v3.0
+ * GET  /api/sync?userId=XXX  → returns stored state (userId не влияет на ключ)
+ * POST /api/sync             → Last-Write-Wins: полная перезапись если клиент новее
  *
- * ВАЖНО: с v2.1 базовый ключ KV жёстко зафиксирован на 'цель:master_admin_id'.
+ * ВАЖНО: базовый ключ KV всегда 'цель:master_admin_id'.
  * Это связывает фронтенд Life OS и Telegram-бота Nova — они читают/пишут одну и ту же базу,
  * независимо от того, какой userId шлёт фронтенд (гостевой uid, master_admin_id и т.п.).
  *
@@ -108,23 +108,26 @@ export default async function handler(req,res) {
     // в ответе — иначе фронтенд с guest_123 молча отвергает синхронизацию.
     const clientUserId = body.userId || null;
     try {
-      const sanitized=sanitizeState(body, clientUserId);
       const existing=await kv.get(MASTER_KV_KEY);
-      if(existing&&typeof existing==='object'){
-        if((existing.gems||0)>sanitized.gems) sanitized.gems=existing.gems;
-        const histIds=new Set(sanitized.history.map(h=>h.id));
-        (existing.history||[]).forEach(h=>{if(h&&h.id&&!histIds.has(h.id)) sanitized.history.push(h);});
-        sanitized.history.sort((a,b)=>(b.completedAt||0)-(a.completedAt||0));
-        if(sanitized.history.length>MAX_HISTORY) sanitized.history.splice(MAX_HISTORY);
-        const localIds=new Set(sanitized.goals.map(g=>g.id));
-        (existing.goals||[]).forEach(cg=>{if(!localIds.has(cg.id)) sanitized.goals.push(cg);});
-        if(sanitized.goals.length>MAX_GOALS) sanitized.goals.splice(MAX_GOALS);
-        if((existing.streak?.days||0)>(sanitized.streak?.days||0)) sanitized.streak=existing.streak;
+
+      // ── Last-Write-Wins ───────────────────────────────────────────────
+      // Если сервер новее клиента — отклоняем запись и возвращаем серверные данные.
+      // Клиент обязан их принять и перезаписать свой локальный стейт.
+      const clientTs  = parseInt(body.updatedAt) || 0;
+      const serverTs  = (existing && typeof existing === 'object') ? (parseInt(existing.updatedAt) || 0) : 0;
+
+      if (existing && typeof existing === 'object' && clientTs < serverTs) {
+        // Сервер новее — возвращаем его данные клиенту, запись отклонена
+        const payload = clientUserId ? { ...existing, userId: clientUserId } : existing;
+        console.log(`[KV POST] forceUpdate: server=${serverTs} > client=${clientTs}`);
+        return res.status(200).json({ ok: false, forceUpdate: true, data: payload });
       }
-      await kv.set(MASTER_KV_KEY,sanitized,{ex:TTL_SECONDS});
-      notifyTelegram(sanitized).catch(()=>{});
-      // userId в ответе = clientUserId (иллюзия работы со «своей» базой для фронтенда)
-      return res.status(200).json({ok:true,userId:sanitized.userId,updatedAt:sanitized.updatedAt,gems:sanitized.gems,goalsCount:sanitized.goals.length});
+
+      // Клиент новее или равен — полностью перезаписываем базу.
+      const sanitized = sanitizeState(body, clientUserId);
+      await kv.set(MASTER_KV_KEY, sanitized, {ex: TTL_SECONDS});
+      notifyTelegram(sanitized).catch(() => {});
+      return res.status(200).json({ok:true, userId:sanitized.userId, updatedAt:sanitized.updatedAt, gems:sanitized.gems, goalsCount:sanitized.goals.length});
     } catch(e){console.error('[KV POST]',e); return res.status(500).json({error:'KV write error',detail:e.message});}
   }
 

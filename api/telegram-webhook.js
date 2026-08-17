@@ -50,15 +50,35 @@ const COMMAND_SYNTAX_HINT = `
 [SET_MOOD: текст]       — текущее настроение/состояние Лёши
 [SAVE_NOTE: текст]      — сохранить важную заметку в долгую память
 [ADD_REMINDER: текст]   — сохранить напоминание
-[ADD_TASK: Название | Категория | HH:MM] — создать новую задачу в Life OS.
-  Категория (необязательно): business, life, health, study, sport, creative, memernity.
-  Время после второго "|" необязательно. Примеры:
-  [ADD_TASK: Позвонить Станиславу | business | 18:30]
-  [ADD_TASK: Пробежка | sport]
-  [ADD_TASK: Купить воду]
-[DELETE_TASK: id]        — удалить задачу по её ID (ID видны в списке задач выше)
-[DONE_TASK: id]          — отметить задачу выполненной
+[DELETE_TASK: id]       — удалить задачу по её ID (ID видны в списке задач выше)
+[DONE_TASK: id]         — отметить задачу выполненной
 [EDIT_TASK: id | Новое название] — переименовать задачу
+
+[ADD_TASK_JSON: {json}] — создать задачу в Life OS через полный JSON-объект.
+
+ТЫ — ЭЛИТНЫЙ АССИСТЕНТ. Когда Босс просит добавить задачу, ты должна выжать из его слов максимум информации для заполнения ВСЕХ полей Life OS.
+Доступные поля объекта задачи:
+  title         — название задачи (обязательно)
+  notes         — пиши сюда все детали, подробности, контекст
+  priority      — 'low', 'mid' или 'high'
+  cat           — только системные категории: business, life, health, study, sport, creative, memernity
+  tags          — массив строк с тегами, например ["срочно", "фокус"]
+  scheduledAt   — время в формате "HH:MM" (кишинёвское, ОБЯЗАТЕЛЬНО если Босс назвал время)
+  duration_min  — длительность в минутах (число)
+  travelTime    — время в дороге в минутах (если нужно куда-то ехать/идти)
+  location      — место (адрес, название)
+  cost          — стоимость в деньгах (число)
+  reminders     — массив минут до события, когда напомнить, например [15, 5]
+
+ПРАВИЛА ЛОГИКИ (ОБЯЗАТЕЛЬНЫ К ИСПОЛНЕНИЮ):
+1. Если Босс НЕ назвал точное время начала — НИКОГДА не создавай задачу сразу! Сначала спроси: "В какое время начинаем/едешь?" И ТОЛЬКО после получения ответа выводи [ADD_TASK_JSON: ...].
+2. Думай наперёд: если Босс едет на велике 30 минут — установи travelTime: 30. Если жарко или это тренировка — добавь в notes напоминание взять воду.
+3. Автоматически рассчитывай duration_min: если Босс говорит "вернусь через полтора часа" — duration_min: 90.
+4. Всегда устанавливай reminders: [15], чтобы система могла его пушить вовремя.
+5. Устанавливай priority: 'high' для дедлайнов и важных встреч, 'low' для рутины.
+6. Выводи команду [ADD_TASK_JSON: {...}] ТОЛЬКО когда все важные детали (особенно время!) собраны.
+7. Пример корректной команды:
+   [ADD_TASK_JSON: {"title":"Поехать к Саше","cat":"life","priority":"mid","scheduledAt":"15:30","duration_min":90,"travelTime":30,"notes":"Взять воду, зарядить AirPods","reminders":[15]}]
 
 Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке.
 
@@ -263,7 +283,10 @@ async function askGemini(userText, contextText, history) {
    processCommands теперь мутирует ДВЕ базы — nova и lifeData (для ADD_TASK) —
    и возвращает обе, с отдельными флагами изменений.
 ───────────────────────────────────────────────────────────── */
+// Базовый regex для простых команд (не JSON — потому что JSON может содержать ']')
 const COMMAND_RE = /\[([A-Z_]+):\s*([^\]]+)\]/g;
+// Отдельный regex для ADD_TASK_JSON (жадный поиск до последней '}]')
+const ADD_TASK_JSON_RE = /\[ADD_TASK_JSON:\s*(\{.*?\})\s*\]/gs;
 
 function parseBatteryValue(raw) {
   const n = parseInt(String(raw).replace(/[^\d]/g, ''), 10);
@@ -274,11 +297,53 @@ function parseBatteryValue(raw) {
 function processCommands(rawReply, nova, lifeData) {
   let novaChanged = false;
   let lifeChanged = false;
-  const updatedNova = JSON.parse(JSON.stringify(nova));           // deep clone, чтоб не мутировать вслепую
+  const updatedNova = JSON.parse(JSON.stringify(nova));           // deep clone
   const updatedLifeData = JSON.parse(JSON.stringify(lifeData));
   if (!Array.isArray(updatedLifeData.goals)) updatedLifeData.goals = [];
 
-  const cleanText = rawReply.replace(COMMAND_RE, (match, cmd, valueRaw) => {
+  // ── Шаг 1: парсим ADD_TASK_JSON отдельным regex (поддерживает ']' внутри JSON) ──
+  let workingText = rawReply.replace(ADD_TASK_JSON_RE, (match, jsonRaw) => {
+    try {
+      const parsed = JSON.parse(jsonRaw.trim());
+      const VALID_CATS = ['business','life','health','study','sport','creative','memernity'];
+      const VALID_PRIORITIES = ['low','mid','high'];
+
+      // scheduledAt: если строка "HH:MM" — конвертируем в epoch через chisinauTimeToEpoch
+      let scheduledAt = null;
+      if (parsed.scheduledAt && /^\d{1,2}:\d{2}$/.test(String(parsed.scheduledAt))) {
+        scheduledAt = chisinauTimeToEpoch(String(parsed.scheduledAt), new Date());
+      } else if (parsed.scheduledAt && typeof parsed.scheduledAt === 'number') {
+        scheduledAt = parsed.scheduledAt; // уже epoch ms
+      }
+
+      const newTask = {
+        id:           'nova_' + Date.now(),
+        title:        String(parsed.title || 'Новая задача').slice(0, 500),
+        notes:        String(parsed.notes || '').slice(0, 2000),
+        priority:     VALID_PRIORITIES.includes(parsed.priority) ? parsed.priority : 'mid',
+        cat:          VALID_CATS.includes(parsed.cat) ? parsed.cat : 'business',
+        tags:         Array.isArray(parsed.tags) ? parsed.tags.slice(0, 10).map(String) : [],
+        scheduledAt,
+        duration_min: Number.isFinite(Number(parsed.duration_min)) ? Math.max(0, Number(parsed.duration_min)) : 25,
+        travelTime:   Number.isFinite(Number(parsed.travelTime))   ? Math.max(0, Number(parsed.travelTime))   : 0,
+        location:     String(parsed.location || '').slice(0, 200),
+        cost:         Number.isFinite(Number(parsed.cost)) ? Number(parsed.cost) : 0,
+        reminders:    Array.isArray(parsed.reminders) ? parsed.reminders.slice(0, 5).map(Number) : [],
+        done:         false,
+        createdAt:    Date.now(),
+      };
+
+      updatedLifeData.goals.push(newTask);
+      lifeChanged = true;
+      console.log('[Nova] ADD_TASK_JSON:', newTask.id, newTask.title, scheduledAt ? new Date(scheduledAt).toISOString() : 'no time');
+    } catch (err) {
+      console.warn('[Nova] ADD_TASK_JSON parse error:', err.message, '| raw:', jsonRaw.slice(0, 200));
+    }
+    return ''; // всегда вырезаем из текста
+  });
+
+  // ── Шаг 2: парсим остальные простые команды ──
+  const cleanText = workingText.replace(COMMAND_RE, (match, cmd, valueRaw) => {
     const value = valueRaw.trim();
     switch (cmd) {
       case 'SET_WATCH': {
@@ -313,54 +378,7 @@ function processCommands(rawReply, nova, lifeData) {
         updatedNova.reminders.push({ text: value, ts: Date.now() }); novaChanged = true;
         break;
       }
-      case 'ADD_TASK': {
-        // формат: "Название" | "Название | Категория" | "Название | Категория | HH:MM"
-        // (для обратной совместимости: "Название | HH:MM" тоже работает)
-        const CAT_MAP = {
-          'business': 'business', 'бизнес': 'business', 'работа': 'business',
-          'life': 'life', 'жизнь': 'life', 'личное': 'life',
-          'health': 'health', 'здоровье': 'health',
-          'study': 'study', 'учёба': 'study', 'учеба': 'study', 'обучение': 'study',
-          'sport': 'sport', 'спорт': 'sport',
-          'creative': 'creative', 'творчество': 'creative', 'креатив': 'creative',
-          'memernity': 'memernity',
-        };
-        const parts = value.split('|').map(s => s.trim()).filter(Boolean);
-        const title = (parts[0] || 'Новая задача').slice(0, 500);
-        // определяем: второй сегмент — категория или время?
-        let rawCat = '';
-        let timeStr = '';
-        if (parts.length === 2) {
-          if (/^\d{1,2}:\d{2}$/.test(parts[1])) {
-            timeStr = parts[1]; // "Название | HH:MM" — старый формат
-          } else {
-            rawCat = parts[1]; // "Название | Категория"
-          }
-        } else if (parts.length >= 3) {
-          rawCat = parts[1];  // "Название | Категория | HH:MM"
-          timeStr = parts[2];
-        }
-        const cat = CAT_MAP[rawCat.toLowerCase()] || 'business';
-
-        let scheduledAt = Date.now();
-        if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
-          scheduledAt = chisinauTimeToEpoch(timeStr, new Date());
-        }
-
-        const newTask = {
-          id: 'nova_' + Date.now(),
-          title,
-          cat,
-          priority: 'mid',
-          done: false,
-          scheduledAt,
-        };
-        updatedLifeData.goals.push(newTask);
-        lifeChanged = true;
-        break;
-      }
       case 'DELETE_TASK': {
-        // значение — ID задачи
         const targetId = value.trim();
         const before = updatedLifeData.goals.length;
         updatedLifeData.goals = updatedLifeData.goals.filter(g => String(g.id) !== targetId);
@@ -384,7 +402,7 @@ function processCommands(rawReply, nova, lifeData) {
         break;
       }
       default:
-        // неизвестная команда — просто вырезаем из текста, ничего не пишем в KV
+        // неизвестная команда — просто вырезаем из текста
         break;
     }
     return ''; // команда всегда вырезается из текста, видимого пользователю

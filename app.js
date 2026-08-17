@@ -159,6 +159,9 @@ const StateManager = (() => {
       localStorage.setItem('lifeos-sleep',    JSON.stringify(state.sleepSettings));
       localStorage.setItem('lifeos-tg-token', state.tgToken||'');
       localStorage.setItem('lifeos-tg-chat',  state.tgChatId||'');
+      // LWW-метка: обновляется при каждом сохранении локального стейта.
+      // SyncManager читает её и передаёт на сервер как updatedAt.
+      localStorage.setItem('lifeos-updatedAt', String(Date.now()));
     } catch(e) { console.error('[StateManager save]', e); }
   }
 
@@ -197,31 +200,68 @@ const SyncManager = (() => {
     setBadge('syncing','↑ Синхронизация…');
     try {
       const s = StateManager.get();
-      const res = await fetch(KV,{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ userId:getUid(), goals:s.goals.filter(g=>!g.done).slice(0,40), gems:s.gems, streak:s.streak, history:s.history.slice(0,50), macroGoals:s.macroGoals, tgToken:s.tgToken, tgChatId:s.tgChatId }),
+      // updatedAt — метка времени последнего изменения на этом клиенте.
+      // Сервер использует её для Last-Write-Wins: если сервер новее — вернёт forceUpdate.
+      const localUpdatedAt = parseInt(localStorage.getItem('lifeos-updatedAt') || '0') || Date.now();
+      const res = await fetch(KV, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: getUid(),
+          updatedAt: localUpdatedAt,
+          goals: s.goals,
+          gems: s.gems,
+          streak: s.streak,
+          history: s.history,
+          macroGoals: s.macroGoals,
+          tgToken: s.tgToken,
+          tgChatId: s.tgChatId,
+        }),
       });
-      setBadge(res.ok?'synced':'hidden', res.ok?'✓ Синхронизировано':'');
-    } catch(_) { setBadge('hidden',''); }
+      if (res.ok) {
+        const json = await res.json();
+        if (json.forceUpdate && json.data) {
+          // Сервер новее — принудительно заменяем локальный стейт серверными данными
+          console.warn('[SyncManager] forceUpdate: server is newer, overwriting local state');
+          _applyServerData(json.data);
+          setBadge('synced', '↓ Обновлено с сервера');
+        } else {
+          // Успешно сохранили — обновляем метку
+          if (json.updatedAt) localStorage.setItem('lifeos-updatedAt', String(json.updatedAt));
+          setBadge('synced', '✓ Синхронизировано');
+        }
+      } else {
+        setBadge('hidden', '');
+      }
+    } catch (_) { setBadge('hidden', ''); }
     clearTimeout(badgeTimer);
-    badgeTimer = setTimeout(()=>setBadge('hidden',''), 2400);
+    badgeTimer = setTimeout(() => setBadge('hidden', ''), 2400);
   }
+
+  // Полностью заменяет локальный стейт данными с сервера (для loadFromCloud и forceUpdate)
+  function _applyServerData(data) {
+    if (!data || !data.goals) return;
+    const s = StateManager.get();
+    // Полная замена — сервер является источником истины
+    StateManager.patch({
+      goals:      Array.isArray(data.goals)   ? data.goals   : s.goals,
+      history:    Array.isArray(data.history) ? data.history : s.history,
+      gems:       typeof data.gems   === 'number' ? data.gems   : s.gems,
+      streak:     data.streak ?? s.streak,
+      macroGoals: Array.isArray(data.macroGoals) ? data.macroGoals : s.macroGoals,
+    });
+    if (data.updatedAt) localStorage.setItem('lifeos-updatedAt', String(data.updatedAt));
+  }
+
   async function loadFromCloud() {
     try {
       const res = await fetch(`${KV}?userId=${getUid()}`);
       if (!res.ok) return;
       const data = await res.json();
-      if (!data||!data.goals) return;
-      const s = StateManager.get();
-      const localIds = new Set(s.goals.map(g=>g.id));
-      (data.goals||[]).forEach(cg=>{ if(!localIds.has(cg.id)) s.goals.push(cg); });
-      const hIds = new Set(s.history.map(h=>h.id));
-      (data.history||[]).forEach(h=>{ if(!hIds.has(h.id)) s.history.push(h); });
-      if((data.gems||0)>s.gems) s.gems=data.gems;
-      if((data.streak?.days||0)>s.streak.days) s.streak=data.streak;
-      StateManager.save();
+      if (!data || !data.goals) return;
+      // Полная замена — сервер является источником истины при начальной загрузке
+      _applyServerData(data);
       showToast('☁️ Данные из облака загружены');
-    } catch(e) { console.warn('[KV load]',e); }
+    } catch (e) { console.warn('[KV load]', e); }
   }
   return {
     scheduleSync:()=>{ clearTimeout(kvTimer); kvTimer=setTimeout(doSync,1500); },
