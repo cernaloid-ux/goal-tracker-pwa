@@ -23,12 +23,15 @@ function getKV() {
   });
 }
 
-function sanitizeState(body) {
+function sanitizeState(body, clientUserId) {
   const safeArr=(v,lim)=>Array.isArray(v)?v.slice(0,lim):[];
   const safeNum=(v,def=0)=>{const n=parseInt(v,10);return isNaN(n)?def:n;};
   const safeObj=(v,def={})=>(v&&typeof v==='object'&&!Array.isArray(v))?v:def;
+  // База пишется всегда под MASTER_KV_KEY, но фронтенд получает свой clientUserId
+  // чтобы принять ответ (иначе гостевые userId типа guest_123 молча отвергают данные).
+  const returnUserId = clientUserId || 'master_admin_id';
   return {
-    userId:    'master_admin_id', // жёстко зафиксирован — значение из body игнорируется намеренно
+    userId:    returnUserId,
     gems:      safeNum(body.gems,0),
     streak:    safeObj(body.streak,{days:0,lastDate:'',doneToday:false}),
     goals: safeArr(body.goals,MAX_GOALS).map(g=>({
@@ -85,12 +88,15 @@ export default async function handler(req,res) {
   const kv=getKV();
 
   if(req.method==='GET'){
-    // userId из query больше не участвует в выборе ключа — оставлен только для обратной
-    // совместимости со старым фронтендом (SyncManager.getUid() всё ещё шлёт его в query).
+    // userId из query не влияет на выбор ключа KV — ключ всегда MASTER_KV_KEY.
+    // Но мы «зеркалим» клиентский userId обратно, чтобы фронтенд принял ответ.
+    const clientUserId = req.query.userId || null;
     try {
       const data=await kv.get(MASTER_KV_KEY);
       if(!data) return res.status(404).json({error:'No state found'});
-      return res.status(200).json(data);
+      // Подставляем clientUserId, не меняя сохранённые данные
+      const payload = clientUserId ? { ...data, userId: clientUserId } : data;
+      return res.status(200).json(payload);
     }
     catch(e){console.error('[KV GET]',e); return res.status(500).json({error:'KV read error',detail:e.message});}
   }
@@ -98,9 +104,11 @@ export default async function handler(req,res) {
   if(req.method==='POST'){
     let body; try{body=typeof req.body==='string'?JSON.parse(req.body):req.body;}catch(e){return res.status(400).json({error:'Invalid JSON'});}
     if(!body||typeof body!=='object') return res.status(400).json({error:'Invalid body'});
-    // userId из body игнорируется для выбора ключа — пишем всегда в MASTER_KV_KEY.
+    // userId из body не влияет на ключ KV (всегда MASTER_KV_KEY), но возвращается
+    // в ответе — иначе фронтенд с guest_123 молча отвергает синхронизацию.
+    const clientUserId = body.userId || null;
     try {
-      const sanitized=sanitizeState(body);
+      const sanitized=sanitizeState(body, clientUserId);
       const existing=await kv.get(MASTER_KV_KEY);
       if(existing&&typeof existing==='object'){
         if((existing.gems||0)>sanitized.gems) sanitized.gems=existing.gems;
@@ -115,7 +123,8 @@ export default async function handler(req,res) {
       }
       await kv.set(MASTER_KV_KEY,sanitized,{ex:TTL_SECONDS});
       notifyTelegram(sanitized).catch(()=>{});
-      return res.status(200).json({ok:true,updatedAt:sanitized.updatedAt,gems:sanitized.gems,goalsCount:sanitized.goals.length});
+      // userId в ответе = clientUserId (иллюзия работы со «своей» базой для фронтенда)
+      return res.status(200).json({ok:true,userId:sanitized.userId,updatedAt:sanitized.updatedAt,gems:sanitized.gems,goalsCount:sanitized.goals.length});
     } catch(e){console.error('[KV POST]',e); return res.status(500).json({error:'KV write error',detail:e.message});}
   }
 

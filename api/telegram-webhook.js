@@ -50,9 +50,19 @@ const COMMAND_SYNTAX_HINT = `
 [SET_MOOD: текст]       — текущее настроение/состояние Лёши
 [SAVE_NOTE: текст]      — сохранить важную заметку в долгую память
 [ADD_REMINDER: текст]   — сохранить напоминание
-[ADD_TASK: Название | HH:MM] — создать новую задачу в Life OS. Время после "|" необязательно (если не указано — ставится текущее время). Пример: [ADD_TASK: Позвонить Станиславу | 18:30] или просто [ADD_TASK: Купить воду]
+[ADD_TASK: Название | Категория | HH:MM] — создать новую задачу в Life OS.
+  Категория (необязательно): business, life, health, study, sport, creative, memernity.
+  Время после второго "|" необязательно. Примеры:
+  [ADD_TASK: Позвонить Станиславу | business | 18:30]
+  [ADD_TASK: Пробежка | sport]
+  [ADD_TASK: Купить воду]
+[DELETE_TASK: id]        — удалить задачу по её ID (ID видны в списке задач выше)
+[DONE_TASK: id]          — отметить задачу выполненной
+[EDIT_TASK: id | Новое название] — переименовать задачу
 
-Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке. Если пользователь просит добавить задачу — обязательно используй [ADD_TASK: ...], а не просто пообещай на словах.`;
+Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке.
+
+ВАЖНО: Никогда не обещай добавить/удалить/изменить задачу просто на словах. Ты ОБЯЗАНА вывести скрытую команду в квадратных скобках, иначе система тебя не поймет. Сказать "добавлю" без команды — значит солгать Боссу.`;
 
 /* ─────────────────────────────────────────────────────────────
    ДЕФОЛТНОЕ СОСТОЯНИЕ NOVA / LIFE
@@ -161,7 +171,7 @@ function buildContext(lifeData, nova) {
       lines.push('Задачи на сегодня:');
       todayTasks.forEach(g => {
         const t = g.scheduledAt ? new Date(g.scheduledAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Chisinau' }) : '';
-        lines.push(`- [${g.priority || 'mid'}] ${g.title}${t ? ' в ' + t : ''}`);
+        lines.push(`- [ID: ${g.id}] [${g.priority || 'mid'}] ${g.title}${t ? ' в ' + t : ''}`);
       });
     } else {
       lines.push('Задач на сегодня не запланировано.');
@@ -304,12 +314,35 @@ function processCommands(rawReply, nova, lifeData) {
         break;
       }
       case 'ADD_TASK': {
-        // формат: "Название" или "Название | HH:MM"
+        // формат: "Название" | "Название | Категория" | "Название | Категория | HH:MM"
+        // (для обратной совместимости: "Название | HH:MM" тоже работает)
+        const CAT_MAP = {
+          'business': 'business', 'бизнес': 'business', 'работа': 'business',
+          'life': 'life', 'жизнь': 'life', 'личное': 'life',
+          'health': 'health', 'здоровье': 'health',
+          'study': 'study', 'учёба': 'study', 'учеба': 'study', 'обучение': 'study',
+          'sport': 'sport', 'спорт': 'sport',
+          'creative': 'creative', 'творчество': 'creative', 'креатив': 'creative',
+          'memernity': 'memernity',
+        };
         const parts = value.split('|').map(s => s.trim()).filter(Boolean);
         const title = (parts[0] || 'Новая задача').slice(0, 500);
-        const timeStr = parts[1] || '';
+        // определяем: второй сегмент — категория или время?
+        let rawCat = '';
+        let timeStr = '';
+        if (parts.length === 2) {
+          if (/^\d{1,2}:\d{2}$/.test(parts[1])) {
+            timeStr = parts[1]; // "Название | HH:MM" — старый формат
+          } else {
+            rawCat = parts[1]; // "Название | Категория"
+          }
+        } else if (parts.length >= 3) {
+          rawCat = parts[1];  // "Название | Категория | HH:MM"
+          timeStr = parts[2];
+        }
+        const cat = CAT_MAP[rawCat.toLowerCase()] || 'business';
 
-        let scheduledAt = Date.now(); // если время не указано — ставим текущее
+        let scheduledAt = Date.now();
         if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
           scheduledAt = chisinauTimeToEpoch(timeStr, new Date());
         }
@@ -317,13 +350,37 @@ function processCommands(rawReply, nova, lifeData) {
         const newTask = {
           id: 'nova_' + Date.now(),
           title,
-          cat: 'Бизнес',
+          cat,
           priority: 'mid',
           done: false,
           scheduledAt,
         };
         updatedLifeData.goals.push(newTask);
         lifeChanged = true;
+        break;
+      }
+      case 'DELETE_TASK': {
+        // значение — ID задачи
+        const targetId = value.trim();
+        const before = updatedLifeData.goals.length;
+        updatedLifeData.goals = updatedLifeData.goals.filter(g => String(g.id) !== targetId);
+        if (updatedLifeData.goals.length !== before) lifeChanged = true;
+        break;
+      }
+      case 'DONE_TASK': {
+        const targetId = value.trim();
+        const task = updatedLifeData.goals.find(g => String(g.id) === targetId);
+        if (task && !task.done) { task.done = true; lifeChanged = true; }
+        break;
+      }
+      case 'EDIT_TASK': {
+        // формат: "id | Новое название"
+        const [editId, ...nameParts] = value.split('|').map(s => s.trim());
+        const newTitle = nameParts.join('|').trim().slice(0, 500);
+        if (editId && newTitle) {
+          const task = updatedLifeData.goals.find(g => String(g.id) === editId);
+          if (task) { task.title = newTitle; lifeChanged = true; }
+        }
         break;
       }
       default:
