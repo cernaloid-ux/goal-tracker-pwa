@@ -1,8 +1,0 @@
-{
-  "crons": [
-    { "path": "/api/cron-notifications?type=morning-nova", "schedule": "50 6 * * *" },
-    { "path": "/api/cron-notifications?type=night-nova",   "schedule": "45 20 * * *" },
-    { "path": "/api/cron-notifications?type=sport-check",  "schedule": "0 16 * * *" },
-    { "path": "/api/cron-notifications?type=reminders",    "schedule": "*/5 * * * *" }
-  ]
-}
