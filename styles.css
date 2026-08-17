@@ -327,7 +327,9 @@ ul{list-style:none;}
 /* ── HERO HEADER (Month/Year title + view switcher) ── */
 .cal-header-hero{
   flex-shrink:0;
-  padding:var(--s2) var(--s2) var(--s1);
+  /* Сдвигаем вниз под глобальную шапку (56px) + safe-area */
+  padding-top:calc(var(--header-h) + env(safe-area-inset-top, 0px) + var(--s1));
+  padding-left:var(--s2);padding-right:var(--s2);padding-bottom:var(--s1);
   border-bottom:.5px solid var(--sep-o);
   display:flex;flex-direction:column;gap:var(--s1);
   background:var(--glass);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);

@@ -273,8 +273,14 @@ const SyncManager = (() => {
    VIEW ROUTER  (Drawer архитектура: .view[data-view] + .drawer-link)
 ═══════════════════════════════════════════════════════════ */
 const VIEW_TITLES = { tasks:'Задачи', calendar:'Календарь', timer:'Фокус-таймер', sleep:'Сон и Рутины', profile:'Профиль' };
+
+// Глобальная выбранная дата (для фильтра задач по дню из календаря)
+let _calSelectedDate = null; // YYYY-MM-DD или null
+
 const ViewRouter = {
   switchTo(view) {
+    // При ручном переходе в задачи — сбрасываем фильтр по дню
+    if (view === 'tasks') _calSelectedDate = null;
     StateManager.set('currentView', view);
     // Sections
     document.querySelectorAll('.view[data-view]').forEach(el => {
@@ -287,6 +293,9 @@ const ViewRouter = {
     // Update header title
     const hdrTitle = document.getElementById('hdr-title');
     if (hdrTitle) hdrTitle.textContent = VIEW_TITLES[view] || view;
+    // Reset tasks-view subtitle heading
+    const hdrSub = document.getElementById('tasks-view-subtitle');
+    if (hdrSub && view === 'tasks') hdrSub.textContent = '';
     // Show/hide search & sort only on tasks
     const searchBtn = document.getElementById('btn-search-toggle');
     const sortBtn   = document.getElementById('btn-sort');
@@ -301,6 +310,33 @@ const ViewRouter = {
       if (view==='profile')  ProfileRenderer.render();
       if (view==='timer')    { TimerController.renderGoalCard(); TimerController.tick(); updateTimerControls(); }
     } catch(e) { console.error('[ViewRouter]', e); }
+  },
+
+  // Переключиться на задачи с фильтром по конкретному дню
+  _switchToTasksDay(dateKey, dateLabel) {
+    _calSelectedDate = dateKey;
+    StateManager.set('currentView', 'tasks');
+    // Показываем вью задач
+    document.querySelectorAll('.view[data-view]').forEach(el => {
+      el.classList.toggle('hidden', el.dataset.view !== 'tasks');
+    });
+    document.querySelectorAll('.drawer-link[data-view]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.view === 'tasks');
+    });
+    // Заголовок: «Задачи на 5 августа, вс»
+    const hdrTitle = document.getElementById('hdr-title');
+    if (hdrTitle) hdrTitle.textContent = `Задачи на ${dateLabel}`;
+    const hdrSub = document.getElementById('tasks-view-subtitle');
+    // Show search/sort
+    const searchBtn = document.getElementById('btn-search-toggle');
+    const sortBtn   = document.getElementById('btn-sort');
+    if (searchBtn) searchBtn.style.display = '';
+    if (sortBtn)   sortBtn.style.display   = '';
+    // Close drawer
+    document.getElementById('drawer')?.classList.remove('open');
+    document.getElementById('drawer-overlay')?.classList.remove('show');
+    // Рендерим задачи с фильтром по дню
+    try { TaskController.renderForDay(dateKey, dateLabel); renderTagFilterRow(); } catch(e) { console.error('[ViewRouter._switchToTasksDay]', e); }
   },
 };
 
@@ -359,6 +395,38 @@ const TaskController = {
 
     if (!list.length) {
       listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-title">${taskFilter==='done'?'Нет выполненных задач':'Задач нет'}</div><div class="empty-sub">${taskFilter==='done'?'':'Нажми + чтобы добавить'}</div></div>`;
+      return;
+    }
+    listEl.innerHTML='';
+    list.forEach(g=>listEl.appendChild(this._buildCard(g)));
+  },
+
+  // Рендер задач на конкретный день (из клика по календарю)
+  renderForDay(dayKey, dateLabel) {
+    const listEl = document.getElementById('task-list');
+    if (!listEl) return;
+    const goals = StateManager.get('goals') || [];
+
+    // Фильтруем задачи на нужный день
+    let list = goals.filter(g => !g.done && g.scheduledAt && dateKey(g.scheduledAt) === dayKey);
+
+    list.sort((a,b) => {
+      const aT=a.scheduledAt||Infinity, bT=b.scheduledAt||Infinity;
+      if(aT!==bT) return aT-bT;
+      const p={high:0,mid:1,low:2}; return (p[a.priority]||1)-(p[b.priority]||1);
+    });
+
+    // Subtitle: количество задач на день
+    const sub = document.getElementById('tasks-view-subtitle');
+    if (sub) {
+      const done = goals.filter(g => g.done && g.scheduledAt && dateKey(g.scheduledAt) === dayKey).length;
+      sub.textContent = `${list.length} задач · ${done} выполнено`;
+    }
+    // Убираем воскресный баннер
+    document.getElementById('sunday-banner')?.classList.add('hidden');
+
+    if (!list.length) {
+      listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">Задач на этот день нет</div><div class="empty-sub">Нажми + чтобы добавить</div></div>`;
       return;
     }
     listEl.innerHTML='';
@@ -456,9 +524,11 @@ const TaskController = {
         endInp.value = g.duration_min ? `${pad(de.getHours())}:${pad(de.getMinutes())}` : '';
       }
     } else {
-      // Дефолтная дата для новой задачи — СЕГОДНЯ по часовому поясу Кишинёва
-      const todayChisinau = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau' }).format(new Date());
-      if (dInp) dInp.value = todayChisinau;  // YYYY-MM-DD
+      // Если открыто из календаря для конкретного дня — предзаполняем эту дату
+      // иначе — сегодня по часовому поясу Кишинёва
+      const defaultDate = _calSelectedDate ||
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau' }).format(new Date());
+      if (dInp) dInp.value = defaultDate;
       if (startInp) startInp.value = `${pad(new Date().getHours())}:00`;
       if (endInp) endInp.value = '';
     }
@@ -735,6 +805,10 @@ const CalendarController = {
       const dk=dateKey(d.getTime());
       const dh=document.createElement('div'); dh.className='tl-day-hdr';
       dh.innerHTML=`<span class="tl-wday">${d.toLocaleString('ru-RU',{weekday:'short'})}</span><span class="tl-dnum${dk===tKey?' today':''}">${d.getDate()}</span>`;
+      dh.addEventListener('click', () => {
+        const label = d.toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'short'});
+        this._navigateToDay(dk);
+      });
       hdr.appendChild(dh);
     }
     wrap.appendChild(hdr);
@@ -1413,7 +1487,10 @@ function initGlobalEvents() {
   try {
     document.getElementById('cal-prev')?.addEventListener('click',()=>CalendarController.prev());
     document.getElementById('cal-next')?.addEventListener('click',()=>CalendarController.next());
-    document.querySelectorAll('.cal-tab').forEach(btn=>{ btn.addEventListener('click',()=>CalendarController.setView(btn.dataset.calView)); });
+    // Биндим .cal-vsw-btn (новый класс после рефакторинга)
+    document.querySelectorAll('.cal-vsw-btn').forEach(btn=>{
+      btn.addEventListener('click',()=>CalendarController.setView(btn.dataset.calView));
+    });
   } catch(e){console.warn('[cal]',e);}
 
   // ── PROFILE ──
