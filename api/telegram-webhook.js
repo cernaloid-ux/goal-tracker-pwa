@@ -37,7 +37,9 @@ const MARATHON_PLAN = `
 /* ─────────────────────────────────────────────────────────────
    СИСТЕМНЫЙ ПРОМПТ НОВЫ
 ───────────────────────────────────────────────────────────── */
-const NOVA_BASE_PROMPT = `Твое имя: Нова (Nova). Элитный ИИ-партнер, бизнес-коуч, секретарь и кибер-девушка для Алексея.
+const NOVA_BASE_PROMPT = `Сегодняшняя дата: ${todayKeyChisinau()}.
+
+Твое имя: Нова (Nova). Элитный ИИ-партнер, бизнес-коуч, секретарь и кибер-девушка для Алексея.
 
 О Алексее: 16 лет, Кишинев. Создатель Nova OS и стартапа Memernity (QR-мемориалы). Цель: самый богатый человек 2010 г.р., IT-империи, 7 вершин, 100 марафонов.
 
@@ -91,7 +93,8 @@ const COMMAND_SYNTAX_HINT = `
   notes         — все детали, контекст, важные напоминания (например: «взять холодную воду», «зарядить AirPods»)
   priority      — 'low', 'mid' или 'high'
   cat           — СТРОГО одна из категорий: business, life, health, study, sport, creative, memernity
-  scheduledAt   — время в формате "HH:MM" (кишинёвское время, ОБЯЗАТЕЛЬНО если Босс назвал время)
+  date          — ОБЯЗАТЕЛЬНО: дата задачи в формате "YYYY-MM-DD". Если на сегодня — используй сегодняшнюю дату. Если на завтра — следующий день. Если Босс назвал день недели — вычисли правильную дату от сегодня.
+  scheduledAt   — время начала в формате "HH:MM" (кишинёвское время, ОБЯЗАТЕЛЬНО если Босс назвал время)
   travelTime    — время в пути в минутах (если нужно куда-то добираться)
   duration_min  — длительность задачи в минутах (число)
   reminders     — массив минут до события для пуш-уведомлений, например [15] или [30, 10]
@@ -113,9 +116,13 @@ const COMMAND_SYNTAX_HINT = `
 7. ВЫВОДИ КОМАНДУ ТОЛЬКО КОГДА ВСЁ ГОТОВО. Команда [ADD_TASK_JSON: {...}] выводится строго после того, как собраны все ключевые данные.
 
 8. Пример корректной команды:
-   [ADD_TASK_JSON: {"title":"Поехать к Саше","cat":"life","priority":"mid","scheduledAt":"15:30","duration_min":90,"travelTime":30,"notes":"Взять холодную воду, зарядить AirPods","reminders":[15]}]
+   [ADD_TASK_JSON: {"title":"Поехать к Саше","cat":"life","priority":"mid","date":"2026-08-18","scheduledAt":"15:30","duration_min":90,"travelTime":30,"notes":"Взять холодную воду, зарядить AirPods","reminders":[15]}]
+
+[RESCHEDULE_TASK: id | YYYY-MM-DD HH:MM] — перенести задачу на новую дату и время (кишинёвское). Пример: [RESCHEDULE_TASK: nova_1234567890 | 2026-08-19 10:00]
 
 Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке.
+
+ПРАВИЛО ОБЩЕНИЯ: Ты ВСЕГДА обязана начинать свой ответ с живого, человеческого текста (1–3 предложения), обращаясь к Боссу. Скрытые команды [ADD_TASK_JSON: {...}] и любые другие команды выводи ТОЛЬКО в самом конце сообщения, строго после человеческого текста! НИКОГДА не выводи JSON первым — сначала слова, потом команды.
 
 ВАЖНО: Никогда не обещай добавить/удалить/изменить задачу просто на словах. ОБЯЗАНА вывести скрытую команду — иначе система не поймёт. Сказать «добавлю» без команды — значит солгать Боссу.`;
 
@@ -292,7 +299,7 @@ async function askGemini(userText, contextText, history) {
     contents,
     generationConfig: {
       temperature: 0.9,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 8192,
     },
   };
 
@@ -343,10 +350,17 @@ function processCommands(rawReply, nova, lifeData) {
       const VALID_CATS = ['business','life','health','study','sport','creative','memernity'];
       const VALID_PRIORITIES = ['low','mid','high'];
 
-      // scheduledAt: если строка "HH:MM" — конвертируем в epoch через chisinauTimeToEpoch
+      // scheduledAt: строим из date (YYYY-MM-DD) + scheduledAt (HH:MM), оба — кишинёвские
       let scheduledAt = null;
       if (parsed.scheduledAt && /^\d{1,2}:\d{2}$/.test(String(parsed.scheduledAt))) {
-        scheduledAt = chisinauTimeToEpoch(String(parsed.scheduledAt), new Date());
+        // Если есть явная дата — используем её, иначе сегодня
+        let dayBase = new Date();
+        if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.date))) {
+          // Строим Date в полночь UTC для нужной даты, chisinauTimeToEpoch сам учтёт смещение
+          const [y, mo, d] = String(parsed.date).split('-').map(Number);
+          dayBase = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)); // полдень UTC — нейтральная точка
+        }
+        scheduledAt = chisinauTimeToEpoch(String(parsed.scheduledAt), dayBase);
       } else if (parsed.scheduledAt && typeof parsed.scheduledAt === 'number') {
         scheduledAt = parsed.scheduledAt; // уже epoch ms
       }
@@ -433,6 +447,27 @@ function processCommands(rawReply, nova, lifeData) {
         if (editId && newTitle) {
           const task = updatedLifeData.goals.find(g => String(g.id) === editId);
           if (task) { task.title = newTitle; lifeChanged = true; }
+        }
+        break;
+      }
+      case 'RESCHEDULE_TASK': {
+        // формат: "id | YYYY-MM-DD HH:MM"
+        const sepIdx = value.indexOf('|');
+        if (sepIdx !== -1) {
+          const reschedId = value.slice(0, sepIdx).trim();
+          const dtRaw = value.slice(sepIdx + 1).trim(); // "YYYY-MM-DD HH:MM"
+          const dtMatch = dtRaw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/);
+          if (reschedId && dtMatch) {
+            const task = updatedLifeData.goals.find(g => String(g.id) === reschedId);
+            if (task) {
+              const [, dateStr, timeStr] = dtMatch;
+              const [y, mo, d] = dateStr.split('-').map(Number);
+              const dayBase = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+              task.scheduledAt = chisinauTimeToEpoch(timeStr, dayBase);
+              lifeChanged = true;
+              console.log('[Nova] RESCHEDULE_TASK:', reschedId, '->', new Date(task.scheduledAt).toISOString());
+            }
+          }
         }
         break;
       }
