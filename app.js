@@ -456,8 +456,9 @@ const TaskController = {
         endInp.value = g.duration_min ? `${pad(de.getHours())}:${pad(de.getMinutes())}` : '';
       }
     } else {
-      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-      if (dInp) dInp.value = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}`;
+      // Дефолтная дата для новой задачи — СЕГОДНЯ по часовому поясу Кишинёва
+      const todayChisinau = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau' }).format(new Date());
+      if (dInp) dInp.value = todayChisinau;  // YYYY-MM-DD
       if (startInp) startInp.value = `${pad(new Date().getHours())}:00`;
       if (endInp) endInp.value = '';
     }
@@ -482,11 +483,19 @@ const TaskController = {
     const startVal=document.getElementById('task-start-time-input')?.value;
     const endVal=document.getElementById('task-end-time-input')?.value;
     let scheduledAt=null;
-    if(dateVal && startVal) scheduledAt=new Date(`${dateVal}T${startVal}`).getTime();
+    if(dateVal && startVal) {
+      // Разбираем дату и время по частям чтобы избежать неоднозначности:
+      // new Date("YYYY-MM-DDThh:mm") в iOS Safari < 15 трактует строку как UTC → сдвиг.
+      // Date(год, месяц-1, день, ч, м) всегда создаёт LOCAL-время — без сюрпризов.
+      const [dy, dm, dd] = dateVal.split('-').map(Number);
+      const [th, tm]     = startVal.split(':').map(Number);
+      scheduledAt = new Date(dy, dm - 1, dd, th, tm, 0, 0).getTime();
+    }
     let durMin=0;
     if(startVal && endVal){
-      const s=new Date(`1970-01-01T${startVal}`), e=new Date(`1970-01-01T${endVal}`);
-      durMin=Math.max(0,Math.round((e-s)/60000));
+      const [sh, sm] = startVal.split(':').map(Number);
+      const [eh, em] = endVal.split(':').map(Number);
+      durMin = Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
     }
     const goals=StateManager.get('goals'); const id=StateManager.get('editingTaskId');
     const data={

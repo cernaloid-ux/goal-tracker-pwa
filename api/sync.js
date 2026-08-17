@@ -66,7 +66,9 @@ function sanitizeState(body, clientUserId) {
     })),
     tgToken:   String(body.tgToken||'').slice(0,64),
     tgChatId:  String(body.tgChatId||'').slice(0,20),
-    updatedAt: Date.now(),
+    // LWW: сохраняем клиентскую метку updatedAt — именно её сравниваем с серверной.
+    // Если клиент её не прислал (старый клиент) — ставим серверное время как fallback.
+    updatedAt: (body.updatedAt && Number(body.updatedAt) > 0) ? Number(body.updatedAt) : Date.now(),
   };
 }
 
