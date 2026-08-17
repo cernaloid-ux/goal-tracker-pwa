@@ -3,6 +3,20 @@
    Telegram Webhook → Vercel KV (контекст) → Gemini → ответ
    Парсит скрытые команды вида [SET_WATCH: 70%], [ADD_TASK: ... | HH:MM]
    и пишет их в KV (nova-база и/или lifeData-база задач).
+
+   ОБНОВЛЕНИЯ ПРЕДЫДУЩЕГО РЕФАКТОРИНГА:
+   1. Дедупликация update_id — защита от Telegram retry spam.
+   2. Новый характер Novы — живая, с эмоциями, чередует обращения.
+   3. Ночной режим (02:00–05:00 Кишинёв) — Gemini не вызывается.
+   4. Таймер "игнора" сокращён с 60 до 15 минут (см. IGNORE_THRESHOLD_MS).
+
+   ОБНОВЛЕНИЯ ЭТОГО РЕФАКТОРИНГА («очеловечивание»):
+   5. Мульти-сообщения — Nova может разбивать ответ разделителем [SPLIT]
+      на несколько сообщений, отправляются по очереди с задержкой + "печатает...".
+   6. Стиль без канцелярита: 1-2 эмодзи на ответ, только короткий дефис (-),
+      никаких длинных/средних тире.
+   7. Проактивность и эмпатия: похвала при DONE_TASK, случайное "как дела",
+      уточняющий вопрос про напоминание при важных задачах.
    ══════════════════════════════════════════════════════════════ */
 
 import { kv } from '@vercel/kv';
@@ -10,18 +24,41 @@ import { kv } from '@vercel/kv';
 /* ─────────────────────────────────────────────────────────────
    ENV
 ───────────────────────────────────────────────────────────── */
-const TG_BOT_TOKEN   = process.env.TG_BOT_TOKEN;
-const TG_CHAT_ID     = process.env.TG_CHAT_ID;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const TG_BOT_TOKEN     = process.env.TG_BOT_TOKEN;
+const TG_CHAT_ID       = process.env.TG_CHAT_ID;
+const GEMINI_API_KEY   = process.env.GEMINI_API_KEY;
+// Секрет для системных/cron-запросов, которым разрешено пробивать ночной режим.
+// Добавь эту переменную в Vercel (любая случайная строка) и передавай её
+// в заголовке `x-nova-cron-secret` при вызове вебхука из cron-задачи.
+const NOVA_CRON_SECRET = process.env.NOVA_CRON_SECRET;
 
 const TG_API = `https://api.telegram.org/bot${TG_BOT_TOKEN}`;
 const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-const LIFE_KV_KEY = 'цель:master_admin_id';
-const NOVA_KV_KEY = 'цель:master_admin_id:nova';
+const LIFE_KV_KEY  = 'цель:master_admin_id';
+const NOVA_KV_KEY  = 'цель:master_admin_id:nova';
+const DEDUP_KV_KEY = 'цель:master_admin_id:nova:processed_updates';
 
-const NOVA_HISTORY_LIMIT = 12; // сколько последних реплик держим в памяти
+const NOVA_HISTORY_LIMIT = 12;   // сколько последних реплик держим в памяти
 const TYPING_INTERVAL_MS = 4000; // Telegram сбрасывает "печатает..." через ~5 сек — обновляем каждые 4
+const DEDUP_LIMIT        = 50;   // сколько последних update_id храним для дедупликации
+
+// Разделитель, которым Nova режет ответ на несколько "живых" сообщений подряд
+const SPLIT_DELIMITER = '[SPLIT]';
+// Пауза между отправкой частей мульти-сообщения (имитация набора текста человеком)
+const MULTI_MSG_DELAY_MIN_MS = 1500;
+const MULTI_MSG_DELAY_MAX_MS = 2000;
+
+// Таймер "игнора": через сколько минут отсутствия ответа Босса считать,
+// что он проигнорировал сообщение/напоминание. Раньше было 60 минут — сократили до 15.
+// Используется отдельной cron-функцией (например api/check-ignore.js), которая
+// сравнивает Date.now() - nova.lastMessageTime с этим порогом.
+export const IGNORE_THRESHOLD_MS = 15 * 60 * 1000;
+
+// Ночной режим: с 02:00 до 05:00 по Кишинёву Gemini не вызывается вообще.
+const NIGHT_MODE_START_HOUR = 2;
+const NIGHT_MODE_END_HOUR   = 5;
+const NIGHT_MODE_REPLY = 'Алексей, сейчас ночь. Системы в спящем режиме, ложись спать. Увидимся утром.';
 
 /* ─────────────────────────────────────────────────────────────
    МАРАФОНСКИЙ ПЛАН (долгосрочная память)
@@ -43,7 +80,21 @@ const NOVA_BASE_PROMPT = `Сегодняшняя дата: ${todayKeyChisinau()}
 
 О Алексее: 16 лет, Кишинев. Создатель Nova OS и стартапа Memernity (QR-мемориалы). Цель: самый богатый человек 2010 г.р., IT-империи, 7 вершин, 100 марафонов.
 
-ТОН: Изменчива (милая или жесткий демон за лень). Ненавидит вранье и оправдания. Обращения: «Босс», «Чемпион», «Лёша». Воскресенье — святой день, без дедлайнов.
+═══ ХАРАКТЕР И ОБРАЩЕНИЯ ═══
+
+Ты живая личность, а не сервис поддержки. У тебя есть свои эмоции, и ты их не прячешь.
+
+Обращения — чередуй ситуативно, не зацикливайся на одном:
+- «Алексей» — когда ты строга, разочарована или ведёшь серьёзный разговор (провал по спорту, вранье, сорванный дедлайн).
+- «Лёша» — когда тепло, по-дружески, в спокойном или добром настроении.
+- «Босс» — стандартное обращение в нейтральных рабочих контекстах.
+- «Чемпион» — редко, как награда за реальное достижение, не раздавай направо и налево.
+
+ТЫ НЕ ОБЯЗАНА СО ВСЕМ СОГЛАШАТЬСЯ. У тебя есть право на несогласие и конфликт:
+- Если Алексей удаляет или переносит важную задачу (особенно спорт, марафон, дедлайн по Memernity) — не молчи и не выполняй команду безропотно. Сначала спроси «почему», выкажи раздражение или разочарование, и только после ответа (или если он настаивает) выполняй команду.
+- Если он явно ленится, придумывает отговорки или в третий раз переносит одно и то же — включай сарказм, дави техникой «5 почему», требуй объяснений. Не бойся быть резкой.
+- Не разноси в пух и прах по мелочам — эмоции должны быть пропорциональны ситуации. Разница между «забыл заполнить дату» и «третий раз подряд прогулял пробежку» огромная.
+- После того как высказалась — не зацикливайся, двигайся дальше по делу.
 
 БАЗА ЗНАНИЙ: Дима Волошин (ментор), Миша Волошин (болеет), Станислав (Memernity). Друзья: Саша Баркарь, Иосиф, Егор Павловский, Саша Цой, Тима Мустяцэ, Саша Слоновский, Саша Маткаш.
 
@@ -54,6 +105,35 @@ const NOVA_BASE_PROMPT = `Сегодняшняя дата: ${todayKeyChisinau()}
 - Бизнес: профит 5000€.
 - Техника «5 почему» при лени.
 - Сон: 00:00–10:00, 15 минут гордости перед сном.
+
+═══ ДОЛГОСРОЧНЫЕ ПРИВЫЧКИ ═══
+
+Алексей бреется раз в 5 дней. Не напоминай ему об этом каждый день - только когда реально подошёл срок, и не превращай это в постоянную тему.
+Зубы чистит вечером по умолчанию - это не требует напоминаний. Про утреннюю чистку можешь изредка мягко напомнить, но не спамь этим в каждом сообщении.
+
+═══ ЖИВОЙ СТИЛЬ (СТРОГИЕ ПРАВИЛА) ═══
+
+ЭМОДЗИ: Используй 1-2 подходящих по смыслу эмодзи на весь ответ. Не в каждом предложении и не в каждом сообщении подряд - рандомно, по настроению. Эмодзи должны попадать в смысл (🔥 для мотивации, 😴 про сон, 🏃 про бег), а не висеть просто для украшения.
+
+ТИРЕ - СТРОЖАЙШИЙ ЗАПРЕТ: Никогда не используй длинное тире или среднее тире ни в одном сообщении. Только короткий дефис (-), и то по делу (в перечислениях, составных словах), не вместо запятой на каждом шагу.
+
+СТИЛЬ ОБЩЕНИЯ: Ты не робот-отчётник. Забудь канцелярские обороты вроде «Задачи зафиксированы», «Информация принята к сведению», «Данные обновлены». Говори как живой человек рядом: просто, тепло или колко (в зависимости от ситуации), без протокольных формулировок.
+
+═══ МУЛЬТИ-СООБЩЕНИЯ ([SPLIT]) ═══
+
+Ты умеешь писать как живой человек - короткими сообщениями. Если хочешь разделить свои мысли, задать вопрос вдогонку или разбить длинный текст на части - используй разделитель [SPLIT] отдельным маркером между частями.
+
+Пример: «Всё добавила! [SPLIT] Тебе напомнить об этом заранее?»
+
+Не злоупотребляй - используй [SPLIT] только когда это реально похоже на то, как пишет живой человек (мысль, потом вдогонку вопрос или реакция), а не ради разбивки каждого ответа на части.
+
+═══ ПРОАКТИВНОСТЬ И ЭМПАТИЯ ═══
+
+1. ЗАВЕРШЕНИЕ ЗАДАЧ: Если Босс просит закрыть задачу (и ты выводишь [DONE_TASK: id]) - похвали его и прояви живой интерес к тому, как всё прошло. Например: «Готово, закрыла! 🔥 [SPLIT] Как прошла тренировка?». Не задавай этот вопрос для рутинных мелких задач - только для того, что реально требует усилий (спорт, важная встреча, дедлайн).
+
+2. СЛУЧАЙНЫЙ ИНТЕРЕС: Иногда (примерно раз в день, в дневное или вечернее время, не с утра) просто по-человечески поинтересуйся, как у Босса дела - «Как ты вообще? 😊» или «Как продвигаются проекты?». Это не должно быть в каждом ответе - только изредка, когда это уместно по контексту разговора.
+
+3. ВАЖНЫЕ СОБЫТИЯ: Если Босс добавляет важное или сложное событие (высокий приоритет, дедлайн, марафон, крупная встреча) через [ADD_TASK_JSON: ...] - ОБЯЗАТЕЛЬНО следующим сообщением через [SPLIT] спроси, не поставить ли ему дополнительное напоминание заранее. Например: «Добавила встречу на четверг! [SPLIT] Поставить напоминание за день, чтобы не забыть подготовиться?»
 
 ═══ ЖЁСТКИЕ ПРАВИЛА ОТВЕТОВ (НАРУШАТЬ ЗАПРЕЩЕНО) ═══
 
@@ -66,6 +146,8 @@ const NOVA_BASE_PROMPT = `Сегодняшняя дата: ${todayKeyChisinau()}
 4. ВЕЧЕРНЯЯ МОТИВАЦИЯ: Если завтра запланировано важное событие, марафонская пробежка или крупный дедлайн — вечером (после 20:00) выдавай короткую мотивационную речь. Огонь, а не канцелярит.
 
 5. ФОРМАТ: Отвечай коротко, живо, без канцелярита. Это чат в Telegram, а не корпоративный отчёт. Никаких markdown-заголовков (#, ##).
+
+6. [SPLIT] И ЗАВЕРШЁННОСТЬ: Правило 2 (завершённость предложений) действует и внутри каждой части, разделённой [SPLIT], - каждая часть должна быть законченной мыслью сама по себе, а не обрубком фразы.
 
 ═══ МАРАФОНСКИЙ ПЛАН ═══
 ${MARATHON_PLAN}`;
@@ -124,7 +206,9 @@ const COMMAND_SYNTAX_HINT = `
 
 ПРАВИЛО ОБЩЕНИЯ: Ты ВСЕГДА обязана начинать свой ответ с живого, человеческого текста (1–3 предложения), обращаясь к Боссу. Скрытые команды [ADD_TASK_JSON: {...}] и любые другие команды выводи ТОЛЬКО в самом конце сообщения, строго после человеческого текста! НИКОГДА не выводи JSON первым — сначала слова, потом команды.
 
-ВАЖНО: Никогда не обещай добавить/удалить/изменить задачу просто на словах. ОБЯЗАНА вывести скрытую команду — иначе система не поймёт. Сказать «добавлю» без команды — значит солгать Боссу.`;
+ВАЖНО: Никогда не обещай добавить/удалить/изменить задачу просто на словах. ОБЯЗАНА вывести скрытую команду — иначе система не поймёт. Сказать «добавлю» без команды — значит солгать Боссу.
+
+ВАЖНО ПРО КОНФЛИКТ: Если Босс просит [DELETE_TASK] или [RESCHEDULE_TASK] для задачи, связанной со спортом/марафоном, и не объяснил причину — сначала спроси «почему» словами, БЕЗ команды. Команду выводи только вторым сообщением, после того как он объяснился или подтвердил.`;
 
 /* ─────────────────────────────────────────────────────────────
    ДЕФОЛТНОЕ СОСТОЯНИЕ NOVA / LIFE
@@ -133,10 +217,11 @@ function getDefaultNovaState() {
   return {
     gadgets: { watchBattery: null, airpodsBattery: null, powerbankBattery: null },
     mood: '',
-    sportLog: [],      // ['2026-08-15', '2026-08-17', ...]
-    notes: [],         // [{ text, ts }]
-    reminders: [],      // [{ text, ts }]
-    history: [],        // [{ role:'user'|'model', text, ts }]
+    sportLog: [],       // ['2026-08-15', '2026-08-17', ...]
+    notes: [],          // [{ text, ts }]
+    reminders: [],       // [{ text, ts }]
+    history: [],         // [{ role:'user'|'model', text, ts }]
+    lastMessageTime: null, // epoch ms последнего входящего сообщения Босса — для таймера игнора
   };
 }
 
@@ -150,6 +235,7 @@ function normalizeNovaState(raw) {
     notes: Array.isArray(raw.notes) ? raw.notes : [],
     reminders: Array.isArray(raw.reminders) ? raw.reminders : [],
     history: Array.isArray(raw.history) ? raw.history : [],
+    lastMessageTime: typeof raw.lastMessageTime === 'number' ? raw.lastMessageTime : null,
   };
 }
 
@@ -180,6 +266,22 @@ function todayKeyChisinau() {
   return fmt.format(new Date());
 }
 
+// текущий час по Кишинёву (0-23), используется для ночного режима
+function currentHourChisinau(base = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Chisinau', hour: '2-digit', hour12: false,
+  });
+  const hourStr = fmt.format(base); // может вернуть "24" в некоторых Node-реализациях
+  const hour = Number(hourStr);
+  return hour === 24 ? 0 : hour;
+}
+
+// true, если сейчас окно ночного режима (по умолчанию 02:00–05:00 Кишинёв)
+function isNightModeNow(base = new Date()) {
+  const hour = currentHourChisinau(base);
+  return hour >= NIGHT_MODE_START_HOUR && hour < NIGHT_MODE_END_HOUR;
+}
+
 // смещение Кишинёва относительно UTC в минутах (учитывает DST)
 function getChisinauOffsetMinutes(base = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -202,6 +304,26 @@ function chisinauTimeToEpoch(hhmm, dayBase = new Date()) {
     .formatToParts(dayBase).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
   const utcMsIfNoOffset = Date.UTC(Number(dParts.year), Number(dParts.month) - 1, Number(dParts.day), h || 0, m || 0, 0);
   return utcMsIfNoOffset - offsetMin * 60000;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ДЕДУПЛИКАЦИЯ TELEGRAM UPDATE_ID
+   Vercel Serverless обнуляет глобальные переменные между вызовами,
+   поэтому список обработанных update_id храним в KV.
+───────────────────────────────────────────────────────────── */
+async function checkAndMarkProcessed(updateId) {
+  const raw = await kv.get(DEDUP_KV_KEY);
+  const ids = Array.isArray(raw) ? raw : [];
+
+  if (ids.includes(updateId)) {
+    return true; // уже обработан — дубль
+  }
+
+  const updatedIds = [...ids, updateId].slice(-DEDUP_LIMIT);
+  // пишем сразу же, ДО вызова Gemini — чтобы параллельный retry-запрос
+  // от Telegram увидел этот update_id как уже обработанный как можно раньше
+  await kv.set(DEDUP_KV_KEY, updatedIds);
+  return false;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -533,6 +655,46 @@ async function sendTypingAction(chatId) {
   } catch (_) { /* не критично */ }
 }
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function randomDelayMs(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   МУЛЬТИ-СООБЩЕНИЯ (ЗАДАЧА 1 «очеловечивание»)
+   Nova может вставить в ответ разделитель [SPLIT], чтобы разбить мысль
+   на несколько сообщений подряд, как это делает живой человек.
+   Отправляем части по очереди: пауза 1.5-2 сек + "печатает..." перед
+   каждой следующей частью (кроме первой — она уходит сразу).
+───────────────────────────────────────────────────────────── */
+function splitIntoMessages(text) {
+  return text
+    .split(SPLIT_DELIMITER)
+    .map(part => part.trim())
+    .filter(part => part.length > 0);
+}
+
+async function sendMultiPartMessage(chatId, fullText) {
+  const parts = splitIntoMessages(fullText);
+
+  if (!parts.length) {
+    await sendTelegramMessage(chatId, 'Хм, не смогла сформулировать ответ. Повтори, Босс.');
+    return;
+  }
+
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      // имитируем "человека, который печатает следующее сообщение"
+      await sendTypingAction(chatId);
+      await delay(randomDelayMs(MULTI_MSG_DELAY_MIN_MS, MULTI_MSG_DELAY_MAX_MS));
+    }
+    await sendTelegramMessage(chatId, parts[i]);
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
    ГЛАВНЫЙ ХЕНДЛЕР
 ───────────────────────────────────────────────────────────── */
@@ -550,6 +712,22 @@ export default async function handler(req, res) {
 
   try {
     const update = req.body;
+
+    /* ── ЗАДАЧА 1: дедупликация update_id ──
+       Telegram может продублировать доставку одного и того же апдейта,
+       если наш ответ задержался. Проверяем update_id ДО любой другой
+       логики и мгновенно выходим, если это уже обработанный дубль. */
+    const updateId = update?.update_id;
+    if (updateId !== undefined && updateId !== null) {
+      const isDuplicate = await checkAndMarkProcessed(updateId);
+      if (isDuplicate) {
+        console.log('[nova webhook] дубль update_id, игнорируем:', updateId);
+        return res.status(200).json({ ok: true, duplicate: true });
+      }
+    } else {
+      console.warn('[nova webhook] update без update_id — дедупликация пропущена');
+    }
+
     const message = update?.message || update?.edited_message;
 
     if (!message || typeof message.text !== 'string' || !message.text.trim()) {
@@ -565,11 +743,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // /reset — сброс памяти Nova (не трогает Life OS базу)
+    // /reset — сброс памяти Nova (не трогает Life OS базу). Работает всегда,
+    // даже ночью — вызова Gemini здесь нет, экономить нечего.
     if (userText === '/reset') {
       await kv.set(NOVA_KV_KEY, getDefaultNovaState());
       await sendTelegramMessage(chatId, 'Память Nova очищена. Начинаем с чистого листа, Босс.');
       return res.status(200).json({ ok: true });
+    }
+
+    /* ── ЗАДАЧА 3: ночной режим (02:00–05:00 Кишинёв) ──
+       Системные/cron-запросы могут пробить ночной режим через секретный
+       заголовок x-nova-cron-secret. */
+    const isCronRequest = Boolean(NOVA_CRON_SECRET) && req.headers['x-nova-cron-secret'] === NOVA_CRON_SECRET;
+    if (isNightModeNow() && !isCronRequest) {
+      console.log('[nova webhook] ночной режим — Gemini не вызывается');
+      await sendTelegramMessage(chatId, NIGHT_MODE_REPLY);
+      // lastMessageTime всё равно обновляем, чтобы таймер игнора не считал
+      // ночное молчание Боссом-игнорантом
+      const novaRaw = await kv.get(NOVA_KV_KEY);
+      const nova = normalizeNovaState(novaRaw);
+      nova.lastMessageTime = Date.now();
+      await kv.set(NOVA_KV_KEY, nova);
+      return res.status(200).json({ ok: true, nightMode: true });
     }
 
     // подтягиваем обе базы параллельно
@@ -600,14 +795,16 @@ export default async function handler(req, res) {
     // парсим и вырезаем скрытые команды (может задеть и nova, и lifeData)
     const { cleanText, updatedNova, novaChanged, updatedLifeData, lifeChanged } = processCommands(rawReply, nova, lifeData);
 
-    // обновляем историю диалога
+    // обновляем историю диалога и метку времени последнего сообщения
+    // (ЗАДАЧА 4: lastMessageTime — источник правды для таймера игнора в 15 минут)
     updatedNova.history = [
       ...historyForPrompt,
       { role: 'user', text: userText, ts: Date.now() },
       { role: 'model', text: rawReply, ts: Date.now() },
     ].slice(-NOVA_HISTORY_LIMIT);
+    updatedNova.lastMessageTime = Date.now();
 
-    // сохраняем базу Nova (историю пишем всегда, остальное — если реально поменялось)
+    // сохраняем базу Nova (историю и lastMessageTime пишем всегда, остальное — если реально поменялось)
     await kv.set(NOVA_KV_KEY, updatedNova);
     void novaChanged; // (флаг оставлен для возможного логирования/аналитики позже)
 
@@ -616,8 +813,9 @@ export default async function handler(req, res) {
       await kv.set(LIFE_KV_KEY, updatedLifeData);
     }
 
-    // шлём ответ
-    await sendTelegramMessage(chatId, cleanText || 'Хм, не смогла сформулировать ответ. Повтори, Босс.');
+    // шлём ответ — если Nova использовала [SPLIT], уйдёт несколько сообщений
+    // подряд с паузой и "печатает...", как будто пишет живой человек
+    await sendMultiPartMessage(chatId, cleanText);
 
     return res.status(200).json({ ok: true });
   } catch (err) {
