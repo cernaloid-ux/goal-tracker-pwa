@@ -219,28 +219,37 @@ function buildContext(lifeData, nova) {
     const gems = lifeData.gems ?? 0;
 
     const todayKey = todayKeyChisinau();
-    const todayTasks = goals.filter(g => {
+    const fmt14 = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau' });
+    const nowTs = Date.now();
+    const in14days = nowTs + 14 * 86400000;
+
+    // Задачи на ближайшие 14 дней (включая сегодня)
+    const upcomingTasks = goals.filter(g => {
       if (g.done || !g.scheduledAt) return false;
-      const d = new Date(g.scheduledAt);
-      const dk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau' }).format(d);
-      return dk === todayKey;
-    });
-    const overdue = goals.filter(g => !g.done && g.scheduledAt && g.scheduledAt < Date.now());
+      return g.scheduledAt >= nowTs && g.scheduledAt <= in14days;
+    }).sort((a, b) => a.scheduledAt - b.scheduledAt);
+
+    const overdue = goals.filter(g => !g.done && g.scheduledAt && g.scheduledAt < nowTs);
 
     lines.push(`Серия (streak): ${streakDays} дней подряд. Кристаллов (gems): ${gems}.`);
 
-    if (todayTasks.length) {
-      lines.push('Задачи на сегодня:');
-      todayTasks.forEach(g => {
-        const t = g.scheduledAt ? new Date(g.scheduledAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Chisinau' }) : '';
-        lines.push(`- [ID: ${g.id}] [${g.priority || 'mid'}] ${g.title}${t ? ' в ' + t : ''}`);
+    if (upcomingTasks.length) {
+      lines.push('Задачи на ближайшие 14 дней (включая сегодня):');
+      upcomingTasks.forEach(g => {
+        const dateStr = fmt14.format(new Date(g.scheduledAt));
+        const timeStr = new Date(g.scheduledAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Chisinau' });
+        lines.push(`- [Дата: ${dateStr}] [ID: ${g.id}] ${g.title} (Категория: ${g.cat || 'business'}) в ${timeStr}`);
       });
     } else {
-      lines.push('Задач на сегодня не запланировано.');
+      lines.push('Задач на ближайшие 14 дней не запланировано.');
     }
 
     if (overdue.length) {
-      lines.push(`Просроченных задач: ${overdue.length} (${overdue.slice(0, 5).map(g => g.title).join('; ')}).`);
+      lines.push(`Просроченных задач: ${overdue.length}:`);
+      overdue.slice(0, 5).forEach(g => {
+        const dateStr = g.scheduledAt ? fmt14.format(new Date(g.scheduledAt)) : '?';
+        lines.push(`- [Дата: ${dateStr}] [ID: ${g.id}] ${g.title} (Категория: ${g.cat || 'business'})`);
+      });
     }
 
     const macros = Array.isArray(lifeData.macroGoals) ? lifeData.macroGoals : [];

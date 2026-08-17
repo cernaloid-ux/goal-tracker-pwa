@@ -95,16 +95,17 @@
 
     <!-- VIEW: CALENDAR -->
     <section class="view hidden" data-view="calendar" id="view-calendar">
-      <div class="cal-toolbar">
-        <div class="cal-tabs">
-          <button class="cal-tab active" data-cal-view="month">Месяц</button>
-          <button class="cal-tab" data-cal-view="week">Неделя</button>
-          <button class="cal-tab" data-cal-view="day">День</button>
-        </div>
-        <div class="cal-nav">
+      <div class="cal-header-hero">
+        <div class="cal-hero-nav">
           <button class="cal-nav-btn" id="cal-prev">‹</button>
-          <div class="cal-nav-title" id="cal-nav-title"></div>
+          <div class="cal-hero-title" id="cal-nav-title"></div>
           <button class="cal-nav-btn" id="cal-next">›</button>
+        </div>
+        <div class="cal-view-switcher" id="cal-view-switcher" role="tablist">
+          <button class="cal-vsw-btn" data-cal-view="day" role="tab">День</button>
+          <button class="cal-vsw-btn" data-cal-view="week" role="tab">Неделя</button>
+          <button class="cal-vsw-btn active" data-cal-view="month" role="tab">Месяц</button>
+          <button class="cal-vsw-btn" data-cal-view="year" role="tab">Год</button>
         </div>
       </div>
       <div class="cal-container" id="cal-container"></div>

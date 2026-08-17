@@ -594,21 +594,21 @@ function renderTagFilterRow() {
    CALENDAR CONTROLLER
 ═══════════════════════════════════════════════════════════ */
 const CalendarController = {
-  _calDate: new Date(), _view: 'month', _nowTimer: null,
+  _calDate: new Date(), _view: 'month', _nowTimer: null, _selectedDateKey: null,
   init() { StateManager.subscribe(()=>{ if(StateManager.get('currentView')==='calendar') this.render(); }); },
   setView(v) {
     this._view=v;
-    document.querySelectorAll('.cal-tab').forEach(b=>b.classList.toggle('active',b.dataset.calView===v));
+    document.querySelectorAll('.cal-vsw-btn').forEach(b=>b.classList.toggle('active',b.dataset.calView===v));
     this.render();
   },
   prev() {
-    if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()-1);
+    if(this._view==='month'||this._view==='year') this._calDate.setMonth(this._calDate.getMonth()-1);
     else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()-7);
     else this._calDate.setDate(this._calDate.getDate()-1);
     this.render();
   },
   next() {
-    if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()+1);
+    if(this._view==='month'||this._view==='year') this._calDate.setMonth(this._calDate.getMonth()+1);
     else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()+7);
     else this._calDate.setDate(this._calDate.getDate()+1);
     this.render();
@@ -618,11 +618,32 @@ const CalendarController = {
     if(!c||!n) return;
     if(this._view==='month') this._renderMonth(c,n);
     else if(this._view==='week') this._renderTimeline(c,n,7);
-    else this._renderTimeline(c,n,1);
+    else if(this._view==='day') this._renderTimeline(c,n,1);
+    else if(this._view==='year') this._renderYear(c,n);
   },
+
+  // Navigate to tasks view filtered by a specific date
+  _navigateToDay(dateKey) {
+    this._selectedDateKey = dateKey;
+    StateManager.set('calSelectedDate', dateKey);
+    // Switch filter to 'day' mode and re-render tasks
+    const hdrTitle = document.getElementById('hdr-title');
+    const subtitle = document.getElementById('tasks-view-subtitle');
+    const [y,m,d] = dateKey.split('-').map(Number);
+    const dateLabel = new Date(y,m-1,d).toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'short'});
+    if(hdrTitle) hdrTitle.textContent = `Задачи на ${dateLabel}`;
+    ViewRouter._switchToTasksDay(dateKey, dateLabel);
+  },
+
+  _catDotClass(g) {
+    const cat = g.cat || 'business';
+    return `cal-dot cat-${cat}`;
+  },
+
   _renderMonth(c,n) {
     if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
     const y=this._calDate.getFullYear(), m=this._calDate.getMonth();
+    // Big hero title: Месяц Год (capitalize)
     n.textContent=this._calDate.toLocaleString('ru-RU',{month:'long',year:'numeric'});
     const first=new Date(y,m,1).getDay(), offset=(first===0)?6:first-1, dim=new Date(y,m+1,0).getDate();
     const goals=StateManager.get('goals'), tasksByDay={};
@@ -632,14 +653,61 @@ const CalendarController = {
     for(let i=0;i<offset;i++){const el=document.createElement('div'); el.className='cal-day empty'; grid.appendChild(el);}
     const today=new Date();
     for(let d=1;d<=dim;d++){
+      const dk=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const isToday=d===today.getDate()&&m===today.getMonth()&&y===today.getFullYear();
-      const cell=document.createElement('div'); cell.className=`cal-day${isToday?' today':''}`;
+      const isSelected=dk===this._selectedDateKey;
+      const cell=document.createElement('div');
+      cell.className=`cal-day${isToday?' today':''}${isSelected?' selected':''}`;
       cell.innerHTML=`<div class="cal-day-num">${d}</div>`;
       const dayTasks=tasksByDay[d]||[];
-      dayTasks.slice(0,4).forEach(g=>{const dot=document.createElement('div'); dot.className='cal-dot'; dot.style.background=catColor(g); cell.appendChild(dot);});
-      if(dayTasks.length>4){const more=document.createElement('div'); more.className='cal-more'; more.textContent=`+${dayTasks.length-4}`; cell.appendChild(more);}
-      cell.addEventListener('click',()=>{ TaskController.openModal(); });
+      if(dayTasks.length>0){
+        const dotsWrap=document.createElement('div'); dotsWrap.className='cal-dots';
+        dayTasks.slice(0,4).forEach(g=>{
+          const dot=document.createElement('div');
+          dot.className=this._catDotClass(g);
+          dotsWrap.appendChild(dot);
+        });
+        cell.appendChild(dotsWrap);
+        if(dayTasks.length>4){const more=document.createElement('div'); more.className='cal-more'; more.textContent=`+${dayTasks.length-4}`; cell.appendChild(more);}
+      }
+      cell.addEventListener('click',()=>{ this._navigateToDay(dk); });
       grid.appendChild(cell);
+    }
+    c.appendChild(grid);
+  },
+
+  _renderYear(c,n) {
+    if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
+    const y=this._calDate.getFullYear();
+    n.textContent=String(y);
+    const goals=StateManager.get('goals');
+    const tasksByDate={};
+    goals.forEach(g=>{ if(!g.scheduledAt||g.done) return; const dk=dateKey(g.scheduledAt); tasksByDate[dk]=(tasksByDate[dk]||0)+1; });
+    c.innerHTML='';
+    const grid=document.createElement('div'); grid.className='cal-year-grid';
+    const today=new Date();
+    for(let mo=0;mo<12;mo++){
+      const card=document.createElement('div'); card.className='cal-year-month';
+      const mName=new Date(y,mo,1).toLocaleString('ru-RU',{month:'long'});
+      const mLabel=document.createElement('div'); mLabel.className='cal-year-month-name'; mLabel.textContent=mName; card.appendChild(mLabel);
+      const miniGrid=document.createElement('div'); miniGrid.className='cal-year-mini-grid';
+      // weekday headers (tiny)
+      ['П','В','С','Ч','П','С','В'].forEach(d=>{ const h=document.createElement('div'); h.style.cssText='font-size:6px;text-align:center;color:var(--lbl4);font-weight:700;'; h.textContent=d; miniGrid.appendChild(h); });
+      const firstDay=new Date(y,mo,1).getDay(), off=(firstDay===0)?6:firstDay-1;
+      const dim=new Date(y,mo+1,0).getDate();
+      for(let i=0;i<off;i++){const e=document.createElement('div'); e.className='cal-year-mini-day empty'; miniGrid.appendChild(e);}
+      for(let d=1;d<=dim;d++){
+        const dk=`${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const isTod=d===today.getDate()&&mo===today.getMonth()&&y===today.getFullYear();
+        const hasTasks=!!tasksByDate[dk];
+        const dc=document.createElement('div');
+        dc.className=`cal-year-mini-day${isTod?' today':hasTasks?' has-tasks':''}${this._selectedDateKey===dk?' today':''}`;
+        dc.textContent=d;
+        miniGrid.appendChild(dc);
+      }
+      card.appendChild(miniGrid);
+      card.addEventListener('click',()=>{ this._calDate=new Date(y,mo,1); this.setView('month'); });
+      grid.appendChild(card);
     }
     c.appendChild(grid);
   },
