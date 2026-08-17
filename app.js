@@ -664,7 +664,7 @@ function renderTagFilterRow() {
    CALENDAR CONTROLLER
 ═══════════════════════════════════════════════════════════ */
 const CalendarController = {
-  _calDate: new Date(), _view: 'month', _nowTimer: null, _selectedDateKey: null,
+  _calDate: new Date(), _view: 'month', _nowTimer: null, _selectedDateKey: null, _yearDate: new Date(),
   init() { StateManager.subscribe(()=>{ if(StateManager.get('currentView')==='calendar') this.render(); }); },
   setView(v) {
     this._view=v;
@@ -672,13 +672,15 @@ const CalendarController = {
     this.render();
   },
   prev() {
-    if(this._view==='month'||this._view==='year') this._calDate.setMonth(this._calDate.getMonth()-1);
+    if(this._view==='year') { this._yearDate.setFullYear(this._yearDate.getFullYear()-1); this.render(); return; }
+    if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()-1);
     else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()-7);
     else this._calDate.setDate(this._calDate.getDate()-1);
     this.render();
   },
   next() {
-    if(this._view==='month'||this._view==='year') this._calDate.setMonth(this._calDate.getMonth()+1);
+    if(this._view==='year') { this._yearDate.setFullYear(this._yearDate.getFullYear()+1); this.render(); return; }
+    if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()+1);
     else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()+7);
     else this._calDate.setDate(this._calDate.getDate()+1);
     this.render();
@@ -713,11 +715,15 @@ const CalendarController = {
   _renderMonth(c,n) {
     if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
     const y=this._calDate.getFullYear(), m=this._calDate.getMonth();
-    // Big hero title: Месяц Год (capitalize)
     n.textContent=this._calDate.toLocaleString('ru-RU',{month:'long',year:'numeric'});
     const first=new Date(y,m,1).getDay(), offset=(first===0)?6:first-1, dim=new Date(y,m+1,0).getDate();
     const goals=StateManager.get('goals'), tasksByDay={};
     goals.forEach(g=>{ if(!g.scheduledAt||g.done) return; const d=new Date(g.scheduledAt); if(d.getFullYear()===y&&d.getMonth()===m){ const day=d.getDate(); if(!tasksByDay[day]) tasksByDay[day]=[]; tasksByDay[day].push(g); } });
+    // Sort each day: high priority first, then by time
+    Object.values(tasksByDay).forEach(arr=>arr.sort((a,b)=>{
+      const p={high:0,mid:1,low:2}; const pa=(p[a.priority]||1), pb=(p[b.priority]||1);
+      if(pa!==pb) return pa-pb; return (a.scheduledAt||0)-(b.scheduledAt||0);
+    }));
     c.innerHTML=''; const grid=document.createElement('div'); grid.className='cal-month-grid';
     ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(d=>{ const el=document.createElement('div'); el.className='cal-weekday'; el.textContent=d; grid.appendChild(el); });
     for(let i=0;i<offset;i++){const el=document.createElement('div'); el.className='cal-day empty'; grid.appendChild(el);}
@@ -728,17 +734,22 @@ const CalendarController = {
       const isSelected=dk===this._selectedDateKey;
       const cell=document.createElement('div');
       cell.className=`cal-day${isToday?' today':''}${isSelected?' selected':''}`;
-      cell.innerHTML=`<div class="cal-day-num">${d}</div>`;
+      // Day number
+      const numEl=document.createElement('div'); numEl.className='cal-day-num'; numEl.textContent=d; cell.appendChild(numEl);
+      // Task chips (max 3)
       const dayTasks=tasksByDay[d]||[];
-      if(dayTasks.length>0){
-        const dotsWrap=document.createElement('div'); dotsWrap.className='cal-dots';
-        dayTasks.slice(0,4).forEach(g=>{
-          const dot=document.createElement('div');
-          dot.className=this._catDotClass(g);
-          dotsWrap.appendChild(dot);
-        });
-        cell.appendChild(dotsWrap);
-        if(dayTasks.length>4){const more=document.createElement('div'); more.className='cal-more'; more.textContent=`+${dayTasks.length-4}`; cell.appendChild(more);}
+      const MAX_CHIPS=3;
+      dayTasks.slice(0,MAX_CHIPS).forEach(g=>{
+        const color=catColor(g);
+        const chip=document.createElement('div');
+        chip.className='cal-month-task-chip';
+        chip.style.cssText=`background:${color}22;border-left:2px solid ${color};color:var(--lbl1);`;
+        chip.innerHTML=`<span class="cal-chip-dot" style="background:${color}"></span><span class="cal-chip-title">${esc(g.title)}</span>`;
+        cell.appendChild(chip);
+      });
+      if(dayTasks.length>MAX_CHIPS){
+        const more=document.createElement('div'); more.className='cal-month-more';
+        more.textContent=`+ ещё ${dayTasks.length-MAX_CHIPS}`; cell.appendChild(more);
       }
       cell.addEventListener('click',()=>{ this._navigateToDay(dk); });
       grid.appendChild(cell);
@@ -748,38 +759,67 @@ const CalendarController = {
 
   _renderYear(c,n) {
     if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
-    const y=this._calDate.getFullYear();
+    const y=this._yearDate.getFullYear();
+    // Update nav title with year
     n.textContent=String(y);
     const goals=StateManager.get('goals');
     const tasksByDate={};
-    goals.forEach(g=>{ if(!g.scheduledAt||g.done) return; const dk=dateKey(g.scheduledAt); tasksByDate[dk]=(tasksByDate[dk]||0)+1; });
+    goals.forEach(g=>{ if(!g.scheduledAt||g.done) return; const dk=dateKey(g.scheduledAt); if(!tasksByDate[dk]) tasksByDate[dk]=[]; tasksByDate[dk].push(g); });
     c.innerHTML='';
-    const grid=document.createElement('div'); grid.className='cal-year-grid';
+    const wrapper=document.createElement('div'); wrapper.className='cal-year-wrapper';
     const today=new Date();
+    const MONTH_NAMES_RU=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+    const WDAY_SHORT=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
     for(let mo=0;mo<12;mo++){
-      const card=document.createElement('div'); card.className='cal-year-month';
-      const mName=new Date(y,mo,1).toLocaleString('ru-RU',{month:'long'});
-      const mLabel=document.createElement('div'); mLabel.className='cal-year-month-name'; mLabel.textContent=mName; card.appendChild(mLabel);
+      const card=document.createElement('div'); card.className='cal-year-month-card';
+      // Month name (clickable -> switches to month view)
+      const mLabel=document.createElement('div'); mLabel.className='cal-year-month-name';
+      mLabel.textContent=MONTH_NAMES_RU[mo].charAt(0).toUpperCase()+MONTH_NAMES_RU[mo].slice(1);
+      mLabel.addEventListener('click',(e)=>{ e.stopPropagation(); this._calDate=new Date(y,mo,1); this.setView('month'); });
+      card.appendChild(mLabel);
+      // Weekday header row
+      const wdayRow=document.createElement('div'); wdayRow.className='cal-year-wday-row';
+      WDAY_SHORT.forEach((label,wi)=>{
+        const wh=document.createElement('div');
+        wh.className='cal-year-wday-hdr'+(wi>=5?' weekend':'');
+        wh.textContent=label; wdayRow.appendChild(wh);
+      }); card.appendChild(wdayRow);
+      // Day grid
       const miniGrid=document.createElement('div'); miniGrid.className='cal-year-mini-grid';
-      // weekday headers (tiny)
-      ['П','В','С','Ч','П','С','В'].forEach(d=>{ const h=document.createElement('div'); h.style.cssText='font-size:6px;text-align:center;color:var(--lbl4);font-weight:700;'; h.textContent=d; miniGrid.appendChild(h); });
       const firstDay=new Date(y,mo,1).getDay(), off=(firstDay===0)?6:firstDay-1;
       const dim=new Date(y,mo+1,0).getDate();
-      for(let i=0;i<off;i++){const e=document.createElement('div'); e.className='cal-year-mini-day empty'; miniGrid.appendChild(e);}
+      // Empty cells before first day
+      for(let i=0;i<off;i++){ const e=document.createElement('div'); e.className='cal-year-mini-day'; miniGrid.appendChild(e); }
       for(let d=1;d<=dim;d++){
         const dk=`${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         const isTod=d===today.getDate()&&mo===today.getMonth()&&y===today.getFullYear();
-        const hasTasks=!!tasksByDate[dk];
+        const hasTasks=!!(tasksByDate[dk]&&tasksByDate[dk].length>0);
+        // Determine column (0=Mon..6=Sun), weekends are col 5 and 6 (Sat, Sun)
+        const colIdx=(off+d-1)%7; // 0-indexed from Пн
+        const isWeekend=(colIdx===5||colIdx===6);
         const dc=document.createElement('div');
-        dc.className=`cal-year-mini-day${isTod?' today':hasTasks?' has-tasks':''}${this._selectedDateKey===dk?' today':''}`;
-        dc.textContent=d;
+        dc.className='cal-year-mini-day'+(isTod?' today':'')+(isWeekend&&!isTod?' weekend':'');
+        const numSpan=document.createElement('span'); numSpan.className='cal-year-day-num'; numSpan.textContent=d;
+        dc.appendChild(numSpan);
+        if(hasTasks&&!isTod){
+          // Colored dot from first task's category
+          const dotColor=catColor(tasksByDate[dk][0]);
+          const dot=document.createElement('span'); dot.className='cal-year-task-dot';
+          dot.style.background=dotColor; dc.appendChild(dot);
+        }
+        // Click on day -> go to tasks view for that day
+        dc.addEventListener('click',(e)=>{
+          e.stopPropagation();
+          const [cy,cm,cd]=dk.split('-').map(Number);
+          const label=new Date(cy,cm-1,cd).toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'short'});
+          ViewRouter._switchToTasksDay(dk,label);
+        });
         miniGrid.appendChild(dc);
       }
       card.appendChild(miniGrid);
-      card.addEventListener('click',()=>{ this._calDate=new Date(y,mo,1); this.setView('month'); });
-      grid.appendChild(card);
+      wrapper.appendChild(card);
     }
-    c.appendChild(grid);
+    c.appendChild(wrapper);
   },
   _renderTimeline(c,n,days) {
     const HOUR_H=56, TOTAL_H=24*HOUR_H, TIME_W=44;
@@ -830,9 +870,11 @@ const CalendarController = {
         const st=new Date(g.scheduledAt);
         const topPx=((st.getHours()*60+st.getMinutes())/60)*HOUR_H;
         const dm=g.duration_min||30;
-        const hPx=Math.max(24,(dm/60)*HOUR_H-2);
+        const hPx=Math.max(20,(dm/60)*HOUR_H-2);
         const color=catColor(g);
-        const block=document.createElement('div'); block.className='tl-task';
+        const isShort=dm<=30;
+        const block=document.createElement('div');
+        block.className='tl-task'+(isShort?' short-event':'');
         block.style.cssText=`top:${topPx}px;height:${hPx}px;border-left-color:${color};background:${color}28;`;
         const endTs=g.scheduledAt+dm*60000;
         block.innerHTML=`<span class="tl-task-title">${esc(g.title)}</span><span class="tl-task-time">${pad(st.getHours())}:${pad(st.getMinutes())} – ${pad(new Date(endTs).getHours())}:${pad(new Date(endTs).getMinutes())}</span>`;
