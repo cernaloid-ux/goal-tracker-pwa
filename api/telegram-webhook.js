@@ -1,7 +1,8 @@
 /* ══════════════════════════════════════════════════════════════
    NOVA OS — api/telegram-webhook.js
-   Telegram Webhook → Vercel KV (контекст) → Gemini 1.5 Flash → ответ
-   Парсит скрытые команды вида [SET_WATCH: 70%] и пишет их в KV.
+   Telegram Webhook → Vercel KV (контекст) → Gemini → ответ
+   Парсит скрытые команды вида [SET_WATCH: 70%], [ADD_TASK: ... | HH:MM]
+   и пишет их в KV (nova-база и/или lifeData-база задач).
    ══════════════════════════════════════════════════════════════ */
 
 import { kv } from '@vercel/kv';
@@ -14,12 +15,13 @@ const TG_CHAT_ID     = process.env.TG_CHAT_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const TG_API = `https://api.telegram.org/bot${TG_BOT_TOKEN}`;
-const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 const LIFE_KV_KEY = 'цель:master_admin_id';
 const NOVA_KV_KEY = 'цель:master_admin_id:nova';
 
 const NOVA_HISTORY_LIMIT = 12; // сколько последних реплик держим в памяти
+const TYPING_INTERVAL_MS = 4000; // Telegram сбрасывает "печатает..." через ~5 сек — обновляем каждые 4
 
 /* ─────────────────────────────────────────────────────────────
    СИСТЕМНЫЙ ПРОМПТ НОВЫ
@@ -48,11 +50,12 @@ const COMMAND_SYNTAX_HINT = `
 [SET_MOOD: текст]       — текущее настроение/состояние Лёши
 [SAVE_NOTE: текст]      — сохранить важную заметку в долгую память
 [ADD_REMINDER: текст]   — сохранить напоминание
+[ADD_TASK: Название | HH:MM] — создать новую задачу в Life OS. Время после "|" необязательно (если не указано — ставится текущее время). Пример: [ADD_TASK: Позвонить Станиславу | 18:30] или просто [ADD_TASK: Купить воду]
 
-Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке.`;
+Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке. Если пользователь просит добавить задачу — обязательно используй [ADD_TASK: ...], а не просто пообещай на словах.`;
 
 /* ─────────────────────────────────────────────────────────────
-   ДЕФОЛТНОЕ СОСТОЯНИЕ NOVA
+   ДЕФОЛТНОЕ СОСТОЯНИЕ NOVA / LIFE
 ───────────────────────────────────────────────────────────── */
 function getDefaultNovaState() {
   return {
@@ -78,6 +81,16 @@ function normalizeNovaState(raw) {
   };
 }
 
+// lifeData — та же база, что пишет фронтенд Life OS через api/sync.js
+function ensureLifeData(raw) {
+  if (raw && typeof raw === 'object') {
+    if (!Array.isArray(raw.goals)) raw.goals = [];
+    if (!Array.isArray(raw.history)) raw.history = [];
+    return raw;
+  }
+  return { goals: [], history: [], gems: 0, streak: { days: 0, lastDate: '', doneToday: false }, macroGoals: [] };
+}
+
 /* ─────────────────────────────────────────────────────────────
    ВРЕМЯ / ДАТА (Кишинёв)
 ───────────────────────────────────────────────────────────── */
@@ -93,6 +106,30 @@ function nowInChisinau() {
 function todayKeyChisinau() {
   const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau' }); // YYYY-MM-DD
   return fmt.format(new Date());
+}
+
+// смещение Кишинёва относительно UTC в минутах (учитывает DST)
+function getChisinauOffsetMinutes(base = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Chisinau', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(base).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const asUTC = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour) === 24 ? 0 : Number(parts.hour), Number(parts.minute), Number(parts.second)
+  );
+  return (asUTC - base.getTime()) / 60000;
+}
+
+// переводит "HH:MM" (кишинёвское время) в epoch ms для сегодняшнего дня
+function chisinauTimeToEpoch(hhmm, dayBase = new Date()) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  const offsetMin = getChisinauOffsetMinutes(dayBase);
+  const dParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Chisinau', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(dayBase).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const utcMsIfNoOffset = Date.UTC(Number(dParts.year), Number(dParts.month) - 1, Number(dParts.day), h || 0, m || 0, 0);
+  return utcMsIfNoOffset - offsetMin * 60000;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -186,7 +223,7 @@ async function askGemini(userText, contextText, history) {
   contents.push({ role: 'user', parts: [{ text: userText }] });
 
   const body = {
-    system_instruction: { parts: [{ text: systemInstruction }] },
+    systemInstruction: { parts: [{ text: systemInstruction }] },
     contents,
     generationConfig: {
       temperature: 0.9,
@@ -213,6 +250,8 @@ async function askGemini(userText, contextText, history) {
 
 /* ─────────────────────────────────────────────────────────────
    ПАРСИНГ СКРЫТЫХ КОМАНД
+   processCommands теперь мутирует ДВЕ базы — nova и lifeData (для ADD_TASK) —
+   и возвращает обе, с отдельными флагами изменений.
 ───────────────────────────────────────────────────────────── */
 const COMMAND_RE = /\[([A-Z_]+):\s*([^\]]+)\]/g;
 
@@ -222,43 +261,69 @@ function parseBatteryValue(raw) {
   return Math.max(0, Math.min(100, n));
 }
 
-function processCommands(rawReply, nova) {
-  let changed = false;
-  const updated = JSON.parse(JSON.stringify(nova)); // deep clone, чтоб не мутировать вслепую
+function processCommands(rawReply, nova, lifeData) {
+  let novaChanged = false;
+  let lifeChanged = false;
+  const updatedNova = JSON.parse(JSON.stringify(nova));           // deep clone, чтоб не мутировать вслепую
+  const updatedLifeData = JSON.parse(JSON.stringify(lifeData));
+  if (!Array.isArray(updatedLifeData.goals)) updatedLifeData.goals = [];
 
   const cleanText = rawReply.replace(COMMAND_RE, (match, cmd, valueRaw) => {
     const value = valueRaw.trim();
     switch (cmd) {
       case 'SET_WATCH': {
         const v = parseBatteryValue(value);
-        if (v !== null) { updated.gadgets.watchBattery = v; changed = true; }
+        if (v !== null) { updatedNova.gadgets.watchBattery = v; novaChanged = true; }
         break;
       }
       case 'SET_AIRPODS': {
         const v = parseBatteryValue(value);
-        if (v !== null) { updated.gadgets.airpodsBattery = v; changed = true; }
+        if (v !== null) { updatedNova.gadgets.airpodsBattery = v; novaChanged = true; }
         break;
       }
       case 'SET_POWERBANK': {
         const v = parseBatteryValue(value);
-        if (v !== null) { updated.gadgets.powerbankBattery = v; changed = true; }
+        if (v !== null) { updatedNova.gadgets.powerbankBattery = v; novaChanged = true; }
         break;
       }
       case 'LOG_SPORT': {
         const dayKey = /сегодня/i.test(value) ? todayKeyChisinau() : value;
-        if (!updated.sportLog.includes(dayKey)) { updated.sportLog.push(dayKey); updated.sportLog.sort(); changed = true; }
+        if (!updatedNova.sportLog.includes(dayKey)) { updatedNova.sportLog.push(dayKey); updatedNova.sportLog.sort(); novaChanged = true; }
         break;
       }
       case 'SET_MOOD': {
-        updated.mood = value; changed = true;
+        updatedNova.mood = value; novaChanged = true;
         break;
       }
       case 'SAVE_NOTE': {
-        updated.notes.push({ text: value, ts: Date.now() }); changed = true;
+        updatedNova.notes.push({ text: value, ts: Date.now() }); novaChanged = true;
         break;
       }
       case 'ADD_REMINDER': {
-        updated.reminders.push({ text: value, ts: Date.now() }); changed = true;
+        updatedNova.reminders.push({ text: value, ts: Date.now() }); novaChanged = true;
+        break;
+      }
+      case 'ADD_TASK': {
+        // формат: "Название" или "Название | HH:MM"
+        const parts = value.split('|').map(s => s.trim()).filter(Boolean);
+        const title = (parts[0] || 'Новая задача').slice(0, 500);
+        const timeStr = parts[1] || '';
+
+        let scheduledAt = Date.now(); // если время не указано — ставим текущее
+        if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
+          scheduledAt = chisinauTimeToEpoch(timeStr, new Date());
+        }
+
+        const newTask = {
+          id: 'nova_' + Date.now(),
+          title,
+          cat: 'Бизнес',
+          priority: 'mid',
+          done: false,
+          scheduledAt,
+        };
+        updatedLifeData.goals.push(newTask);
+        lifeChanged = true;
         break;
       }
       default:
@@ -270,8 +335,10 @@ function processCommands(rawReply, nova) {
 
   return {
     cleanText: cleanText.replace(/\n{3,}/g, '\n\n').trim(),
-    updatedNova: updated,
-    changed,
+    updatedNova,
+    novaChanged,
+    updatedLifeData,
+    lifeChanged,
   };
 }
 
@@ -344,9 +411,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // показываем "печатает..." пока думаем
-    sendTypingAction(chatId);
-
     // /reset — сброс памяти Nova (не трогает Life OS базу)
     if (userText === '/reset') {
       await kv.set(NOVA_KV_KEY, getDefaultNovaState());
@@ -361,16 +425,26 @@ export default async function handler(req, res) {
     ]);
 
     const nova = normalizeNovaState(novaDataRaw);
-    const contextText = buildContext(lifeDataRaw, nova);
+    const lifeData = ensureLifeData(lifeDataRaw);
+    const contextText = buildContext(lifeData, nova);
 
     // короткая история для связности диалога
     const historyForPrompt = nova.history.slice(-NOVA_HISTORY_LIMIT);
 
-    // зовём Gemini
-    const rawReply = await askGemini(userText, contextText, historyForPrompt);
+    // зовём Gemini, пока держим "печатает..." живым каждые 4 сек
+    // (Telegram сам гасит статус typing примерно через 5 сек)
+    let rawReply;
+    let typingTimer = null;
+    try {
+      sendTypingAction(chatId); // сразу же, не дожидаясь первого тика интервала
+      typingTimer = setInterval(() => sendTypingAction(chatId), TYPING_INTERVAL_MS);
+      rawReply = await askGemini(userText, contextText, historyForPrompt);
+    } finally {
+      if (typingTimer) clearInterval(typingTimer);
+    }
 
-    // парсим и вырезаем скрытые команды
-    const { cleanText, updatedNova, changed } = processCommands(rawReply, nova);
+    // парсим и вырезаем скрытые команды (может задеть и nova, и lifeData)
+    const { cleanText, updatedNova, novaChanged, updatedLifeData, lifeChanged } = processCommands(rawReply, nova, lifeData);
 
     // обновляем историю диалога
     updatedNova.history = [
@@ -381,7 +455,12 @@ export default async function handler(req, res) {
 
     // сохраняем базу Nova (историю пишем всегда, остальное — если реально поменялось)
     await kv.set(NOVA_KV_KEY, updatedNova);
-    void changed; // (флаг оставлен для возможного логирования/аналитики позже)
+    void novaChanged; // (флаг оставлен для возможного логирования/аналитики позже)
+
+    // если Нова добавила задачу(и) — сохраняем lifeData обратно, чтобы фронтенд Life OS её увидел
+    if (lifeChanged) {
+      await kv.set(LIFE_KV_KEY, updatedLifeData);
+    }
 
     // шлём ответ
     await sendTelegramMessage(chatId, cleanText || 'Хм, не смогла сформулировать ответ. Повтори, Босс.');

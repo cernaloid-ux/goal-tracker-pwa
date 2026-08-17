@@ -1,15 +1,20 @@
 /**
- * api/sync.js — Vercel KV 2-way Cloud Sync  v2.0
- * GET  /api/sync?userId=XXX  → returns stored state
+ * api/sync.js — Vercel KV 2-way Cloud Sync  v2.1
+ * GET  /api/sync?userId=XXX  → returns stored state (userId больше не влияет на ключ)
  * POST /api/sync             → saves merged state
+ *
+ * ВАЖНО: с v2.1 базовый ключ KV жёстко зафиксирован на 'цель:master_admin_id'.
+ * Это связывает фронтенд Life OS и Telegram-бота Nova — они читают/пишут одну и ту же базу,
+ * независимо от того, какой userId шлёт фронтенд (гостевой uid, master_admin_id и т.п.).
  *
  * Env vars: KV_REST_API_URL, KV_REST_API_TOKEN
  */
 import { createClient } from '@vercel/kv';
 
-const MAX_GOALS   = 200;
-const MAX_HISTORY = 200;
-const TTL_SECONDS = 60 * 60 * 24 * 90; // 90 days
+const MAX_GOALS     = 200;
+const MAX_HISTORY   = 200;
+const TTL_SECONDS   = 60 * 60 * 24 * 90; // 90 days
+const MASTER_KV_KEY = 'цель:master_admin_id'; // единственный ключ, который вообще существует
 
 function getKV() {
   return createClient({
@@ -23,7 +28,7 @@ function sanitizeState(body) {
   const safeNum=(v,def=0)=>{const n=parseInt(v,10);return isNaN(n)?def:n;};
   const safeObj=(v,def={})=>(v&&typeof v==='object'&&!Array.isArray(v))?v:def;
   return {
-    userId:    String(body.userId||'').slice(0,64),
+    userId:    'master_admin_id', // жёстко зафиксирован — значение из body игнорируется намеренно
     gems:      safeNum(body.gems,0),
     streak:    safeObj(body.streak,{days:0,lastDate:'',doneToday:false}),
     goals: safeArr(body.goals,MAX_GOALS).map(g=>({
@@ -80,19 +85,23 @@ export default async function handler(req,res) {
   const kv=getKV();
 
   if(req.method==='GET'){
-    const userId=String(req.query?.userId||'').trim();
-    if(!userId||userId.length<3) return res.status(400).json({error:'Missing userId'});
-    try { const data=await kv.get('state:'+userId); if(!data) return res.status(404).json({error:'No state found'}); return res.status(200).json(data); }
+    // userId из query больше не участвует в выборе ключа — оставлен только для обратной
+    // совместимости со старым фронтендом (SyncManager.getUid() всё ещё шлёт его в query).
+    try {
+      const data=await kv.get(MASTER_KV_KEY);
+      if(!data) return res.status(404).json({error:'No state found'});
+      return res.status(200).json(data);
+    }
     catch(e){console.error('[KV GET]',e); return res.status(500).json({error:'KV read error',detail:e.message});}
   }
 
   if(req.method==='POST'){
     let body; try{body=typeof req.body==='string'?JSON.parse(req.body):req.body;}catch(e){return res.status(400).json({error:'Invalid JSON'});}
-    const userId=String(body?.userId||'').trim();
-    if(!userId||userId.length<3) return res.status(400).json({error:'Missing or invalid userId'});
+    if(!body||typeof body!=='object') return res.status(400).json({error:'Invalid body'});
+    // userId из body игнорируется для выбора ключа — пишем всегда в MASTER_KV_KEY.
     try {
-      const sanitized=sanitizeState({...body,userId});
-      const existing=await kv.get('state:'+userId);
+      const sanitized=sanitizeState(body);
+      const existing=await kv.get(MASTER_KV_KEY);
       if(existing&&typeof existing==='object'){
         if((existing.gems||0)>sanitized.gems) sanitized.gems=existing.gems;
         const histIds=new Set(sanitized.history.map(h=>h.id));
@@ -104,7 +113,7 @@ export default async function handler(req,res) {
         if(sanitized.goals.length>MAX_GOALS) sanitized.goals.splice(MAX_GOALS);
         if((existing.streak?.days||0)>(sanitized.streak?.days||0)) sanitized.streak=existing.streak;
       }
-      await kv.set('state:'+userId,sanitized,{ex:TTL_SECONDS});
+      await kv.set(MASTER_KV_KEY,sanitized,{ex:TTL_SECONDS});
       notifyTelegram(sanitized).catch(()=>{});
       return res.status(200).json({ok:true,updatedAt:sanitized.updatedAt,gems:sanitized.gems,goalsCount:sanitized.goals.length});
     } catch(e){console.error('[KV POST]',e); return res.status(500).json({error:'KV write error',detail:e.message});}

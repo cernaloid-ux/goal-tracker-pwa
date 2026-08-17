@@ -15,7 +15,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CRON_SECRET    = process.env.CRON_SECRET;
 
 const TG_API = `https://api.telegram.org/bot${TG_BOT_TOKEN}`;
-const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 const LIFE_KV_KEY = 'цель:master_admin_id';
 const NOVA_KV_KEY = 'цель:master_admin_id:nova';
@@ -166,7 +166,7 @@ async function askGemini(promptText, contextText) {
   const systemInstruction = `${NOVA_BASE_PROMPT}\n\n=== КОНТЕКСТ ДЛЯ ЭТОГО ПУША ===\n${contextText}\n\n=== ФОРМАТ СКРЫТЫХ КОМАНД ===\n${COMMAND_SYNTAX_HINT}`;
 
   const body = {
-    system_instruction: { parts: [{ text: systemInstruction }] },
+    systemInstruction: { parts: [{ text: systemInstruction }] },
     contents: [{ role: 'user', parts: [{ text: promptText }] }],
     generationConfig: { temperature: 0.9, maxOutputTokens: 600 },
   };
