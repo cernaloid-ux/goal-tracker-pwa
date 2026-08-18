@@ -353,8 +353,10 @@ const TaskController = {
   },
 
   render() {
-    const listEl = document.getElementById('task-list');
-    if (!listEl) return;
+    // ── Nova DOM: рендерим в #subgoals (Nova) если он есть, иначе в #task-list (legacy) ──
+    const novaSubgoals = document.getElementById('subgoals');
+    const legacyList   = document.getElementById('task-list');
+
     const st = StateManager.get();
     const { goals, taskFilter, taskTagFilter, searchQuery, sortMode } = st;
 
@@ -383,57 +385,175 @@ const TaskController = {
       const p={high:0,mid:1,low:2}; return (p[a.priority]||1)-(p[b.priority]||1);
     });
 
-    // Subtitle
+    // ── Обновляем заголовок папки (Nova folder-header) ──
+    const folderPct   = document.getElementById('folder-pct');
+    const folderCount = document.getElementById('folder-count');
+    const folderTotal = document.getElementById('folder-total');
+    const folderBar   = document.getElementById('folder-bar');
+    if (folderTotal) folderTotal.textContent = list.length;
+    if (folderPct || folderCount || folderBar) {
+      const doneCount = goals.filter(g=>g.done).length;
+      const totalCount = goals.length;
+      const pct = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
+      if (folderPct)   folderPct.textContent   = pct + '%';
+      if (folderCount) folderCount.textContent = doneCount + '/' + totalCount + ' complete';
+      if (folderBar)   folderBar.style.width    = pct + '%';
+    }
+
+    // ── Subtitle (legacy) ──
     const sub = document.getElementById('tasks-view-subtitle');
     if (sub) {
       const todayDone = st.history.filter(h=>dateKey(h.completedAt)===tKey).length;
       const pendingToday = goals.filter(g=>!g.done&&g.scheduledAt&&dateKey(g.scheduledAt)===tKey).length;
       sub.textContent = `${todayDone} выполнено · ${pendingToday} на сегодня`;
     }
-    // Sunday banner
     document.getElementById('sunday-banner')?.classList.toggle('hidden', new Date().getDay()!==0);
 
-    if (!list.length) {
-      listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-title">${taskFilter==='done'?'Нет выполненных задач':'Задач нет'}</div><div class="empty-sub">${taskFilter==='done'?'':'Нажми + чтобы добавить'}</div></div>`;
+    // ── Nova layout: группировка по категориям (подцели) ──
+    if (novaSubgoals) {
+      novaSubgoals.innerHTML = '';
+      if (!list.length) {
+        novaSubgoals.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-16 text-center">
+            <span class="text-4xl mb-4">${taskFilter==='done' ? '🏆' : '✨'}</span>
+            <p class="font-semibold text-foreground">${taskFilter==='done' ? 'Нет выполненных задач' : 'Задач нет'}</p>
+            <p class="text-sm text-muted-foreground mt-1">${taskFilter==='done' ? '' : 'Нажми «+ New Task» чтобы добавить'}</p>
+          </div>`;
+        return;
+      }
+
+      // Группируем по категории → каждая становится «sub-goal»
+      const catGroups = {};
+      list.forEach(g => {
+        const key = g.cat || 'business';
+        if (!catGroups[key]) catGroups[key] = [];
+        catGroups[key].push(g);
+      });
+
+      Object.entries(catGroups).forEach(([catKey, tasks]) => {
+        const cat = CATS[catKey] || CATS.business;
+        const sgEl = document.createElement('div');
+        sgEl.className = 'glass-soft overflow-hidden rounded-2xl';
+        sgEl.dataset.subgoal = catKey;
+        const doneCnt = tasks.filter(t => t.done).length;
+        sgEl.innerHTML = `<button type="button" class="subgoal-toggle glass-hover flex w-full items-center gap-3 px-4 py-3.5 text-left"><i data-lucide="chevron-right" class="chevron h-4 w-4 shrink-0 rotate-90 text-primary"></i><span class="font-medium">${cat.emoji} ${cat.label}</span><span class="sg-count ml-auto text-xs text-muted-foreground">${doneCnt}/${tasks.length}</span></button><div class="collapsible open"><div class="collapsible-inner"><ul class="sg-task-list space-y-1.5 px-3 pb-3 pt-1"></ul></div></div>`;
+        const ul = sgEl.querySelector('.sg-task-list');
+        tasks.forEach(g => ul.appendChild(this._buildCard(g)));
+        sgEl.querySelector('.subgoal-toggle').addEventListener('click', (e) => {
+          const open = sgEl.querySelector('.collapsible').classList.toggle('open');
+          sgEl.querySelector('.chevron').classList.toggle('rotate-90', open);
+        });
+        novaSubgoals.appendChild(sgEl);
+      });
+      if (window.lucide) window.lucide.createIcons();
       return;
     }
-    listEl.innerHTML='';
-    list.forEach(g=>listEl.appendChild(this._buildCard(g)));
-  },
 
-  // Рендер задач на конкретный день (из клика по календарю)
-  renderForDay(dayKey, dateLabel) {
-    const listEl = document.getElementById('task-list');
-    if (!listEl) return;
-    const goals = StateManager.get('goals') || [];
-
-    // Фильтруем задачи на нужный день
-    let list = goals.filter(g => !g.done && g.scheduledAt && dateKey(g.scheduledAt) === dayKey);
-
-    list.sort((a,b) => {
-      const aT=a.scheduledAt||Infinity, bT=b.scheduledAt||Infinity;
-      if(aT!==bT) return aT-bT;
-      const p={high:0,mid:1,low:2}; return (p[a.priority]||1)-(p[b.priority]||1);
-    });
-
-    // Subtitle: количество задач на день
-    const sub = document.getElementById('tasks-view-subtitle');
-    if (sub) {
-      const done = goals.filter(g => g.done && g.scheduledAt && dateKey(g.scheduledAt) === dayKey).length;
-      sub.textContent = `${list.length} задач · ${done} выполнено`;
-    }
-    // Убираем воскресный баннер
-    document.getElementById('sunday-banner')?.classList.add('hidden');
-
+    // ── Legacy fallback (#task-list) ──
+    if (!legacyList) return;
     if (!list.length) {
-      listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">Задач на этот день нет</div><div class="empty-sub">Нажми + чтобы добавить</div></div>`;
+      legacyList.innerHTML=`<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-title">${taskFilter==='done'?'Нет выполненных задач':'Задач нет'}</div><div class="empty-sub">${taskFilter==='done'?'':'Нажми + чтобы добавить'}</div></div>`;
       return;
     }
-    listEl.innerHTML='';
-    list.forEach(g=>listEl.appendChild(this._buildCard(g)));
+    legacyList.innerHTML='';
+    list.forEach(g=>legacyList.appendChild(this._buildCard(g)));
   },
 
   _buildCard(g) {
+    // ── Nova DOM: если есть #subgoals — генерируем Nova-кнопку задачи ──
+    const isNova = !!document.getElementById('subgoals');
+
+    if (isNova) {
+      const cat   = CATS[g.cat] || CATS.business;
+
+      // Стили категорий для бейджа
+      const catBadgeStyle = (() => {
+        switch (g.cat) {
+          case 'life':     return 'bg-emerald-400/10 text-emerald-300';
+          case 'health':   return 'bg-sky-400/10 text-sky-300';
+          case 'study':    return 'bg-amber-400/10 text-amber-300';
+          case 'creative': return 'bg-purple-400/10 text-purple-300';
+          default:         return 'bg-red-soft text-primary';
+        }
+      })();
+
+      const hasTime   = !!g.scheduledAt;
+      const isOverdue = hasTime && g.scheduledAt < Date.now() && !g.done;
+      const subDone   = (g.subtasks || []).filter(s => s.done).length;
+      const subTotal  = (g.subtasks || []).length;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left${g.done ? ' is-done' : ''}`;
+      btn.dataset.id = g.id;
+
+      btn.innerHTML = `
+        <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-300
+          ${g.done ? 'border-primary bg-primary red-glow' : 'border-white/20 bg-white/[0.03]'}">
+          <i data-lucide="check" class="check-icon h-3.5 w-3.5 transition-all duration-300
+            ${g.done ? 'text-primary-foreground opacity-100 scale-100' : 'text-primary-foreground opacity-0 scale-50'}"></i>
+        </span>
+        <span class="task-label flex-1 text-sm transition-all duration-300
+          ${g.done ? 'line-through text-muted-foreground' : 'text-foreground'}">${esc(g.title)}</span>
+        ${hasTime ? `<span class="text-[10px] ${isOverdue ? 'text-primary' : 'text-muted-foreground'}">${isOverdue ? '⚠ ' : ''}${fmtTime(g.scheduledAt)}</span>` : ''}
+        ${subTotal > 0 ? `<span class="text-[10px] text-muted-foreground">${subDone}/${subTotal}</span>` : ''}
+        <span class="flex items-center gap-1 rounded-full ${catBadgeStyle} px-2 py-0.5 text-[10px] font-medium">
+          <i data-lucide="flag" class="h-2.5 w-2.5"></i>${cat.label}
+        </span>`;
+
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const checkbox = btn.querySelector('.checkbox');
+        const icon     = btn.querySelector('.check-icon');
+        const label    = btn.querySelector('.task-label');
+        const isDone   = btn.classList.toggle('is-done');
+
+        checkbox.classList.toggle('border-primary',   isDone);
+        checkbox.classList.toggle('bg-primary',       isDone);
+        checkbox.classList.toggle('red-glow',         isDone);
+        checkbox.classList.toggle('border-white/20',  !isDone);
+        checkbox.classList.toggle('bg-white/[0.03]',  !isDone);
+        icon.classList.toggle('opacity-100',  isDone);
+        icon.classList.toggle('scale-100',    isDone);
+        icon.classList.toggle('opacity-0',    !isDone);
+        icon.classList.toggle('scale-50',     !isDone);
+        label.classList.toggle('line-through',          isDone);
+        label.classList.toggle('text-muted-foreground', isDone);
+        label.classList.toggle('text-foreground',       !isDone);
+
+        // Персистим через StateManager
+        if (isDone) {
+          this.complete(g.id);
+        } else {
+          const goals = StateManager.get('goals');
+          const task  = goals.find(x => x.id === g.id);
+          if (task) { task.done = false; task.startTime = null; task.paused = false; }
+          StateManager.patch({ goals });
+        }
+
+        // Обновляем счётчик sg-count
+        const sgWrap = btn.closest('[data-subgoal]');
+        if (sgWrap) {
+          const items     = Array.from(sgWrap.querySelectorAll('.task-item'));
+          const sgDone    = items.filter(t => t.classList.contains('is-done')).length;
+          const sgCountEl = sgWrap.querySelector('.sg-count');
+          if (sgCountEl) sgCountEl.textContent = sgDone + '/' + items.length;
+        }
+
+        // Обновляем прогресс-бар папки
+        const allItems  = Array.from(document.querySelectorAll('#subgoals .task-item'));
+        const totalAll  = allItems.length;
+        const doneAll   = allItems.filter(t => t.classList.contains('is-done')).length;
+        const folderPct = totalAll > 0 ? Math.round(doneAll / totalAll * 100) : 0;
+        const fpEl = document.getElementById('folder-pct');   if (fpEl)  fpEl.textContent  = folderPct + '%';
+        const fcEl = document.getElementById('folder-count'); if (fcEl)  fcEl.textContent  = doneAll + '/' + totalAll + ' complete';
+        const fbEl = document.getElementById('folder-bar');   if (fbEl)  fbEl.style.width   = folderPct + '%';
+      });
+
+      return btn;
+    }
+
+    // ── Legacy DOM (#task-list) ──
     const card = document.createElement('div');
     const color=catColor(g), cat=CATS[g.cat]||CATS.business;
     card.className=`task-card${g.done?' done':''}`;
@@ -1045,6 +1165,42 @@ const TimerController = {
   },
 
   tick() {
+    // ── Nova SVG ring (ring-progress) ──
+    const novaRing    = document.getElementById('ring-progress');
+    const novaMm      = document.getElementById('timer-mm');
+    const novaSs      = document.getElementById('timer-ss');
+    const novaStatus  = document.getElementById('timer-status-label');
+    const novaChip    = document.getElementById('timer-status');
+    const novaDot     = document.getElementById('timer-dot');
+    const novaGlow    = document.getElementById('timer-glow');
+    const novaPlayIcon  = document.getElementById('play-icon');
+    const novaPlayLabel = document.getElementById('play-label');
+
+    if (novaRing && novaMm && novaSs) {
+      // Nova таймер — управляется через _nova* state (см. initNovaNav)
+      const NOVA_R    = 133;
+      const NOVA_CIRC = 2 * Math.PI * NOVA_R;
+      const total     = this._novaTotal     !== undefined ? this._novaTotal     : 25 * 60;
+      const remaining = this._novaRemaining !== undefined ? this._novaRemaining : 25 * 60;
+      const running   = !!this._novaRunning;
+      const progress  = total > 0 ? remaining / total : 1;
+      const dash      = NOVA_CIRC * progress;
+
+      novaRing.setAttribute('stroke-dasharray', dash + ' ' + NOVA_CIRC);
+      novaMm.textContent = String(Math.floor(remaining / 60)).padStart(2, '0');
+      novaSs.textContent = String(remaining % 60).padStart(2, '0');
+
+      if (novaStatus)   novaStatus.textContent = running ? 'In session' : 'Paused';
+      if (novaChip)     { novaChip.classList.toggle('bg-red-soft', running); novaChip.classList.toggle('text-primary', running); novaChip.classList.toggle('glass-soft', !running); novaChip.classList.toggle('text-muted-foreground', !running); }
+      if (novaDot)      { novaDot.classList.toggle('bg-primary', running); novaDot.classList.toggle('red-glow', running); novaDot.classList.toggle('animate-float-pulse', running); novaDot.classList.toggle('bg-muted-foreground/50', !running); }
+      if (novaGlow)     novaGlow.style.opacity = running ? '0.9' : '0.4';
+      if (novaPlayIcon) novaPlayIcon.setAttribute('data-lucide', running ? 'pause' : 'play');
+      if (novaPlayLabel) novaPlayLabel.textContent = running ? 'Pause' : 'Start';
+      if (window.lucide) window.lucide.createIcons();
+      return; // Nova ring handles its own display; skip legacy ring
+    }
+
+    // ── Legacy ring (ring-fill, ring-time) ──
     const g=this._goal(), circ=2*Math.PI*88;
     const ringEl=document.getElementById('ring-fill'), timeEl=document.getElementById('ring-time');
     const pctEl=document.getElementById('ring-pct'), catEl=document.getElementById('ring-cat-badge');
@@ -1411,6 +1567,254 @@ function resetData() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   NOVA NAV — Left sidebar logic for nova_design.html
+   Handles: collapse/expand, mobile drawer, active tab switching
+═══════════════════════════════════════════════════════════ */
+function initNovaNav() {
+  const leftSidebar = document.getElementById('left-sidebar');
+  const backdrop    = document.getElementById('backdrop');
+  const menuBtn     = document.getElementById('menu-btn');
+  const collapseBtn = document.getElementById('collapse-btn');
+  const navItems    = Array.from(document.querySelectorAll('.nav-item'));
+  const tasksView   = document.getElementById('tasks-view');
+  const focusView   = document.getElementById('focus-view');
+  const rightSidebar = document.getElementById('right-sidebar');
+  const brand       = document.getElementById('brand');
+  const profileChip = document.getElementById('profile-chip');
+
+  // Guard: только для Nova DOM
+  if (!leftSidebar || !navItems.length) return;
+
+  /* ── Lucide icons helper ── */
+  function renderIcons() { if (window.lucide) window.lucide.createIcons(); }
+
+  /* ── Active nav tab ── */
+  function setActiveNav(navId) {
+    navItems.forEach(item => {
+      const isActive = item.dataset.nav === navId;
+      const bar  = item.querySelector('.nav-bar');
+      const icon = item.querySelector('.nav-icon');
+      item.classList.toggle('glass',               isActive);
+      item.classList.toggle('text-foreground',     isActive);
+      item.classList.toggle('text-muted-foreground', !isActive);
+      if (bar)  bar.classList.toggle('hidden', !isActive);
+      if (icon) {
+        icon.classList.toggle('bg-red-soft',     isActive);
+        icon.classList.toggle('text-primary',    isActive);
+        icon.classList.toggle('bg-white/[0.03]', !isActive);
+      }
+    });
+  }
+
+  /* ── View switching ── */
+  function setView(view) {
+    const showFocus = view === 'focus';
+    if (focusView) {
+      focusView.classList.toggle('hidden', !showFocus);
+      focusView.classList.toggle('xl:col-span-5', showFocus);
+      focusView.classList.toggle('xl:col-span-2', false);
+    }
+    if (tasksView) {
+      tasksView.classList.toggle('hidden', showFocus);
+      tasksView.classList.toggle('xl:col-span-5', !showFocus);
+      tasksView.classList.toggle('xl:col-span-3', false);
+    }
+    if (rightSidebar) {
+      rightSidebar.classList.toggle('hidden',   showFocus);
+      rightSidebar.classList.toggle('xl:block', !showFocus);
+    }
+    // Nova timer init when focus view is shown
+    if (showFocus) _initNovaTimer();
+  }
+
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      setActiveNav(item.dataset.nav);
+      setView(item.dataset.view || 'tasks');
+      closeMobileSidebar();
+    });
+  });
+
+  /* ── Mobile drawer ── */
+  function openMobileSidebar() {
+    if (!leftSidebar) return;
+    leftSidebar.classList.remove('hidden', '-translate-x-[120%]');
+    leftSidebar.classList.add('flex');
+    if (backdrop) backdrop.classList.remove('hidden');
+  }
+  function closeMobileSidebar() {
+    if (!leftSidebar || window.innerWidth >= 1024) return;
+    leftSidebar.classList.add('-translate-x-[120%]');
+    if (backdrop) backdrop.classList.add('hidden');
+    window.setTimeout(() => {
+      if (window.innerWidth < 1024) leftSidebar.classList.add('hidden');
+    }, 300);
+  }
+  menuBtn?.addEventListener('click', openMobileSidebar);
+  backdrop?.addEventListener('click', closeMobileSidebar);
+
+  /* ── Collapse / expand (desktop) ── */
+  let collapsed = false;
+  collapseBtn?.addEventListener('click', () => {
+    collapsed = !collapsed;
+    leftSidebar.classList.toggle('lg:w-20', collapsed);
+    leftSidebar.classList.toggle('w-64',    !collapsed);
+    if (brand) brand.classList.toggle('lg:hidden', collapsed);
+    navItems.forEach(item => {
+      item.querySelector('.nav-label')?.classList.toggle('lg:hidden', collapsed);
+      item.classList.toggle('lg:justify-center', collapsed);
+    });
+    if (profileChip) {
+      profileChip.querySelector('div')?.classList.toggle('lg:hidden', collapsed);
+      profileChip.classList.toggle('lg:justify-center', collapsed);
+    }
+    const collapseIcon = collapseBtn.querySelector('i');
+    if (collapseIcon) {
+      collapseIcon.setAttribute('data-lucide', collapsed ? 'panel-left-open' : 'panel-left-close');
+      renderIcons();
+    }
+  });
+
+  /* ── Collapsible sub-goals (static HTML) ── */
+  document.querySelectorAll('.subgoal-toggle').forEach(btn => {
+    const wrapper = btn.parentElement;
+    const body    = wrapper?.querySelector('.collapsible');
+    const chevron = btn.querySelector('.chevron');
+    if (!body || !chevron) return;
+    // Open first subgoal by default
+    if (wrapper.dataset.subgoal === 'sprint-1') {
+      body.classList.add('open');
+      chevron.classList.add('rotate-90', 'text-primary');
+    }
+    btn.addEventListener('click', () => {
+      const open = body.classList.toggle('open');
+      chevron.classList.toggle('rotate-90', open);
+      chevron.classList.toggle('text-primary', open);
+    });
+  });
+
+  /* ── Filter row active state (right sidebar) ── */
+  document.querySelectorAll('.filter-group').forEach(group => {
+    const rows = Array.from(group.querySelectorAll('.filter-row'));
+    rows.forEach(row => {
+      row.addEventListener('click', () => {
+        rows.forEach(r => {
+          const active = r === row;
+          r.classList.toggle('glass',               active);
+          r.classList.toggle('glass-soft',          !active);
+          r.classList.toggle('text-foreground',     active);
+          r.classList.toggle('text-muted-foreground', !active);
+          const count = r.querySelector('.filter-count');
+          if (count) {
+            count.classList.toggle('bg-primary',            active);
+            count.classList.toggle('text-primary-foreground', active);
+            count.classList.toggle('bg-white/[0.06]',       !active);
+            count.classList.toggle('text-muted-foreground', !active);
+          }
+        });
+      });
+    });
+  });
+
+  /* ── Nova Timer logic ── */
+  function _initNovaTimer() {
+    const ring        = document.getElementById('ring-progress');
+    if (!ring) return;
+    const RADIUS = 133, CIRC = 2 * Math.PI * RADIUS;
+
+    // Init state on TimerController so tick() can read it
+    if (TimerController._novaTotal === undefined) {
+      TimerController._novaTotal     = 25 * 60;
+      TimerController._novaRemaining = 25 * 60;
+      TimerController._novaRunning   = false;
+      TimerController._novaIntervalId = null;
+    }
+
+    function renderNova() {
+      TimerController.tick();
+    }
+
+    function tickNova() {
+      if (TimerController._novaRemaining <= 0) {
+        TimerController._novaRemaining = 0;
+        stopNova(); renderNova(); return;
+      }
+      TimerController._novaRemaining -= 1;
+      renderNova();
+    }
+    function startNova() {
+      if (TimerController._novaRunning || TimerController._novaRemaining === 0) return;
+      TimerController._novaRunning = true;
+      TimerController._novaIntervalId = window.setInterval(tickNova, 1000);
+      renderNova();
+    }
+    function stopNova() {
+      TimerController._novaRunning = false;
+      if (TimerController._novaIntervalId) window.clearInterval(TimerController._novaIntervalId);
+      TimerController._novaIntervalId = null;
+    }
+
+    // Play/Pause button
+    const playBtn = document.getElementById('play-btn');
+    if (playBtn && !playBtn._novaInited) {
+      playBtn._novaInited = true;
+      playBtn.addEventListener('click', () => {
+        if (TimerController._novaRunning) { stopNova(); renderNova(); } else { startNova(); }
+      });
+    }
+
+    // Reset button
+    const resetBtn = document.getElementById('reset-btn');
+    if (resetBtn && !resetBtn._novaInited) {
+      resetBtn._novaInited = true;
+      resetBtn.addEventListener('click', () => {
+        stopNova();
+        TimerController._novaRemaining = TimerController._novaTotal;
+        renderNova();
+      });
+    }
+
+    // Preset buttons
+    const presetBtns = Array.from(document.querySelectorAll('.preset-btn'));
+    function setActivePreset(mins) {
+      presetBtns.forEach(b => {
+        const active = Number(b.dataset.min) === mins;
+        b.classList.toggle('glass',          active);
+        b.classList.toggle('ring-1',         active);
+        b.classList.toggle('ring-primary/40', active);
+        b.classList.toggle('text-foreground', active);
+        b.classList.toggle('glass-soft',      !active);
+        b.classList.toggle('text-muted-foreground', !active);
+      });
+      const presetLabel = document.getElementById('timer-preset-label');
+      if (presetLabel) presetLabel.textContent = mins + ' min focus';
+    }
+    presetBtns.forEach(b => {
+      if (b._novaInited) return;
+      b._novaInited = true;
+      b.addEventListener('click', () => {
+        const mins = Number(b.dataset.min);
+        stopNova();
+        TimerController._novaTotal     = mins * 60;
+        TimerController._novaRemaining = mins * 60;
+        setActivePreset(mins);
+        renderNova();
+      });
+    });
+
+    // Initial render
+    setActivePreset(Math.round(TimerController._novaTotal / 60));
+    renderNova();
+  }
+
+  /* ── Set default active state ── */
+  setActiveNav('nova');
+  setView('tasks');
+  // Trigger task render for Nova layout
+  try { TaskController.render(); } catch(e) { console.warn('[initNovaNav:render]', e); }
+}
+
+/* ═══════════════════════════════════════════════════════════
    GLOBAL EVENTS — Drawer архитектура
 ═══════════════════════════════════════════════════════════ */
 function initGlobalEvents() {
@@ -1571,7 +1975,12 @@ document.addEventListener('DOMContentLoaded', () => {
   try { TimerController.scheduleReminders(); } catch(e) { console.error('[Init:reminders]',e); }
   try { VoiceInput.init();            } catch(e) { console.error('[Init:voice]',e); }
   try { initGlobalEvents();           } catch(e) { console.error('[Init:events]',e); }
-  try { ViewRouter.switchTo('tasks'); } catch(e) { console.error('[Init:view]',e); }
+  // Nova Nav — инициализируем если DOM из nova_design.html (наличие #left-sidebar с .nav-item)
+  try { initNovaNav();                } catch(e) { console.error('[Init:novaNav]',e); }
+  // ViewRouter.switchTo только если нет Nova Nav (чтобы не дублировать рендер)
+  if (!document.getElementById('left-sidebar') || !document.querySelector('.nav-item')) {
+    try { ViewRouter.switchTo('tasks'); } catch(e) { console.error('[Init:view]',e); }
+  }
   // Sync pomo display
   try {
     const pomo=StateManager.get('pomoConfig');
@@ -1579,5 +1988,5 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch(e){}
   // KV cloud load after 2 sec
   setTimeout(()=>{ try{SyncManager.loadFromCloud();}catch(e){console.warn('[Init:KV]',e);} }, 2000);
-  console.log('[Life OS v4.0] ✅ Инициализация завершена');
+  console.log('[Life OS v4.0 + NovaOS] ✅ Инициализация завершена');
 });
