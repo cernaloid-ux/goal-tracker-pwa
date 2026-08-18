@@ -1,192 +1,26 @@
 <!DOCTYPE html>
-<html lang="ru" class="bg-background">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1c1c1e">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="NovaOS">
-  <meta name="description" content="NovaOS — Focus & Flow. Трекер задач, таймер, календарь, привычки.">
-  <title>NovaOS — Focus &amp; Flow</title>
-
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
-            mono: ['SF Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
-          },
-          colors: {
-            background: '#1c1c1e',
-            foreground: '#f5f5f7',
-            card: 'rgba(44,44,46,0.55)',
-            muted: { DEFAULT: 'rgba(255,255,255,0.06)', foreground: '#98989f' },
-            accent: { DEFAULT: 'rgba(255,255,255,0.08)', foreground: '#f5f5f7' },
-            primary: { DEFAULT: '#ff3b30', foreground: '#ffffff' },
-            border: 'rgba(255,255,255,0.09)',
-            ring: 'rgba(255,69,58,0.6)',
-            red: { DEFAULT: '#ff453a', soft: 'rgba(255,69,58,0.14)' },
-            glass: { DEFAULT: 'rgba(58,58,60,0.45)', border: 'rgba(255,255,255,0.1)' },
-          },
-          spacing: { '4.5': '1.125rem' },
-        },
-      },
-    }
-  </script>
-
-  <!-- Lucide icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-
-  <!-- Glassmorphism + theme styles (nova) + original styles.css -->
-  <style>
-    :root { color-scheme: dark; }
-    html { background: #1c1c1e; }
-    body {
-      background-color: #1c1c1e;
-      color: #f5f5f7;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      background-image:
-        radial-gradient(900px circle at 12% 8%, rgba(255,69,58,0.10), transparent 45%),
-        radial-gradient(1100px circle at 88% 92%, rgba(255,69,58,0.07), transparent 42%),
-        radial-gradient(700px circle at 65% 20%, rgba(120,120,255,0.05), transparent 40%);
-      background-attachment: fixed;
-    }
-
-    /* ── Glass panels ── */
-    .glass {
-      background: rgba(58,58,60,0.45);
-      backdrop-filter: blur(24px) saturate(160%);
-      -webkit-backdrop-filter: blur(24px) saturate(160%);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow:
-        inset 0 1px 0 0 rgba(255,255,255,0.08),
-        inset 0 0 0 1px rgba(255,255,255,0.02),
-        0 20px 50px -20px rgba(0,0,0,0.7);
-    }
-    .glass-soft {
-      background: rgba(255,255,255,0.04);
-      backdrop-filter: blur(16px) saturate(140%);
-      -webkit-backdrop-filter: blur(16px) saturate(140%);
-      border: 1px solid rgba(255,255,255,0.07);
-      box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.06);
-    }
-    .glass-hover {
-      transition:
-        transform 0.35s cubic-bezier(0.22,1,0.36,1),
-        box-shadow 0.35s cubic-bezier(0.22,1,0.36,1),
-        background 0.35s ease,
-        border-color 0.35s ease;
-    }
-    .glass-hover:hover {
-      transform: translateY(-2px);
-      border-color: rgba(255,69,58,0.35);
-      background: rgba(72,72,74,0.5);
-      box-shadow:
-        inset 0 1px 0 0 rgba(255,255,255,0.1),
-        0 0 0 1px rgba(255,69,58,0.12),
-        0 24px 60px -24px rgba(255,69,58,0.25),
-        0 24px 60px -30px rgba(0,0,0,0.8);
-    }
-
-    /* Nova modal glass override — used on old modals */
-    .modal-nova {
-      background: rgba(28,28,30,0.92) !important;
-      backdrop-filter: blur(50px) saturate(200%) !important;
-      -webkit-backdrop-filter: blur(50px) saturate(200%) !important;
-      border-radius: 28px 28px 0 0 !important;
-      border-top: 1px solid rgba(255,255,255,0.12) !important;
-      box-shadow:
-        0 -1px 0 rgba(255,255,255,0.06),
-        0 -20px 60px rgba(0,0,0,0.5) !important;
-    }
-    .modal-overlay-nova {
-      background: rgba(0,0,0,0.65) !important;
-      backdrop-filter: blur(18px) !important;
-      -webkit-backdrop-filter: blur(18px) !important;
-    }
-
-    .red-glow { box-shadow: 0 0 20px rgba(255,69,58,0.45), 0 0 60px rgba(255,69,58,0.25); }
-    .text-glow { text-shadow: 0 0 24px rgba(255,69,58,0.5); }
-
-    .scroll-thin { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
-    .scroll-thin::-webkit-scrollbar { width: 6px; }
-    .scroll-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
-
-    @keyframes float-pulse { 0%,100%{opacity:.85} 50%{opacity:1} }
-    .animate-float-pulse { animation: float-pulse 3.5s ease-in-out infinite; }
-
-    /* Collapsible sub-goal body */
-    .nova-collapsible { display:grid; grid-template-rows:0fr; transition:grid-template-rows 0.4s cubic-bezier(0.22,1,0.36,1); }
-    .nova-collapsible.open { grid-template-rows:1fr; }
-    .nova-collapsible > .nova-collapsible-inner { overflow:hidden; }
-
-    [data-lucide] { display:inline-block; }
-
-    /* ── Nova sidebar nav active state ── */
-    .nova-nav-item.active .nova-nav-bar { display:block !important; }
-    .nova-nav-item.active .nova-nav-icon { background:rgba(255,69,58,0.14); color:#ff453a; }
-    .nova-nav-item.active { background:rgba(58,58,60,0.45); backdrop-filter:blur(24px) saturate(160%); border:1px solid rgba(255,255,255,0.1); color:#f5f5f7; }
-    .nova-nav-item { color:#98989f; }
-
-    /* ── NovaOS SVG ring for timer ── */
-    #nova-ring-progress {
-      transition: stroke-dasharray 0.6s cubic-bezier(0.22,1,0.36,1);
-    }
-
-    /* ── Views inside nova main column ── */
-    .nova-view { display:none; flex:1; flex-direction:column; }
-    .nova-view.nova-active { display:flex; }
-
-    /* ── Task card nova style ── */
-    .nova-task-item {
-      transition: transform 0.35s cubic-bezier(0.22,1,0.36,1), box-shadow 0.35s cubic-bezier(0.22,1,0.36,1), background 0.35s ease, border-color 0.35s ease;
-    }
-    .nova-task-item:hover {
-      transform: translateY(-2px);
-      border-color: rgba(255,69,58,0.35);
-      background: rgba(72,72,74,0.5);
-    }
-    .nova-task-item.is-done .nova-task-label {
-      text-decoration: line-through;
-      color: #98989f;
-    }
-    .nova-task-item.is-done .nova-checkbox {
-      background: #ff453a;
-      border-color: #ff453a;
-    }
-    .nova-task-item.is-done .nova-check-icon {
-      opacity: 1 !important;
-      transform: scale(1) !important;
-    }
-    /* category color badge variants */
-    .nova-badge-business { background: rgba(255,69,58,0.14); color:#ff453a; }
-    .nova-badge-health   { background: rgba(255,159,10,0.14); color:#ff9f0a; }
-    .nova-badge-study    { background: rgba(191,90,242,0.14); color:#bf5af2; }
-    .nova-badge-life     { background: rgba(48,209,88,0.14);  color:#30d158; }
-    .nova-badge-creative { background: rgba(255,55,95,0.14);  color:#ff375f; }
-
-    /* ── Original LifeOS styles passthrough (keep old views working) ── */
-    /* We load styles.css, so this is already covered */
-  </style>
-
+  <meta name="apple-mobile-web-app-title" content="Life OS">
+  <meta name="description" content="Life OS — трекер задач, таймер, календарь, привычки">
+  <title>Life OS — Умный Планировщик</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="font-sans">
+<body>
+<div id="app">
 
-<div id="app" style="position:relative;height:100dvh;overflow:hidden;background:transparent;display:flex;">
-
-  <!-- ══ OLD DRAWER OVERLAY (kept for ViewRouter) ══ -->
+  <!-- ══ DRAWER OVERLAY ══ -->
   <div class="drawer-overlay" id="drawer-overlay"></div>
 
-  <!-- ══ OLD DRAWER (kept for ViewRouter) ══ -->
+  <!-- ══ DRAWER ══ -->
   <nav class="drawer" id="drawer" aria-label="Основная навигация">
     <div class="drawer-header">
-      <div class="drawer-logo">✦ NovaOS</div>
+      <div class="drawer-logo">🧠 Life OS</div>
       <div class="drawer-sync" id="sync-badge"></div>
     </div>
     <ul class="drawer-nav">
@@ -211,397 +45,190 @@
     </div>
   </nav>
 
-  <!-- ══ NOVA LAYOUT (sidebar + main) ══ -->
-  <div class="mx-auto flex min-h-dvh w-full max-w-[1600px] gap-4 p-4" style="flex:1;min-width:0;">
+  <!-- ══ APP SHELL ══ -->
+  <div class="app-shell" id="app-shell">
 
-    <!-- ============ LEFT SIDEBAR ============ -->
-    <aside
-      id="nova-left-sidebar"
-      class="glass fixed inset-y-4 left-4 z-40 hidden w-64 -translate-x-[120%] flex-col rounded-3xl p-3 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] lg:sticky lg:top-4 lg:z-20 lg:flex lg:h-[calc(100dvh-2rem)] lg:translate-x-0"
-    >
-      <!-- Brand + collapse -->
-      <div class="mb-4 flex items-center justify-between gap-2 px-1">
-        <div id="nova-brand" class="flex items-center gap-2.5 overflow-hidden">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary red-glow">
-            <i data-lucide="sparkles" class="h-5 w-5 text-primary-foreground"></i>
-          </span>
-          <div class="leading-tight">
-            <p class="text-sm font-semibold tracking-tight">NovaOS</p>
-            <p class="text-[11px] text-muted-foreground">Focus &amp; Flow</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          id="nova-collapse-btn"
-          aria-label="Свернуть сайдбар"
-          class="glass-soft glass-hover flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground"
-        >
-          <i data-lucide="panel-left-close" class="h-4.5 w-4.5"></i>
-        </button>
+    <!-- GLOBAL HEADER -->
+    <header class="global-header" id="global-header">
+      <button class="hdr-icon-btn" id="btn-drawer-toggle" aria-label="Меню">
+        <span class="hamburger"></span>
+        <span class="hamburger"></span>
+        <span class="hamburger"></span>
+      </button>
+      <div class="hdr-center">
+        <div class="hdr-title" id="hdr-title">Задачи</div>
+        <div class="hdr-subtitle" id="tasks-view-subtitle">Загрузка…</div>
       </div>
+      <div class="hdr-right">
+        <button class="hdr-icon-btn" id="btn-search-toggle" aria-label="Поиск">🔍</button>
+        <button class="hdr-icon-btn" id="btn-sort" aria-label="Сортировка">⇅</button>
+        <button class="hdr-icon-btn create-btn" id="btn-create" aria-label="Создать задачу">+</button>
+      </div>
+    </header>
 
-      <!-- Nova nav — switches views via ViewRouter -->
-      <nav id="nova-nav" class="flex flex-1 flex-col gap-1.5">
-        <button data-nova-nav="tasks" class="nova-nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
-          <span class="nova-nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
-          <span class="nova-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-            <i data-lucide="check-square" class="h-[18px] w-[18px]"></i>
-          </span>
-          <span class="nova-nav-label truncate">Задачи</span>
-        </button>
-        <button data-nova-nav="timer" class="nova-nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
-          <span class="nova-nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
-          <span class="nova-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-            <i data-lucide="target" class="h-[18px] w-[18px]"></i>
-          </span>
-          <span class="nova-nav-label truncate">Фокус</span>
-        </button>
-        <button data-nova-nav="calendar" class="nova-nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
-          <span class="nova-nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
-          <span class="nova-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-            <i data-lucide="calendar" class="h-[18px] w-[18px]"></i>
-          </span>
-          <span class="nova-nav-label truncate">Календарь</span>
-        </button>
-        <button data-nova-nav="sleep" class="nova-nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
-          <span class="nova-nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
-          <span class="nova-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-            <i data-lucide="moon" class="h-[18px] w-[18px]"></i>
-          </span>
-          <span class="nova-nav-label truncate">Сон / Рутины</span>
-        </button>
-        <button data-nova-nav="profile" class="nova-nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
-          <span class="nova-nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
-          <span class="nova-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-            <i data-lucide="user" class="h-[18px] w-[18px]"></i>
-          </span>
-          <span class="nova-nav-label truncate">Профиль</span>
-        </button>
-        <button id="nova-settings-btn" class="nova-nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
-          <span class="nova-nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
-          <span class="nova-nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-            <i data-lucide="settings" class="h-[18px] w-[18px]"></i>
-          </span>
-          <span class="nova-nav-label truncate">Настройки</span>
-        </button>
-      </nav>
+    <!-- SEARCH BAR -->
+    <div class="search-wrap" id="search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Поиск задач…" autocomplete="off">
+        <button class="search-clear" id="search-clear">✕</button>
+      </div>
+    </div>
 
-      <!-- Footer sync badge -->
-      <div id="nova-profile-chip" class="glass-soft glass-hover mt-3 flex items-center gap-3 rounded-2xl p-2.5">
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-[#ff8a80] text-xs font-bold text-primary-foreground">
-          NO
-        </span>
-        <div class="min-w-0 leading-tight">
-          <p class="truncate text-sm font-medium">NovaOS</p>
-          <p class="truncate text-[11px] text-muted-foreground" id="nova-sync-label">Focus &amp; Flow</p>
+    <!-- ══ VIEWS ══ -->
+
+    <!-- VIEW: TASKS -->
+    <section class="view" data-view="tasks" id="view-tasks">
+      <div class="filter-nav">
+        <div class="seg-ctrl" id="task-filter-ctrl" role="tablist">
+          <button class="seg-btn active" data-filter="today" role="tab">Сегодня</button>
+          <button class="seg-btn" data-filter="tomorrow" role="tab">Завтра</button>
+          <button class="seg-btn" data-filter="week" role="tab">Неделя</button>
+          <button class="seg-btn" data-filter="all" role="tab">Все</button>
+          <button class="seg-btn" data-filter="done" role="tab">✓ Готово</button>
         </div>
       </div>
-    </aside>
+      <div class="tag-filter-row" id="tag-filter-row"></div>
+      <div class="sunday-banner hidden" id="sunday-banner">😴 Воскресенье — день отдыха. Стрик заморожен.</div>
+      <div class="task-list" id="task-list" role="list"></div>
+    </section>
 
-    <!-- Mobile backdrop for nova sidebar -->
-    <div id="nova-backdrop" class="fixed inset-0 z-30 hidden bg-black/60 backdrop-blur-sm lg:hidden"></div>
-
-    <!-- ============ MAIN COLUMN ============ -->
-    <main class="flex min-w-0 flex-1 flex-col gap-4" id="nova-main-col">
-
-      <!-- Top bar -->
-      <header class="glass flex items-center gap-3 rounded-3xl p-3 sm:p-4">
-        <button
-          type="button"
-          id="nova-menu-btn"
-          aria-label="Открыть меню"
-          class="glass-soft glass-hover flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground lg:hidden"
-        >
-          <i data-lucide="menu" class="h-5 w-5"></i>
-        </button>
-        <div class="flex-1 min-w-0">
-          <h1 class="text-lg font-semibold tracking-tight sm:text-xl" id="nova-hdr-title">Задачи</h1>
-          <p class="hidden text-sm text-muted-foreground sm:block" id="nova-hdr-sub">Загрузка…</p>
+    <!-- VIEW: CALENDAR -->
+    <section class="view hidden" data-view="calendar" id="view-calendar">
+      <div class="cal-header-hero">
+        <div class="cal-hero-nav">
+          <button class="cal-nav-btn" id="cal-prev">‹</button>
+          <div class="cal-hero-title" id="cal-nav-title"></div>
+          <button class="cal-nav-btn" id="cal-next">›</button>
         </div>
-
-        <!-- Search -->
-        <div class="glass-soft hidden items-center gap-2 rounded-2xl px-3 py-2 md:flex">
-          <i data-lucide="search" class="h-4 w-4 text-muted-foreground"></i>
-          <input
-            type="text"
-            id="search-input"
-            placeholder="Поиск задач…"
-            autocomplete="off"
-            class="w-40 bg-transparent text-sm outline-none placeholder:text-muted-foreground lg:w-56"
-          >
-          <button id="search-clear" class="text-muted-foreground hover:text-foreground text-xs">✕</button>
-        </div>
-
-        <!-- Sort -->
-        <button
-          type="button"
-          id="btn-sort"
-          aria-label="Сортировка"
-          class="glass-soft glass-hover flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground"
-        >
-          <i data-lucide="arrow-up-down" class="h-4 w-4"></i>
-        </button>
-
-        <!-- Mobile search toggle -->
-        <button
-          type="button"
-          id="btn-search-toggle"
-          aria-label="Поиск"
-          class="glass-soft glass-hover flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:hidden"
-        >
-          <i data-lucide="search" class="h-4 w-4"></i>
-        </button>
-
-        <!-- New task -->
-        <button
-          type="button"
-          id="btn-create"
-          aria-label="Создать задачу"
-          class="glass-hover flex h-10 items-center gap-2 rounded-2xl bg-primary px-4 text-sm font-semibold text-primary-foreground red-glow"
-        >
-          <i data-lucide="plus" class="h-4 w-4"></i>
-          <span class="hidden sm:inline">Задача</span>
-        </button>
-      </header>
-
-      <!-- SEARCH BAR (mobile) -->
-      <div class="search-wrap" id="search-wrap">
-        <div class="search-bar">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="search-input-mobile" placeholder="Поиск задач…" autocomplete="off" style="display:none;">
-          <button class="search-clear" id="search-clear-mobile">✕</button>
+        <div class="cal-view-switcher" id="cal-view-switcher" role="tablist">
+          <button class="cal-vsw-btn" data-cal-view="day" role="tab">День</button>
+          <button class="cal-vsw-btn" data-cal-view="week" role="tab">Неделя</button>
+          <button class="cal-vsw-btn active" data-cal-view="month" role="tab">Месяц</button>
+          <button class="cal-vsw-btn" data-cal-view="year" role="tab">Год</button>
         </div>
       </div>
+      <div class="cal-container" id="cal-container"></div>
+    </section>
 
-      <!-- ══ NOVA VIEWS ══ -->
-
-      <!-- ── VIEW: TASKS ── -->
-      <div id="nova-view-tasks" class="nova-view nova-active flex-col gap-4">
-        <section class="glass overflow-hidden rounded-3xl p-5 sm:p-6 flex-1 flex flex-col min-h-0">
-          <!-- Filter tabs -->
-          <div class="flex gap-2 mb-4 flex-shrink-0">
-            <div class="glass-soft rounded-2xl p-1 flex gap-1 overflow-x-auto scroll-thin" id="task-filter-ctrl" role="tablist">
-              <button class="seg-btn active px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200" data-filter="today" role="tab">Сегодня</button>
-              <button class="seg-btn px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200" data-filter="tomorrow" role="tab">Завтра</button>
-              <button class="seg-btn px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200" data-filter="week" role="tab">Неделя</button>
-              <button class="seg-btn px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200" data-filter="all" role="tab">Все</button>
-              <button class="seg-btn px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200" data-filter="done" role="tab">✓ Готово</button>
-            </div>
+    <!-- VIEW: TIMER -->
+    <section class="view hidden" data-view="timer" id="view-timer">
+      <div class="timer-inner">
+        <div class="timer-mode-ctrl">
+          <button class="timer-mode-btn active" data-mode="countdown">⏳ Таймер</button>
+          <button class="timer-mode-btn" data-mode="pomodoro">🍅 Помодоро</button>
+          <button class="timer-mode-btn" data-mode="stopwatch">⏱ Секундомер</button>
+        </div>
+        <div class="timer-goal-card">
+          <div class="tgc-label">Текущая задача</div>
+          <div class="tgc-row">
+            <div class="tgc-name" id="timer-goal-name">Не выбрана</div>
+            <button class="tgc-btn" id="btn-pick-timer-goal">Выбрать</button>
           </div>
-          <!-- Tag filter row -->
-          <div class="tag-filter-row" id="tag-filter-row"></div>
-          <!-- Sunday banner -->
-          <div class="sunday-banner hidden" id="sunday-banner">😴 Воскресенье — день отдыха. Стрик заморожен.</div>
-          <!-- Task list — rendered by TaskController.render() -->
-          <div id="task-list" role="list" class="flex-1 overflow-y-auto scroll-thin space-y-2 mt-1"></div>
-        </section>
+        </div>
+        <div class="timer-ring-wrap" id="timer-ring-wrap">
+          <svg class="timer-ring-svg" viewBox="0 0 200 200">
+            <circle class="ring-track" cx="100" cy="100" r="88"/>
+            <circle class="ring-fill" cx="100" cy="100" r="88" id="ring-fill"/>
+          </svg>
+          <div class="ring-center">
+            <div class="ring-cat-badge" id="ring-cat-badge">Бизнес</div>
+            <div class="ring-time" id="ring-time">25:00</div>
+            <div class="ring-pct" id="ring-pct">0%</div>
+          </div>
+        </div>
+        <div class="subtask-rings" id="subtask-rings"></div>
+        <div class="timer-controls">
+          <button class="t-ctrl secondary" id="btn-timer-reset">↺</button>
+          <button class="t-ctrl primary" id="btn-timer-play">▶</button>
+          <button class="t-ctrl success-c" id="btn-timer-done">✓</button>
+        </div>
+        <div class="pomo-status hidden" id="pomo-status-wrap">
+          <div class="pomo-phase" id="pomo-phase-label">📚 Фокус</div>
+          <div class="pomo-dots" id="pomo-dots"></div>
+        </div>
+        <div class="pomo-settings hidden" id="pomo-settings">
+          <div class="pomo-row"><span>Работа</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-work-dec">−</button><span id="pomo-work-val">25</span>м<button class="pomo-adj" id="pomo-work-inc">+</button></div></div>
+          <div class="pomo-row"><span>Короткий перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-short-dec">−</button><span id="pomo-short-val">5</span>м<button class="pomo-adj" id="pomo-short-inc">+</button></div></div>
+          <div class="pomo-row"><span>Длинный перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-long-dec">−</button><span id="pomo-long-val">15</span>м<button class="pomo-adj" id="pomo-long-inc">+</button></div></div>
+        </div>
       </div>
+    </section>
 
-      <!-- ── VIEW: TIMER ── -->
-      <div id="nova-view-timer" class="nova-view flex-col items-center">
-        <section class="glass flex flex-col items-center rounded-3xl p-6 sm:p-8 w-full">
-          <!-- Header -->
-          <div class="mb-6 flex w-full items-center justify-between">
-            <div>
-              <h2 class="text-lg font-semibold tracking-tight">Фокус-таймер</h2>
-              <p class="text-sm text-muted-foreground">Deep work session</p>
-            </div>
-            <span id="nova-timer-status" class="glass-soft flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground">
-              <span id="nova-timer-dot" class="h-2 w-2 rounded-full bg-muted-foreground/50"></span>
-              <span id="nova-timer-status-label">Пауза</span>
-            </span>
+    <!-- VIEW: SLEEP -->
+    <section class="view hidden" data-view="sleep" id="view-sleep">
+      <div class="sleep-scroll">
+        <div class="sleep-section">
+          <div class="sleep-section-title">💤 Режим сна</div>
+          <div class="form-row2">
+            <div class="form-group"><label class="form-label" for="sleep-bedtime">Отбой</label><input class="form-input" type="time" id="sleep-bedtime" value="23:00"></div>
+            <div class="form-group"><label class="form-label" for="sleep-waketime">Подъём</label><input class="form-input" type="time" id="sleep-waketime" value="07:00"></div>
           </div>
-
-          <!-- Mode switcher (maps to old .timer-mode-btn) -->
-          <div class="flex w-full glass-soft rounded-2xl p-1 gap-1 mb-6">
-            <button class="timer-mode-btn active flex-1 py-2 rounded-xl text-xs font-semibold transition-all duration-200" data-mode="countdown">⏳ Таймер</button>
-            <button class="timer-mode-btn flex-1 py-2 rounded-xl text-xs font-semibold transition-all duration-200" data-mode="pomodoro">🍅 Помодоро</button>
-            <button class="timer-mode-btn flex-1 py-2 rounded-xl text-xs font-semibold transition-all duration-200" data-mode="stopwatch">⏱ Секундомер</button>
+          <div class="form-row2">
+            <div class="form-group"><label class="form-label" for="routine-evening-prep">Подготовка ко сну (мин)</label><input class="form-input center" type="number" id="routine-evening-prep" min="0" value="30"></div>
+            <div class="form-group"><label class="form-label" for="routine-evening-gratitude">Благодарность (мин)</label><input class="form-input center" type="number" id="routine-evening-gratitude" min="0" value="15"></div>
           </div>
-
-          <!-- Goal card -->
-          <div class="timer-goal-card w-full mb-4">
-            <div class="tgc-label">Текущая задача</div>
-            <div class="tgc-row">
-              <div class="tgc-name" id="timer-goal-name">Не выбрана</div>
-              <button class="tgc-btn" id="btn-pick-timer-goal">Выбрать</button>
-            </div>
+          <div class="settings-row">
+            <div class="settings-row-label">Мягкий будильник</div>
+            <label class="toggle-switch"><input type="checkbox" id="soft-alarm-enabled" checked><span class="toggle-track"></span></label>
           </div>
-
-          <!-- SVG Ring -->
-          <div class="relative flex items-center justify-center py-2" id="timer-ring-wrap">
-            <div
-              id="nova-timer-glow"
-              aria-hidden="true"
-              class="pointer-events-none absolute h-[240px] w-[240px] rounded-full blur-3xl transition-opacity duration-700"
-              style="background: radial-gradient(circle, rgba(255,69,58,0.35), transparent 70%); opacity: 0.4"
-            ></div>
-            <svg width="280" height="280" viewBox="0 0 280 280" class="-rotate-90" role="img" aria-label="Focus timer remaining">
-              <defs>
-                <linearGradient id="novaRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#ff6b6b"/>
-                  <stop offset="55%" stop-color="#ff453a"/>
-                  <stop offset="100%" stop-color="#c1170f"/>
-                </linearGradient>
-                <filter id="novaRingGlow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="6" result="blur"/>
-                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                </filter>
-              </defs>
-              <!-- track -->
-              <circle cx="140" cy="140" r="133" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="14"/>
-              <!-- progress arc — driven by TimerController -->
-              <circle
-                id="nova-ring-progress"
-                cx="140" cy="140" r="133"
-                fill="none"
-                stroke="url(#novaRingGrad)"
-                stroke-width="14"
-                stroke-linecap="round"
-                filter="url(#novaRingGlow)"
-              />
-            </svg>
-            <!-- Center readout -->
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
-              <div class="ring-cat-badge" id="ring-cat-badge" style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:9999px;border:1px solid currentColor;opacity:.7;margin-bottom:8px;">Бизнес</div>
-              <span class="font-mono text-5xl font-semibold tracking-tight tabular-nums" id="ring-time">25:00</span>
-              <span class="mt-1 text-xs text-muted-foreground" id="ring-pct">0%</span>
-            </div>
+        </div>
+        <div class="sleep-section">
+          <div class="sleep-section-title">☀️ Утренняя цепочка</div>
+          <div class="form-row2">
+            <div class="form-group"><label class="form-label" for="routine-morning-water">Вода (мин после подъёма)</label><input class="form-input center" type="number" id="routine-morning-water" min="0" value="5"></div>
+            <div class="form-group"><label class="form-label" for="routine-morning-brush">Зубы (мин)</label><input class="form-input center" type="number" id="routine-morning-brush" min="0" value="10"></div>
           </div>
-
-          <!-- Subtask rings -->
-          <div class="subtask-rings" id="subtask-rings"></div>
-
-          <!-- Controls -->
-          <div class="mt-6 flex items-center gap-3 timer-controls">
-            <button type="button" id="btn-timer-reset" aria-label="Сбросить таймер"
-              class="glass-soft glass-hover flex h-12 w-12 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground t-ctrl secondary">
-              <i data-lucide="rotate-ccw" class="h-5 w-5"></i>
-            </button>
-            <button type="button" id="btn-timer-play"
-              class="glass-hover flex h-14 items-center gap-2.5 rounded-2xl bg-primary px-8 font-semibold text-primary-foreground red-glow t-ctrl primary">
-              ▶
-            </button>
-            <button type="button" id="btn-timer-done" aria-label="Завершить задачу"
-              class="glass-soft glass-hover flex h-12 w-12 items-center justify-center rounded-2xl t-ctrl success-c">
-              ✓
-            </button>
-          </div>
-
-          <!-- Pomodoro status -->
-          <div class="pomo-status hidden mt-4" id="pomo-status-wrap">
-            <div class="pomo-phase" id="pomo-phase-label">📚 Фокус</div>
-            <div class="pomo-dots" id="pomo-dots"></div>
-          </div>
-
-          <!-- Pomodoro settings -->
-          <div class="pomo-settings hidden mt-4 w-full" id="pomo-settings">
-            <div class="pomo-row"><span>Работа</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-work-dec">−</button><span id="pomo-work-val">25</span>м<button class="pomo-adj" id="pomo-work-inc">+</button></div></div>
-            <div class="pomo-row"><span>Короткий перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-short-dec">−</button><span id="pomo-short-val">5</span>м<button class="pomo-adj" id="pomo-short-inc">+</button></div></div>
-            <div class="pomo-row"><span>Длинный перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-long-dec">−</button><span id="pomo-long-val">15</span>м<button class="pomo-adj" id="pomo-long-inc">+</button></div></div>
-          </div>
-        </section>
+          <button class="btn btn-primary btn-full" id="btn-save-sleep">💾 Сохранить настройки сна</button>
+          <button class="btn btn-secondary btn-full" id="btn-morning-routine" style="margin-top:8px">☀️ Запустить утреннюю цепочку</button>
+        </div>
       </div>
+    </section>
 
-      <!-- ── VIEW: CALENDAR ── -->
-      <div id="nova-view-calendar" class="nova-view flex-col">
-        <section class="glass overflow-hidden rounded-3xl flex flex-col flex-1 min-h-0">
-          <div class="cal-header-hero" style="padding-top:var(--s1);">
-            <div class="cal-hero-nav">
-              <button class="cal-nav-btn" id="cal-prev">‹</button>
-              <div class="cal-hero-title" id="cal-nav-title"></div>
-              <button class="cal-nav-btn" id="cal-next">›</button>
-            </div>
-            <div class="cal-view-switcher" id="cal-view-switcher" role="tablist">
-              <button class="cal-vsw-btn" data-cal-view="day" role="tab">День</button>
-              <button class="cal-vsw-btn" data-cal-view="week" role="tab">Неделя</button>
-              <button class="cal-vsw-btn active" data-cal-view="month" role="tab">Месяц</button>
-              <button class="cal-vsw-btn" data-cal-view="year" role="tab">Год</button>
-            </div>
+    <!-- VIEW: PROFILE -->
+    <section class="view hidden" data-view="profile" id="view-profile">
+      <div class="profile-scroll">
+        <div class="profile-hero">
+          <div class="profile-avatar">🏆</div>
+          <div class="profile-info">
+            <div class="profile-name">Мой профиль</div>
+            <div class="profile-level" id="profile-level">🌱 Новичок</div>
           </div>
-          <div class="cal-container" id="cal-container"></div>
-        </section>
-      </div>
-
-      <!-- ── VIEW: SLEEP ── -->
-      <div id="nova-view-sleep" class="nova-view flex-col">
-        <section class="glass overflow-hidden rounded-3xl flex-1 flex flex-col min-h-0">
-          <div class="sleep-scroll" style="padding-top:var(--s2);">
-            <div class="sleep-section">
-              <div class="sleep-section-title">💤 Режим сна</div>
-              <div class="form-row2">
-                <div class="form-group"><label class="form-label" for="sleep-bedtime">Отбой</label><input class="form-input" type="time" id="sleep-bedtime" value="23:00"></div>
-                <div class="form-group"><label class="form-label" for="sleep-waketime">Подъём</label><input class="form-input" type="time" id="sleep-waketime" value="07:00"></div>
-              </div>
-              <div class="form-row2">
-                <div class="form-group"><label class="form-label" for="routine-evening-prep">Подготовка ко сну (мин)</label><input class="form-input center" type="number" id="routine-evening-prep" min="0" value="30"></div>
-                <div class="form-group"><label class="form-label" for="routine-evening-gratitude">Благодарность (мин)</label><input class="form-input center" type="number" id="routine-evening-gratitude" min="0" value="15"></div>
-              </div>
-              <div class="settings-row">
-                <div class="settings-row-label">Мягкий будильник</div>
-                <label class="toggle-switch"><input type="checkbox" id="soft-alarm-enabled" checked><span class="toggle-track"></span></label>
-              </div>
-            </div>
-            <div class="sleep-section">
-              <div class="sleep-section-title">☀️ Утренняя цепочка</div>
-              <div class="form-row2">
-                <div class="form-group"><label class="form-label" for="routine-morning-water">Вода (мин после подъёма)</label><input class="form-input center" type="number" id="routine-morning-water" min="0" value="5"></div>
-                <div class="form-group"><label class="form-label" for="routine-morning-brush">Зубы (мин)</label><input class="form-input center" type="number" id="routine-morning-brush" min="0" value="10"></div>
-              </div>
-              <button class="btn btn-primary btn-full" id="btn-save-sleep">💾 Сохранить настройки сна</button>
-              <button class="btn btn-secondary btn-full" id="btn-morning-routine" style="margin-top:8px">☀️ Запустить утреннюю цепочку</button>
-            </div>
+          <div class="profile-gems">
+            <div class="profile-gem-count" id="profile-gem-count">0</div>
+            <span>💎</span>
+            <button class="hdr-icon-btn" id="btn-cart" aria-label="Корзина">🛒</button>
+            <button class="hdr-icon-btn" id="btn-purchases" aria-label="Покупки">🧾</button>
           </div>
-        </section>
-      </div>
-
-      <!-- ── VIEW: PROFILE ── -->
-      <div id="nova-view-profile" class="nova-view flex-col">
-        <section class="glass overflow-hidden rounded-3xl flex-1 flex flex-col min-h-0">
-          <div class="profile-scroll">
-            <div class="profile-hero">
-              <div class="profile-avatar">🏆</div>
-              <div class="profile-info">
-                <div class="profile-name">Мой профиль</div>
-                <div class="profile-level" id="profile-level">🌱 Новичок</div>
-              </div>
-              <div class="profile-gems">
-                <div class="profile-gem-count" id="profile-gem-count">0</div>
-                <span>💎</span>
-                <button class="hdr-icon-btn" id="btn-cart" aria-label="Корзина">🛒</button>
-                <button class="hdr-icon-btn" id="btn-purchases" aria-label="Покупки">🧾</button>
-              </div>
-            </div>
-            <div class="profile-stats">
-              <div class="pstat"><div class="pstat-val" id="stat-streak">0</div><div class="pstat-label">🔥 Стрик</div></div>
-              <div class="pstat"><div class="pstat-val" id="stat-done-today">0</div><div class="pstat-label">✅ Сегодня</div></div>
-              <div class="pstat"><div class="pstat-val" id="stat-total-done">0</div><div class="pstat-label">📊 Всего</div></div>
-            </div>
-            <div class="streak-card" id="streak-card"></div>
-            <div class="p-section">
-              <div class="p-section-header">
-                <div class="p-section-title">🎯 Большие цели</div>
-                <button class="p-section-action" id="btn-add-macro">+ Добавить</button>
-              </div>
-              <div class="macro-list" id="macro-list"></div>
-            </div>
-            <div class="p-section">
-              <div class="p-section-header"><div class="p-section-title">🏪 Магазин наград</div></div>
-              <div class="store-grid" id="store-grid"></div>
-            </div>
-            <div class="p-section">
-              <div class="p-section-header">
-                <div class="p-section-title">📜 История</div>
-                <button class="p-section-action" id="btn-clear-history">Очистить</button>
-              </div>
-              <div class="history-list" id="history-list"></div>
-            </div>
+        </div>
+        <div class="profile-stats">
+          <div class="pstat"><div class="pstat-val" id="stat-streak">0</div><div class="pstat-label">🔥 Стрик</div></div>
+          <div class="pstat"><div class="pstat-val" id="stat-done-today">0</div><div class="pstat-label">✅ Сегодня</div></div>
+          <div class="pstat"><div class="pstat-val" id="stat-total-done">0</div><div class="pstat-label">📊 Всего</div></div>
+        </div>
+        <div class="streak-card" id="streak-card"></div>
+        <div class="p-section">
+          <div class="p-section-header">
+            <div class="p-section-title">🎯 Большие цели</div>
+            <button class="p-section-action" id="btn-add-macro">+ Добавить</button>
           </div>
-        </section>
+          <div class="macro-list" id="macro-list"></div>
+        </div>
+        <div class="p-section">
+          <div class="p-section-header"><div class="p-section-title">🏪 Магазин наград</div></div>
+          <div class="store-grid" id="store-grid"></div>
+        </div>
+        <div class="p-section">
+          <div class="p-section-header">
+            <div class="p-section-title">📜 История</div>
+            <button class="p-section-action" id="btn-clear-history">Очистить</button>
+          </div>
+          <div class="history-list" id="history-list"></div>
+        </div>
       </div>
+    </section>
 
-    </main><!-- /nova-main-col -->
-  </div><!-- /nova layout -->
+  </div><!-- /app-shell -->
 
   <!-- ══ FOCUS OVERLAY ══ -->
   <div class="focus-overlay" id="focus-overlay">
@@ -616,8 +243,8 @@
   </div>
 
   <!-- ══ MODAL: TASK ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-task" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-task" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title" id="modal-task-title">Новая задача</div>
@@ -716,8 +343,8 @@
   </div>
 
   <!-- ══ MODAL: DETAIL ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-task-detail" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-task-detail" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title" id="td-title"></div>
@@ -733,8 +360,8 @@
   </div>
 
   <!-- ══ MODAL: VOICE ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-voice" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-voice" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title">🎙 Голосовой ввод</div>
@@ -768,8 +395,8 @@
   </div>
 
   <!-- ══ MODAL: SETTINGS ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-settings" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-settings" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title">⚙️ Настройки</div>
@@ -831,8 +458,8 @@
   </div>
 
   <!-- ══ MODAL: MACRO ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-macro" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-macro" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title" id="macro-modal-title">Новая цель</div>
@@ -852,8 +479,8 @@
   </div>
 
   <!-- ══ MODAL: GOAL PICKER ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-goal-picker" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-goal-picker" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title">Выбери задачу</div>
@@ -864,8 +491,8 @@
   </div>
 
   <!-- ══ MODAL: CART ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-cart" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-cart" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title">🛒 Корзина</div>
@@ -883,8 +510,8 @@
   </div>
 
   <!-- ══ MODAL: PURCHASES ══ -->
-  <div class="modal-overlay modal-overlay-nova" id="modal-purchases" role="dialog" aria-modal="true">
-    <div class="modal modal-nova">
+  <div class="modal-overlay" id="modal-purchases" role="dialog" aria-modal="true">
+    <div class="modal">
       <div class="modal-drag"></div>
       <div class="modal-hdr">
         <div class="modal-title">🧾 Покупки</div>
@@ -901,7 +528,6 @@
   <div id="alarm-stack"></div>
 
 </div><!-- /app -->
-
 <script src="app.js"></script>
 </body>
 </html>
