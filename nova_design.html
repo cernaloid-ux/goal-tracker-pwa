@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-background">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1c1c1e" />
+    <title>NovaOS — Focus &amp; Flow</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+              mono: ['SF Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+            },
+            colors: {
+              background: '#1c1c1e',
+              foreground: '#f5f5f7',
+              card: 'rgba(44,44,46,0.55)',
+              muted: { DEFAULT: 'rgba(255,255,255,0.06)', foreground: '#98989f' },
+              accent: { DEFAULT: 'rgba(255,255,255,0.08)', foreground: '#f5f5f7' },
+              primary: { DEFAULT: '#ff3b30', foreground: '#ffffff' },
+              border: 'rgba(255,255,255,0.09)',
+              ring: 'rgba(255,69,58,0.6)',
+              red: { DEFAULT: '#ff453a', soft: 'rgba(255,69,58,0.14)' },
+              glass: { DEFAULT: 'rgba(58,58,60,0.45)', border: 'rgba(255,255,255,0.1)' },
+            },
+            spacing: { 4.5: '1.125rem' },
+          },
+        },
+      }
+    </script>
+
+    <!-- Lucide icons (vanilla CDN) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Glassmorphism + theme styles -->
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html {
+        background: #1c1c1e;
+      }
+
+      body {
+        background-color: #1c1c1e;
+        color: #f5f5f7;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-image:
+          radial-gradient(900px circle at 12% 8%, rgba(255, 69, 58, 0.1), transparent 45%),
+          radial-gradient(1100px circle at 88% 92%, rgba(255, 69, 58, 0.07), transparent 42%),
+          radial-gradient(700px circle at 65% 20%, rgba(120, 120, 255, 0.05), transparent 40%);
+        background-attachment: fixed;
+      }
+
+      /* Frosted glass panel */
+      .glass {
+        background: rgba(58, 58, 60, 0.45);
+        backdrop-filter: blur(24px) saturate(160%);
+        -webkit-backdrop-filter: blur(24px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow:
+          inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+          0 20px 50px -20px rgba(0, 0, 0, 0.7);
+      }
+
+      .glass-soft {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(16px) saturate(140%);
+        -webkit-backdrop-filter: blur(16px) saturate(140%);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+      }
+
+      .glass-hover {
+        transition:
+          transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+          box-shadow 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+          background 0.35s ease,
+          border-color 0.35s ease;
+      }
+      .glass-hover:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 69, 58, 0.35);
+        background: rgba(72, 72, 74, 0.5);
+        box-shadow:
+          inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+          0 0 0 1px rgba(255, 69, 58, 0.12),
+          0 24px 60px -24px rgba(255, 69, 58, 0.25),
+          0 24px 60px -30px rgba(0, 0, 0, 0.8);
+      }
+
+      .red-glow {
+        box-shadow:
+          0 0 20px rgba(255, 69, 58, 0.45),
+          0 0 60px rgba(255, 69, 58, 0.25);
+      }
+
+      .text-glow {
+        text-shadow: 0 0 24px rgba(255, 69, 58, 0.5);
+      }
+
+      /* Custom scrollbars */
+      .scroll-thin {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+      }
+      .scroll-thin::-webkit-scrollbar {
+        width: 6px;
+      }
+      .scroll-thin::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+      }
+
+      @keyframes float-pulse {
+        0%,
+        100% {
+          opacity: 0.85;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .animate-float-pulse {
+        animation: float-pulse 3.5s ease-in-out infinite;
+      }
+
+      /* Collapsible sub-goal body */
+      .collapsible {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .collapsible.open {
+        grid-template-rows: 1fr;
+      }
+      .collapsible > .collapsible-inner {
+        overflow: hidden;
+      }
+
+      [data-lucide] {
+        display: inline-block;
+      }
+    </style>
+  </head>
+
+  <body class="font-sans">
+    <div class="mx-auto flex min-h-dvh w-full max-w-[1600px] gap-4 p-4">
+      <!-- ============ LEFT SIDEBAR ============ -->
+      <aside
+        id="left-sidebar"
+        class="glass fixed inset-y-4 left-4 z-40 hidden w-64 -translate-x-[120%] flex-col rounded-3xl p-3 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] lg:sticky lg:top-4 lg:z-20 lg:flex lg:h-[calc(100dvh-2rem)] lg:translate-x-0"
+      >
+        <!-- Brand + collapse -->
+        <div class="mb-4 flex items-center justify-between gap-2 px-1">
+          <div id="brand" class="flex items-center gap-2.5 overflow-hidden">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary red-glow">
+              <i data-lucide="sparkles" class="h-5 w-5 text-primary-foreground"></i>
+            </span>
+            <div class="leading-tight">
+              <p class="text-sm font-semibold tracking-tight">NovaOS</p>
+              <p class="text-[11px] text-muted-foreground">Focus &amp; Flow</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            id="collapse-btn"
+            aria-label="Collapse sidebar"
+            class="glass-soft glass-hover flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground"
+          >
+            <i data-lucide="panel-left-close" class="h-4.5 w-4.5"></i>
+          </button>
+        </div>
+
+        <!-- Nav -->
+        <nav id="nav" class="flex flex-1 flex-col gap-1.5">
+          <button data-nav="nova" data-view="tasks" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="sparkles" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">NovaOS</span>
+          </button>
+          <button data-nav="focus" data-view="focus" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="target" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">Focus</span>
+          </button>
+          <button data-nav="tasks" data-view="tasks" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="check-square" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">Tasks</span>
+          </button>
+          <button data-nav="calendar" data-view="tasks" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="calendar" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">Calendar</span>
+          </button>
+          <button data-nav="sleep" data-view="tasks" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="moon" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">Sleep / Routine</span>
+          </button>
+          <button data-nav="profile" data-view="tasks" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="user" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">Profile</span>
+          </button>
+          <button data-nav="settings" data-view="tasks" class="nav-item glass-hover group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium">
+            <span class="nav-bar absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary red-glow"></span>
+            <span class="nav-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors">
+              <i data-lucide="settings" class="h-[18px] w-[18px]"></i>
+            </span>
+            <span class="nav-label truncate">Settings</span>
+          </button>
+        </nav>
+
+        <!-- Footer profile chip -->
+        <div id="profile-chip" class="glass-soft glass-hover mt-3 flex items-center gap-3 rounded-2xl p-2.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-[#ff8a80] text-xs font-bold text-primary-foreground">
+            AR
+          </span>
+          <div class="min-w-0 leading-tight">
+            <p class="truncate text-sm font-medium">Alex Rivera</p>
+            <p class="truncate text-[11px] text-muted-foreground">Pro Workspace</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Mobile backdrop -->
+      <div id="backdrop" class="fixed inset-0 z-30 hidden bg-black/60 backdrop-blur-sm lg:hidden"></div>
+
+      <!-- ============ MAIN COLUMN ============ -->
+      <main class="flex min-w-0 flex-1 flex-col gap-4">
+        <!-- Top bar -->
+        <header class="glass flex items-center gap-3 rounded-3xl p-3 sm:p-4">
+          <button
+            type="button"
+            id="menu-btn"
+            aria-label="Open menu"
+            class="glass-soft glass-hover flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground lg:hidden"
+          >
+            <i data-lucide="menu" class="h-5 w-5"></i>
+          </button>
+          <div>
+            <h1 class="text-lg font-semibold tracking-tight sm:text-xl">Good afternoon, Alex</h1>
+            <p class="hidden text-sm text-muted-foreground sm:block">You have 4 tasks due today · 2 urgent</p>
+          </div>
+
+          <div class="glass-soft ml-auto hidden items-center gap-2 rounded-2xl px-3 py-2 md:flex">
+            <i data-lucide="search" class="h-4 w-4 text-muted-foreground"></i>
+            <input
+              type="text"
+              placeholder="Search tasks, goals…"
+              class="w-40 bg-transparent text-sm outline-none placeholder:text-muted-foreground lg:w-56"
+            />
+          </div>
+
+          <button
+            type="button"
+            aria-label="Notifications"
+            class="glass-soft glass-hover flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground"
+          >
+            <i data-lucide="bell" class="h-4.5 w-4.5"></i>
+          </button>
+          <button
+            type="button"
+            class="glass-hover flex h-10 items-center gap-2 rounded-2xl bg-primary px-4 text-sm font-semibold text-primary-foreground red-glow"
+          >
+            <i data-lucide="plus" class="h-4 w-4"></i>
+            <span class="hidden sm:inline">New Task</span>
+          </button>
+        </header>
+
+        <!-- Content grid -->
+        <div class="grid flex-1 grid-cols-1 gap-4 xl:grid-cols-5">
+          <!-- ===== TASKS VIEW ===== -->
+          <div id="tasks-view" class="xl:col-span-3">
+            <section class="glass overflow-hidden rounded-3xl p-6 sm:p-7">
+              <!-- Folder header -->
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div class="flex items-start gap-4">
+                  <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-red-soft red-glow">
+                    <i data-lucide="folder-open" class="h-7 w-7 text-primary"></i>
+                  </span>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <h2 class="text-xl font-semibold tracking-tight">Memernity</h2>
+                      <span class="glass-soft rounded-full px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">Dev Platform</span>
+                    </div>
+                    <p class="mt-0.5 text-sm text-muted-foreground">July 2026 · 3 sub-goals · <span id="folder-total">9</span> tasks</p>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <p id="folder-pct" class="font-mono text-3xl font-semibold tabular-nums text-glow text-primary">0%</p>
+                  <p id="folder-count" class="text-xs text-muted-foreground">0/9 complete</p>
+                </div>
+              </div>
+
+              <!-- Dynamic progress bar -->
+              <div class="mt-5">
+                <div class="glass-soft h-2.5 w-full overflow-hidden rounded-full">
+                  <div
+                    id="folder-bar"
+                    class="h-full rounded-full bg-gradient-to-r from-[#ff6b6b] via-primary to-[#c1170f] red-glow"
+                    style="width: 0%; transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1)"
+                  ></div>
+                </div>
+              </div>
+
+              <!-- Nested sub-goals -->
+              <div id="subgoals" class="mt-6 space-y-3">
+                <!-- Sprint 1 -->
+                <div class="glass-soft overflow-hidden rounded-2xl" data-subgoal="sprint-1">
+                  <button type="button" class="subgoal-toggle glass-hover flex w-full items-center gap-3 px-4 py-3.5 text-left">
+                    <i data-lucide="chevron-right" class="chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300"></i>
+                    <i data-lucide="layers" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
+                    <span class="font-medium">Sprint 1</span>
+                    <span class="glass rounded-full px-2 py-0.5 text-[11px] text-muted-foreground">July 14</span>
+                    <span class="sg-count ml-auto text-xs text-muted-foreground">0/4</span>
+                  </button>
+                  <div class="collapsible">
+                    <div class="collapsible-inner">
+                      <ul class="space-y-1.5 px-3 pb-3 pt-1">
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Design system tokens</span>
+                            <span class="flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Business
+                            </span>
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Auth flow + session handling</span>
+                            <span class="flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Business
+                            </span>
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Dashboard shell &amp; routing</span>
+                            <span class="flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Business
+                            </span>
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Realtime sync engine</span>
+                            <span class="flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>School
+                            </span>
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Sprint 2 -->
+                <div class="glass-soft overflow-hidden rounded-2xl" data-subgoal="sprint-2">
+                  <button type="button" class="subgoal-toggle glass-hover flex w-full items-center gap-3 px-4 py-3.5 text-left">
+                    <i data-lucide="chevron-right" class="chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300"></i>
+                    <i data-lucide="layers" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
+                    <span class="font-medium">Sprint 2</span>
+                    <span class="glass rounded-full px-2 py-0.5 text-[11px] text-muted-foreground">July 28</span>
+                    <span class="sg-count ml-auto text-xs text-muted-foreground">0/3</span>
+                  </button>
+                  <div class="collapsible">
+                    <div class="collapsible-inner">
+                      <ul class="space-y-1.5 px-3 pb-3 pt-1">
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Billing &amp; Stripe checkout</span>
+                            <span class="flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Business
+                            </span>
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Team invites &amp; roles</span>
+                            <span class="flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Life
+                            </span>
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Onboarding tour</span>
+                            <span class="flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Life
+                            </span>
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Launch Prep -->
+                <div class="glass-soft overflow-hidden rounded-2xl" data-subgoal="launch">
+                  <button type="button" class="subgoal-toggle glass-hover flex w-full items-center gap-3 px-4 py-3.5 text-left">
+                    <i data-lucide="chevron-right" class="chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300"></i>
+                    <i data-lucide="layers" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
+                    <span class="font-medium">Launch Prep</span>
+                    <span class="glass rounded-full px-2 py-0.5 text-[11px] text-muted-foreground">Aug 05</span>
+                    <span class="sg-count ml-auto text-xs text-muted-foreground">0/2</span>
+                  </button>
+                  <div class="collapsible">
+                    <div class="collapsible-inner">
+                      <ul class="space-y-1.5 px-3 pb-3 pt-1">
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Landing page polish</span>
+                            <span class="flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Business
+                            </span>
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" class="task-item glass-hover flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+                            <span class="checkbox flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/[0.03] transition-all duration-300">
+                              <i data-lucide="check" class="check-icon h-3.5 w-3.5 scale-50 text-primary-foreground opacity-0 transition-all duration-300"></i>
+                            </span>
+                            <span class="task-label flex-1 text-sm text-foreground transition-all duration-300">Load testing</span>
+                            <span class="flex items-center gap-1 rounded-full bg-sky-400/10 px-2 py-0.5 text-[10px] font-medium text-sky-300">
+                              <i data-lucide="flag" class="h-2.5 w-2.5"></i>Sport
+                            </span>
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ===== FOCUS VIEW ===== -->
+          <div id="focus-view" class="hidden xl:col-span-2">
+            <section class="glass flex flex-col items-center rounded-3xl p-6 sm:p-8">
+              <div class="mb-6 flex w-full items-center justify-between">
+                <div>
+                  <h2 class="text-lg font-semibold tracking-tight">Focus Timer</h2>
+                  <p class="text-sm text-muted-foreground">Deep work session</p>
+                </div>
+                <span id="timer-status" class="glass-soft flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                  <span id="timer-dot" class="h-2 w-2 rounded-full bg-muted-foreground/50"></span>
+                  <span id="timer-status-label">Paused</span>
+                </span>
+              </div>
+
+              <!-- Ring -->
+              <div class="relative flex items-center justify-center py-2">
+                <div
+                  id="timer-glow"
+                  aria-hidden="true"
+                  class="pointer-events-none absolute h-[240px] w-[240px] rounded-full blur-3xl transition-opacity duration-700"
+                  style="background: radial-gradient(circle, rgba(255, 69, 58, 0.35), transparent 70%); opacity: 0.4"
+                ></div>
+                <svg width="280" height="280" viewBox="0 0 280 280" class="-rotate-90" role="img" aria-label="Focus timer remaining">
+                  <defs>
+                    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#ff6b6b" />
+                      <stop offset="55%" stop-color="#ff453a" />
+                      <stop offset="100%" stop-color="#c1170f" />
+                    </linearGradient>
+                    <filter id="ringGlow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="6" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <circle cx="140" cy="140" r="133" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="14" />
+                  <circle
+                    id="ring-progress"
+                    cx="140"
+                    cy="140"
+                    r="133"
+                    fill="none"
+                    stroke="url(#ringGrad)"
+                    stroke-width="14"
+                    stroke-linecap="round"
+                    filter="url(#ringGlow)"
+                    style="transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1)"
+                  />
+                </svg>
+
+                <!-- Center readout -->
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="font-mono text-6xl font-semibold tracking-tight tabular-nums">
+                    <span id="timer-mm">25</span><span class="text-primary text-glow">:</span><span id="timer-ss">00</span>
+                  </span>
+                  <span id="timer-preset-label" class="mt-1 text-xs uppercase tracking-[0.25em] text-muted-foreground">25 min focus</span>
+                </div>
+              </div>
+
+              <!-- Controls -->
+              <div class="mt-6 flex items-center gap-3">
+                <button
+                  type="button"
+                  id="reset-btn"
+                  aria-label="Reset timer"
+                  class="glass-soft glass-hover flex h-12 w-12 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground"
+                >
+                  <i data-lucide="rotate-ccw" class="h-5 w-5"></i>
+                </button>
+                <button
+                  type="button"
+                  id="play-btn"
+                  class="glass-hover flex h-14 items-center gap-2.5 rounded-2xl bg-primary px-8 font-semibold text-primary-foreground red-glow"
+                >
+                  <i data-lucide="play" id="play-icon" class="h-5 w-5"></i>
+                  <span id="play-label">Start</span>
+                </button>
+              </div>
+
+              <!-- Presets -->
+              <div id="presets" class="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <button data-min="5" class="preset-btn glass-hover glass-soft rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">5m</button>
+                <button data-min="15" class="preset-btn glass-hover glass-soft rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">15m</button>
+                <button data-min="25" class="preset-btn glass-hover glass-soft rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">25m</button>
+                <button data-min="45" class="preset-btn glass-hover glass-soft rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">45m</button>
+                <button data-min="60" class="preset-btn glass-hover glass-soft rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">60m</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+
+      <!-- ============ RIGHT SIDEBAR (Task Filters) ============ -->
+      <div id="right-sidebar" class="hidden shrink-0 xl:block">
+        <aside class="glass sticky top-4 flex h-[calc(100dvh-2rem)] w-72 flex-col rounded-3xl p-4 scroll-thin 2xl:w-80">
+          <div class="mb-4 px-1">
+            <h2 class="text-base font-semibold tracking-tight">Filters</h2>
+            <p class="text-xs text-muted-foreground">Refine your task view</p>
+          </div>
+
+          <div class="flex-1 space-y-6 overflow-y-auto scroll-thin">
+            <div>
+              <p class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Categories</p>
+              <div class="filter-group space-y-1.5">
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="briefcase" class="h-4 w-4 text-primary"></i></span>
+                  <span class="flex-1 text-left font-medium">Business</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">6</span>
+                </button>
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="heart" class="h-4 w-4 text-emerald-300"></i></span>
+                  <span class="flex-1 text-left font-medium">Life</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">3</span>
+                </button>
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="dumbbell" class="h-4 w-4 text-sky-300"></i></span>
+                  <span class="flex-1 text-left font-medium">Sport</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">1</span>
+                </button>
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="graduation-cap" class="h-4 w-4 text-amber-300"></i></span>
+                  <span class="flex-1 text-left font-medium">School</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">1</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Deadlines</p>
+              <div class="filter-group space-y-1.5">
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="alert-triangle" class="h-4 w-4 text-primary"></i></span>
+                  <span class="flex-1 text-left font-medium">Urgent</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">2</span>
+                </button>
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="calendar-clock" class="h-4 w-4 text-amber-300"></i></span>
+                  <span class="flex-1 text-left font-medium">Today</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">4</span>
+                </button>
+                <button class="filter-row glass-hover glass-soft flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04]"><i data-lucide="circle-check" class="h-4 w-4 text-emerald-300"></i></span>
+                  <span class="flex-1 text-left font-medium">Done</span>
+                  <span class="filter-count min-w-6 rounded-full bg-white/[0.06] px-2 py-0.5 text-center text-xs tabular-nums text-muted-foreground">3</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weekly summary card -->
+          <div class="glass-soft mt-4 rounded-2xl p-4">
+            <p class="text-xs text-muted-foreground">This week</p>
+            <p class="mt-1 text-sm">
+              <span class="font-mono text-2xl font-semibold text-primary text-glow">68%</span>
+              <span class="ml-1 text-muted-foreground">focus goal</span>
+            </p>
+            <div class="glass mt-3 h-1.5 w-full overflow-hidden rounded-full">
+              <div class="h-full w-[68%] rounded-full bg-primary red-glow"></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ============ VANILLA JAVASCRIPT ============ -->
+    <script>
+      ;(function () {
+        /* ---------- Icons ---------- */
+        function renderIcons() {
+          if (window.lucide) window.lucide.createIcons()
+        }
+        renderIcons()
+
+        /* ---------- Element refs ---------- */
+        const tasksView = document.getElementById('tasks-view')
+        const focusView = document.getElementById('focus-view')
+        const rightSidebar = document.getElementById('right-sidebar')
+        const navItems = Array.from(document.querySelectorAll('.nav-item'))
+        const leftSidebar = document.getElementById('left-sidebar')
+        const backdrop = document.getElementById('backdrop')
+        const menuBtn = document.getElementById('menu-btn')
+        const collapseBtn = document.getElementById('collapse-btn')
+
+        /* ---------- View switching ---------- */
+        function setActiveNav(navId) {
+          navItems.forEach((item) => {
+            const isActive = item.dataset.nav === navId
+            const bar = item.querySelector('.nav-bar')
+            const icon = item.querySelector('.nav-icon')
+            item.classList.toggle('glass', isActive)
+            item.classList.toggle('text-foreground', isActive)
+            item.classList.toggle('text-muted-foreground', !isActive)
+            bar.classList.toggle('hidden', !isActive)
+            icon.classList.toggle('bg-red-soft', isActive)
+            icon.classList.toggle('text-primary', isActive)
+            icon.classList.toggle('bg-white/[0.03]', !isActive)
+          })
+        }
+
+        function setView(view) {
+          const showFocus = view === 'focus'
+          // Focus view: ONLY the timer. Tasks view: folders + right filter sidebar.
+          focusView.classList.toggle('hidden', !showFocus)
+          tasksView.classList.toggle('hidden', showFocus)
+          rightSidebar.classList.toggle('hidden', showFocus)
+          rightSidebar.classList.toggle('xl:block', !showFocus)
+          // Let the visible panel occupy the full main column.
+          focusView.classList.toggle('xl:col-span-2', false)
+          focusView.classList.toggle('xl:col-span-5', showFocus)
+          tasksView.classList.toggle('xl:col-span-3', false)
+          tasksView.classList.toggle('xl:col-span-5', !showFocus)
+        }
+
+        navItems.forEach((item) => {
+          item.addEventListener('click', () => {
+            setActiveNav(item.dataset.nav)
+            setView(item.dataset.view)
+            closeMobileSidebar()
+          })
+        })
+
+        /* ---------- Mobile sidebar drawer ---------- */
+        function openMobileSidebar() {
+          leftSidebar.classList.remove('hidden', '-translate-x-[120%]')
+          leftSidebar.classList.add('flex')
+          backdrop.classList.remove('hidden')
+        }
+        function closeMobileSidebar() {
+          if (window.innerWidth >= 1024) return
+          leftSidebar.classList.add('-translate-x-[120%]')
+          backdrop.classList.add('hidden')
+          window.setTimeout(() => {
+            if (window.innerWidth < 1024) leftSidebar.classList.add('hidden')
+          }, 300)
+        }
+        menuBtn.addEventListener('click', openMobileSidebar)
+        backdrop.addEventListener('click', closeMobileSidebar)
+
+        /* ---------- Collapse (desktop) ---------- */
+        let collapsed = false
+        const brand = document.getElementById('brand')
+        const profileChip = document.getElementById('profile-chip')
+        const collapseIcon = collapseBtn.querySelector('i')
+        collapseBtn.addEventListener('click', () => {
+          collapsed = !collapsed
+          leftSidebar.classList.toggle('lg:w-20', collapsed)
+          leftSidebar.classList.toggle('w-64', !collapsed)
+          brand.classList.toggle('lg:hidden', collapsed)
+          navItems.forEach((item) => {
+            item.querySelector('.nav-label').classList.toggle('lg:hidden', collapsed)
+            item.classList.toggle('lg:justify-center', collapsed)
+          })
+          profileChip.querySelector('div').classList.toggle('lg:hidden', collapsed)
+          profileChip.classList.toggle('lg:justify-center', collapsed)
+          collapseIcon.setAttribute('data-lucide', collapsed ? 'panel-left-open' : 'panel-left-close')
+          renderIcons()
+        })
+
+        /* ---------- Collapsible sub-goals ---------- */
+        document.querySelectorAll('.subgoal-toggle').forEach((btn) => {
+          const wrapper = btn.parentElement
+          const body = wrapper.querySelector('.collapsible')
+          const chevron = btn.querySelector('.chevron')
+          // Open Sprint 1 by default
+          if (wrapper.dataset.subgoal === 'sprint-1') {
+            body.classList.add('open')
+            chevron.classList.add('rotate-90', 'text-primary')
+          }
+          btn.addEventListener('click', () => {
+            const open = body.classList.toggle('open')
+            chevron.classList.toggle('rotate-90', open)
+            chevron.classList.toggle('text-primary', open)
+          })
+        })
+
+        /* ---------- Custom checkboxes + dynamic progress ---------- */
+        const taskItems = Array.from(document.querySelectorAll('.task-item'))
+        const folderPct = document.getElementById('folder-pct')
+        const folderCount = document.getElementById('folder-count')
+        const folderBar = document.getElementById('folder-bar')
+        const folderTotal = document.getElementById('folder-total')
+
+        function updateProgress() {
+          const total = taskItems.length
+          const done = taskItems.filter((t) => t.classList.contains('is-done')).length
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0
+          folderPct.textContent = pct + '%'
+          folderCount.textContent = done + '/' + total + ' complete'
+          folderTotal.textContent = total
+          folderBar.style.width = pct + '%'
+          // Per sub-goal counts
+          document.querySelectorAll('[data-subgoal]').forEach((sg) => {
+            const items = Array.from(sg.querySelectorAll('.task-item'))
+            const sgDone = items.filter((t) => t.classList.contains('is-done')).length
+            sg.querySelector('.sg-count').textContent = sgDone + '/' + items.length
+          })
+        }
+
+        taskItems.forEach((item) => {
+          const box = item.querySelector('.checkbox')
+          const icon = item.querySelector('.check-icon')
+          const label = item.querySelector('.task-label')
+          item.addEventListener('click', () => {
+            const done = item.classList.toggle('is-done')
+            // checkbox visuals
+            box.classList.toggle('border-primary', done)
+            box.classList.toggle('bg-primary', done)
+            box.classList.toggle('red-glow', done)
+            box.classList.toggle('border-white/20', !done)
+            box.classList.toggle('bg-white/[0.03]', !done)
+            // check icon reveal
+            icon.classList.toggle('opacity-100', done)
+            icon.classList.toggle('scale-100', done)
+            icon.classList.toggle('opacity-0', !done)
+            icon.classList.toggle('scale-50', !done)
+            // label strike-through
+            label.classList.toggle('line-through', done)
+            label.classList.toggle('text-muted-foreground', done)
+            label.classList.toggle('text-foreground', !done)
+            updateProgress()
+          })
+        })
+
+        // Seed the two originally-completed tasks (first two in Sprint 1)
+        ;[taskItems[0], taskItems[1]].forEach((item) => item && item.click())
+
+        /* ---------- Filter row active state ---------- */
+        document.querySelectorAll('.filter-group').forEach((group) => {
+          const rows = Array.from(group.querySelectorAll('.filter-row'))
+          rows.forEach((row) => {
+            row.addEventListener('click', () => {
+              rows.forEach((r) => {
+                const active = r === row
+                r.classList.toggle('glass', active)
+                r.classList.toggle('glass-soft', !active)
+                r.classList.toggle('text-foreground', active)
+                r.classList.toggle('text-muted-foreground', !active)
+                const count = r.querySelector('.filter-count')
+                count.classList.toggle('bg-primary', active)
+                count.classList.toggle('text-primary-foreground', active)
+                count.classList.toggle('bg-white/[0.06]', !active)
+                count.classList.toggle('text-muted-foreground', !active)
+              })
+            })
+          })
+        })
+
+        /* ---------- Focus Timer ---------- */
+        const RADIUS = 133
+        const CIRC = 2 * Math.PI * RADIUS
+        const ring = document.getElementById('ring-progress')
+        const mmEl = document.getElementById('timer-mm')
+        const ssEl = document.getElementById('timer-ss')
+        const presetLabel = document.getElementById('timer-preset-label')
+        const playBtn = document.getElementById('play-btn')
+        const playIcon = document.getElementById('play-icon')
+        const playLabel = document.getElementById('play-label')
+        const resetBtn = document.getElementById('reset-btn')
+        const statusChip = document.getElementById('timer-status')
+        const statusDot = document.getElementById('timer-dot')
+        const statusLabel = document.getElementById('timer-status-label')
+        const timerGlow = document.getElementById('timer-glow')
+        const presetBtns = Array.from(document.querySelectorAll('.preset-btn'))
+
+        let total = 25 * 60
+        let remaining = 25 * 60
+        let running = false
+        let intervalId = null
+
+        function renderTimer() {
+          const m = Math.floor(remaining / 60)
+          const s = remaining % 60
+          mmEl.textContent = String(m).padStart(2, '0')
+          ssEl.textContent = String(s).padStart(2, '0')
+          const progress = total > 0 ? remaining / total : 0
+          const dash = CIRC * progress
+          ring.setAttribute('stroke-dasharray', dash + ' ' + CIRC)
+          presetLabel.textContent = Math.round(total / 60) + ' min focus'
+          // status chip
+          statusLabel.textContent = running ? 'In session' : 'Paused'
+          statusChip.classList.toggle('bg-red-soft', running)
+          statusChip.classList.toggle('text-primary', running)
+          statusChip.classList.toggle('glass-soft', !running)
+          statusChip.classList.toggle('text-muted-foreground', !running)
+          statusDot.classList.toggle('bg-primary', running)
+          statusDot.classList.toggle('red-glow', running)
+          statusDot.classList.toggle('animate-float-pulse', running)
+          statusDot.classList.toggle('bg-muted-foreground/50', !running)
+          timerGlow.style.opacity = running ? '0.9' : '0.4'
+          playIcon.setAttribute('data-lucide', running ? 'pause' : 'play')
+          playLabel.textContent = running ? 'Pause' : 'Start'
+          renderIcons()
+        }
+
+        function tick() {
+          if (remaining <= 1) {
+            remaining = 0
+            stop()
+            renderTimer()
+            return
+          }
+          remaining -= 1
+          renderTimer()
+        }
+
+        function start() {
+          if (running || remaining === 0) return
+          running = true
+          intervalId = window.setInterval(tick, 1000)
+          renderTimer()
+        }
+        function stop() {
+          running = false
+          if (intervalId) window.clearInterval(intervalId)
+          intervalId = null
+        }
+
+        playBtn.addEventListener('click', () => {
+          if (running) {
+            stop()
+            renderTimer()
+          } else {
+            start()
+          }
+        })
+        resetBtn.addEventListener('click', () => {
+          stop()
+          remaining = total
+          renderTimer()
+        })
+
+        function setActivePreset(mins) {
+          presetBtns.forEach((b) => {
+            const active = Number(b.dataset.min) === mins
+            b.classList.toggle('glass', active)
+            b.classList.toggle('ring-1', active)
+            b.classList.toggle('ring-primary/40', active)
+            b.classList.toggle('text-foreground', active)
+            b.classList.toggle('glass-soft', !active)
+            b.classList.toggle('text-muted-foreground', !active)
+          })
+        }
+
+        presetBtns.forEach((b) => {
+          b.addEventListener('click', () => {
+            const mins = Number(b.dataset.min)
+            stop()
+            total = mins * 60
+            remaining = mins * 60
+            setActivePreset(mins)
+            renderTimer()
+          })
+        })
+
+        // Initial timer state
+        setActivePreset(25)
+        renderTimer()
+
+        /* ---------- Default view ---------- */
+        setActiveNav('nova')
+        setView('tasks')
+        updateProgress()
+      })()
+    </script>
+  </body>
+</html>
