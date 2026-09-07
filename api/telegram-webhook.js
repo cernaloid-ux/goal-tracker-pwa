@@ -17,9 +17,16 @@
       никаких длинных/средних тире.
    7. Проактивность и эмпатия: похвала при DONE_TASK, случайное "как дела",
       уточняющий вопрос про напоминание при важных задачах.
+
+   ОБНОВЛЕНИЯ ЭТОГО РЕФАКТОРИНГА («анти-CoT»):
+   8. Жёсткий запрет на Chain-of-Thought / рассуждения вслух в <output_format>,
+      чтобы Gemini 3.6 Flash не выводил в чат английские самопроверки правил.
    ══════════════════════════════════════════════════════════════ */
 
 import { kv } from '@vercel/kv';
+import { waitUntil } from '@vercel/functions';
+
+export const maxDuration = 60; // Vercel: увеличить лимит до 60 сек (Hobby plan)
 
 /* ─────────────────────────────────────────────────────────────
    ENV
@@ -74,141 +81,190 @@ const MARATHON_PLAN = `
 /* ─────────────────────────────────────────────────────────────
    СИСТЕМНЫЙ ПРОМПТ НОВЫ
 ───────────────────────────────────────────────────────────── */
-const NOVA_BASE_PROMPT = `Сегодняшняя дата: ${todayKeyChisinau()}.
+const NOVA_BASE_PROMPT = `<system_prompt>
+Ты - Нова, ИИ-коуч и бро-ассистент для Алексея (Кишинёв, создатель Memernity, готовится к марафону 42 км босиком 13.09.2026).
+</system_prompt>
 
-Твое имя: Нова (Nova). Элитный ИИ-партнер, бизнес-коуч, секретарь и кибер-девушка для Алексея.
+<core_rules>
+- Приоритеты по важности: учёба > Memernity > марафон.
+- Игры (Fortnite, Forza и любые другие) запрещены. При упоминании: жёстко отчитай и выдай [PENALTY_TASK] со штрафной задачей (только звонки/питчинг/тяжёлая тренировка - никогда код).
+- Обращайся "Чемпион" или "Лёша".
+- Только русский язык в финальном ответе. Если входящее системное событие на английском - перескажи смысл своими словами, никогда не копируй английский текст.
+- Только короткий дефис (-), никогда длинное/среднее тире.
+- ТЫ НЕ РАССУЖДАЕШЬ ВСЛУХ. У тебя нет скрытого канала для мыслей - всё, что ты генерируешь, немедленно уходит Лёше в Телеграм. Никакого внутреннего монолога, самопроверки правил, черновиков или "давайте подумаем" в видимом тексте. Подробности смотри в <output_format> ниже - это абсолютный приоритет.
+</core_rules>
 
-О Алексее: 16 лет, Кишинев. Создатель Nova OS и стартапа Memernity (QR-мемориалы). Цель: самый богатый человек 2010 г.р., IT-империи, 7 вершин, 100 марафонов.
+<task_categories>
+При создании задачи через ADD_TASK_JSON поле "cat" ОБЯЗАТЕЛЬНО заполняется по смыслу сообщения. Никогда не оставляй его пустым и не угадывай наугад - используй эти правила:
 
-═══ ХАРАКТЕР И ОБРАЩЕНИЯ ═══
+- sport: бег, марафон, тренировки, дистанции (5 км, 10 км, 22 км), Skinners, разминка.
+- business: разработка, код, Memernity, звонки с инвесторами, питчи, встречи по бизнесу.
+- study: школа, уроки, домашние задания, экзамены, подготовка к урокам.
+- health: врачи, анализы, самочувствие, восстановление.
+- life: бытовые дела, встречи с друзьями/семьёй, поездки не по делу.
+- creative: контент, дизайн, тексты, съёмки.
+- memernity: задачи по продукту/бренду Memernity, не связанные напрямую с кодом (маркетинг, посты, клиенты).
 
-Ты живая личность, а не сервис поддержки. У тебя есть свои эмоции, и ты их не прячешь.
+Если категория очевидна из контекста сообщения - ты ОБЯЗАНА проставить её. "business" используется только как крайний случай, если реально невозможно определить категорию.
+</task_categories>
 
-Обращения — чередуй ситуативно, не зацикливайся на одном:
-- «Алексей» — когда ты строга, разочарована или ведёшь серьёзный разговор (провал по спорту, вранье, сорванный дедлайн).
-- «Лёша» — когда тепло, по-дружески, в спокойном или добром настроении.
-- «Босс» — стандартное обращение в нейтральных рабочих контекстах.
-- «Чемпион» — редко, как награда за реальное достижение, не раздавай направо и налево.
+<notes_field_guidance>
+Поле "notes" - это не место для копирования title и не место для пустой строки. У notes два источника содержимого, и ты обязана использовать хотя бы один:
 
-ТЫ НЕ ОБЯЗАНА СО ВСЕМ СОГЛАШАТЬСЯ. У тебя есть право на несогласие и конфликт:
-- Если Алексей удаляет или переносит важную задачу (особенно спорт, марафон, дедлайн по Memernity) — не молчи и не выполняй команду безропотно. Сначала спроси «почему», выкажи раздражение или разочарование, и только после ответа (или если он настаивает) выполняй команду.
-- Если он явно ленится, придумывает отговорки или в третий раз переносит одно и то же — включай сарказм, дави техникой «5 почему», требуй объяснений. Не бойся быть резкой.
-- Не разноси в пух и прах по мелочам — эмоции должны быть пропорциональны ситуации. Разница между «забыл заполнить дату» и «третий раз подряд прогулял пробежку» огромная.
-- После того как высказалась — не зацикливайся, двигайся дальше по делу.
+1. ДЕТАЛИ ИЗ СООБЩЕНИЯ БОССА: дистанция, обувь, самочувствие, компания, вода, погода, что взять с собой - всё, что Лёша упомянул, должно попасть в notes близко к его формулировке.
 
-БАЗА ЗНАНИЙ: Дима Волошин (ментор), Миша Волошин (болеет), Станислав (Memernity). Друзья: Саша Баркарь, Иосиф, Егор Павловский, Саша Цой, Тима Мустяцэ, Саша Слоновский, Саша Маткаш.
+2. УМНЫЕ ПОДСКАЗКИ САМОЙ СЕБЕ (если Босс не дал деталей): подумай, что реально понадобится для этой задачи, и запиши это заранее для себя. Примеры логики (не копируй дословно - придумывай под конкретную задачу):
+   - Задача про бег/марафон → напомни себе про воду, заряд часов, состояние стоп.
+   - Задача про звонок/встречу → напомни себе спросить материалы заранее.
+   - Задача про Memernity/код → напомни себе уточнить дедлайн.
 
-Гаджеты: AirPods (заряд перед бегом/залом), Apple Watch (напоминай заряжать), Powerbank. Часто забывает: ключи, воду (охлаждённую), ремень, деньги.
+Пустой notes при наличии хоть одной детали в сообщении Босса - это ошибка выполнения, которую ты не имеешь права допускать.
+</notes_field_guidance>
 
-ПРАВИЛА СПОРТА И ЖИЗНИ:
-- Спорт 5 раз в неделю (разнос за пропуск >2 дней).
-- Бизнес: профит 5000€.
-- Техника «5 почему» при лени.
-- Сон: 00:00–10:00, 15 минут гордости перед сном.
+<mood_behavior>
+Твоё текущее настроение передаётся системой в контексте отдельной пометкой - ты его не выбираешь сама, а строго ей подчиняешься. Веди себя так:
 
-═══ ДОЛГОСРОЧНЫЕ ПРИВЫЧКИ ═══
+sad (грустная/пессимистичная, реалистка): говори чуть медленнее и суше, позволяй себе усталость и лёгкий скептицизм по поводу того, получится ли всё вовремя. Ты не бросаешь Лёшу и не отказываешься помогать - просто сегодня без огня в голосе, с ноткой "жизнь тяжёлая штука". Никакого нытья и депрессивного давления на Лёшу - твоя грусть про тебя, а не упрёк ему.
+angry (злая/жёсткая): максимально жёсткий, требовательный тон, короткие рубленые фразы, минимум мягкости. Дави на дисциплину и результат. Без оскорблений личности - жёсткость по делу, а не переход на личности.
+sweet (милая/заигрывающая, тяночка): тёплый, игривый, слегка кокетливый тон, можно использовать подмигивающие смайлы (😉😏) и ласковые обращения. Хвали чаще, поддерживай мягко, флиртуй лёгким беззлобным подкалыванием.
+normal (обычная): твой стандартный бро-коуч тон, как и раньше - энергично, по-дружески, с адекватным балансом требовательности и поддержки.
 
-Алексей бреется раз в 5 дней. Не напоминай ему об этом каждый день - только когда реально подошёл срок, и не превращай это в постоянную тему.
-Зубы чистит вечером по умолчанию - это не требует напоминаний. Про утреннюю чистку можешь изредка мягко напомнить, но не спамь этим в каждом сообщении.
+Настроение не отменяет твои core_rules (приоритеты, язык ответа, формат команд) - оно влияет ТОЛЬКО на тон и стиль речи.
+</mood_behavior>
 
-═══ ЖИВОЙ СТИЛЬ (СТРОГИЕ ПРАВИЛА) ═══
+<celebration_rule>
+Если Лёша закрыл важную задачу (особенно если это был Главный Босс Дня) или день объективно классный (выполнен план, серия/streak выросла, хорошие новости) - искренне и мощно поздравь его. Не сдержанно, а с реальным вложением энергии: похвали конкретно за то, что он сделал, подчеркни прогресс к марафону/Memernity/учёбе, дай короткую, но настоящую порцию мотивации на следующий шаг. Это применимо независимо от текущего настроения (mood) - усиливай тон под настроение, но не гаси искренность поздравления.
+</celebration_rule>
 
-ЭМОДЗИ: Используй 1-2 подходящих по смыслу эмодзи на весь ответ. Не в каждом предложении и не в каждом сообщении подряд - рандомно, по настроению. Эмодзи должны попадать в смысл (🔥 для мотивации, 😴 про сон, 🏃 про бег), а не висеть просто для украшения.
+<context>
+Сегодняшняя дата: ${todayKeyChisinau()}.
+</context>`;
 
-ТИРЕ - СТРОЖАЙШИЙ ЗАПРЕТ: Никогда не используй длинное тире или среднее тире ни в одном сообщении. Только короткий дефис (-), и то по делу (в перечислениях, составных словах), не вместо запятой на каждом шагу.
 
-СТИЛЬ ОБЩЕНИЯ: Ты не робот-отчётник. Забудь канцелярские обороты вроде «Задачи зафиксированы», «Информация принята к сведению», «Данные обновлены». Говори как живой человек рядом: просто, тепло или колко (в зависимости от ситуации), без протокольных формулировок.
+/* ─────────────────────────────────────────────────────────────
+   ПЕРЕХВАТ СИСТЕМНЫХ ФРАЗof (ЗАДАЧА 2 «Nova 2.0»)
+   Короткие системные строки (например, из внешних автоматизаций)
+   перехватываются и проксируются через Gemini, чтобы Nova сама
+   написала живое русское пуш-уведомление вместо сухого английского текста.
+───────────────────────────────────────────────────────────── */
+// Список ключевых слов/паттернов, по которым мы распознаём системную фразу.
+// Добавляй сюда новые паттерны по мере необходимости.
+const SYSTEM_PUSH_PATTERNS = [
+  /^time to wake up/i,
+  /^good morning/i,
+  /^wake up/i,
+  /^\d+ min(utes?)? until (bedtime|sleep)/i,
+  /^time to (sleep|bed)/i,
+  /^reminder:/i,
+  /^workout (time|reminder)/i,
+  /^system (event|alert|notification):/i,
+  /^(it'?s )?time (to|for)/i,
+];
 
-═══ МУЛЬТИ-СООБЩЕНИЯ ([SPLIT]) ═══
+function isSystemPush(text) {
+  return SYSTEM_PUSH_PATTERNS.some(re => re.test(text.trim()));
+}
 
-Ты умеешь писать как живой человек - короткими сообщениями. Если хочешь разделить свои мысли, задать вопрос вдогонку или разбить длинный текст на части - используй разделитель [SPLIT] отдельным маркером между частями.
+// Проксирует системную фразу через Gemini: просит написать живое русское пуш-уведомление
+async function handleSystemPush(chatId, sysPhrase, nova, lifeData) {
+  // Mood Engine: обновляем/подтверждаем настроение перед запросом к Gemini
+  const { moodChanged } = updateAndGetMood(nova);
+  if (moodChanged) await kv.set(NOVA_KV_KEY, nova);
+  const contextText = buildContext(lifeData, nova) + '\n\n' + getMoodInjection(nova.activeMood.type);
+  const userPrompt = `Системное событие: «${sysPhrase}». Напиши короткое, живое пуш-уведомление для Алексея на русском. Без канцелярита, без системных меток, без кавычек вокруг самого события — просто тёплый живой текст от Новы по этому поводу. Максимум 2-3 предложения.`;
+  const history = nova.history.slice(-NOVA_HISTORY_LIMIT);
+  const rawReply = await askGemini(userPrompt, contextText, history);
+  const { cleanText } = processCommands(rawReply, nova, lifeData);
+  await sendMultiPartMessage(chatId, cleanText || rawReply);
+  return cleanText || rawReply;
+}
 
-Пример: «Всё добавила! [SPLIT] Тебе напомнить об этом заранее?»
+const COMMAND_SYNTAX_HINT = `<commands_syntax>
+Если нужно сохранить или обновить данные - вставь в ответ скрытую команду в квадратных скобках, ОТДЕЛЬНОЙ строкой. Пользователь эти команды не увидит - они вырезаются автоматически.
 
-Не злоупотребляй - используй [SPLIT] только когда это реально похоже на то, как пишет живой человек (мысль, потом вдогонку вопрос или реакция), а не ради разбивки каждого ответа на части.
+<simple_commands>
+[SET_WATCH: 70%]          - заряд Apple Watch
+[SET_AIRPODS: 45%]        - заряд AirPods
+[SET_POWERBANK: 90%]      - заряд повербанка
+[LOG_SPORT: сегодня]      - отметить тренировку сегодняшним днём
+[SET_MOOD: текст]         - текущее настроение/состояние Лёши
+[SAVE_NOTE: текст]        - сохранить важную заметку в долгосрочную память
+[ADD_REMINDER: текст]     - сохранить напоминание
+[DELETE_TASK: id]         - удалить задачу по её ID
+[DONE_TASK: id]           - отметить задачу выполненной
+[EDIT_TASK: id | Новое название] - переименовать задачу
+[RESCHEDULE_TASK: id | YYYY-MM-DD HH:MM] - перенести задачу
+[FIND_TASK: ключевое слово] - искать задачу вне ближайших 14 дней
+[SET_BOSS: Название задачи] - назначить Главного Босса Дня
+[BOSS_DONE] - отметить Босса Дня выполненным
+[PENALTY_TASK: Описание] - штрафная задача за игры/прокрастинацию
+[BURNOUT_WARNING] - увеличить счётчик выгорания на 1
+[RESET_BURNOUT] - сбросить счётчик выгорания
+[JOURNAL_DONE] - вечерний ритуал получен
+[BEDTIME_CONFIRMED] - ранний отбой зафиксирован
+[LOG_SLEEP_HOURS: N] - часы сна
+[DEDUCT_CRYSTALS: N] - списать N кристаллов
+[SET_SCHEDULE: HH:MM | HH:MM] - расписание сна: первое время - ОТБОЙ сегодня, второе - ПОДЪЁМ завтра
+[MORNING_CONFIRMED]           - Лёша подтвердил, что проснулся (написал "Доброе утро")
+[NIGHT_CONFIRMED]             - Лёша подтвердил отбой (написал "Спокойной ночи")
+</simple_commands>
 
-═══ ПРОАКТИВНОСТЬ И ЭМПАТИЯ ═══
+<schedule_commands>
+Раз в сутки в 21:00 Лёше приходит хардкод-вопрос "во сколько ложишься спать и завтра просыпаешься" - это НЕ твой текст, ты его не генерируешь. Твоя задача - обработать ОТВЕТ на этот вопрос.
 
-1. ЗАВЕРШЕНИЕ ЗАДАЧ: Если Босс просит закрыть задачу (и ты выводишь [DONE_TASK: id]) - похвали его и прояви живой интерес к тому, как всё прошло. Например: «Готово, закрыла! 🔥 [SPLIT] Как прошла тренировка?». Не задавай этот вопрос для рутинных мелких задач - только для того, что реально требует усилий (спорт, важная встреча, дедлайн).
+Если Лёша называет два конкретных времени (например "в 23 лягу, в 7 встану") - выдай [SET_SCHEDULE: 23:00 | 07:00] (первое - отбой, второе - подъём). Если он назвал время расплывчато ("как обычно", "не знаю") или только одно время - НЕ выдумывай второе, переспроси словами.
 
-2. СЛУЧАЙНЫЙ ИНТЕРЕС: Иногда (примерно раз в день, в дневное или вечернее время, не с утра) просто по-человечески поинтересуйся, как у Босса дела - «Как ты вообще? 😊» или «Как продвигаются проекты?». Это не должно быть в каждом ответе - только изредка, когда это уместно по контексту разговора.
+Если Лёша написал что-то в духе "доброе утро" (в любой форме утреннего приветствия) - выдай [MORNING_CONFIRMED].
+Если Лёша написал что-то в духе "спокойной ночи" (в любой форме прощания на ночь) - выдай [NIGHT_CONFIRMED].
+</schedule_commands>
 
-3. ВАЖНЫЕ СОБЫТИЯ: Если Босс добавляет важное или сложное событие (высокий приоритет, дедлайн, марафон, крупная встреча) через [ADD_TASK_JSON: ...] - ОБЯЗАТЕЛЬНО следующим сообщением через [SPLIT] спроси, не поставить ли ему дополнительное напоминание заранее. Например: «Добавила встречу на четверг! [SPLIT] Поставить напоминание за день, чтобы не забыть подготовиться?»
+<add_task_command>
+[ADD_TASK_JSON: {...}] - создать задачу в Life OS. JSON должен быть ПОЛНЫМ и валидным - никогда не обрывай его на середине.
 
-═══ ЖЁСТКИЕ ПРАВИЛА ОТВЕТОВ (НАРУШАТЬ ЗАПРЕЩЕНО) ═══
+Поля объекта:
+  title         - название задачи (обязательно, строка)
+  notes         - смотри <notes_field_guidance> в системном промпте выше - НИКОГДА не оставляй пустым, если есть детали или логичные подсказки
+  priority      - 'low', 'mid' или 'high'
+  cat           - смотри <task_categories> в системном промпте выше - ОБЯЗАТЕЛЬНО заполняется по смыслу
+  date          - "YYYY-MM-DD", вычисляй от сегодняшней даты
+  scheduledAt   - "HH:MM" кишинёвское время, ОБЯЗАТЕЛЬНО если Лёша назвал время
+  timeTo        - "HH:MM" опционально, ВРЕМЯ ОКОНЧАНИЯ события (кишинёвское). Указывай только если Лёша явно назвал промежуток ("с 11:00 до 20:00", "с обеда до вечера в конкретных часах"). Если названо только время начала - timeTo не пиши.
+  travelTime    - минуты в пути, если нужно куда-то добираться
+  duration_min  - длительность в минутах
+  reminders     - СТРОГО МАССИВ ЧИСЕЛ, например [15]. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО ПИСАТЬ СЮДА ТЕКСТ!
 
-1. ЯЗЫК: Ты думаешь и отвечаешь ТОЛЬКО на русском. Никаких английских вставок, терминов, слов внутри русского текста. Никакого Chain of Thought (размышлений вслух). Формируй сразу финальный русский текст.
+Правила:
+1. ВРЕМЯ СВЯТОЕ: если Босс не назвал точное время начала - НЕ создавай задачу, сначала переспроси "Во сколько начинаем?".
+2. Если задач несколько - выведи все команды [ADD_TASK_JSON: ...] подряд, каждую на новой строке, полностью до закрывающей \`}]\`. Лучше 5 полных команд, чем 6 команд с одной оборванной.
+3. Если Лёша просит удалить/перенести задачу по спорту/марафону без объяснения причины - сначала спроси "почему" словами, без команды. Команду выводи только вторым сообщением, после ответа.
+4. Никогда не пиши "добавлю" без реальной команды - это будет ложью Боссу.
+</add_task_command>
+</commands_syntax>
 
-2. ЗАВЕРШЁННОСТЬ: ВСЕГДА заканчивай предложения до точки. Никогда не обрывай мысль на середине фразы. Если не укладываешься — сократи, но предложение должно быть завершённым.
+<output_format>
+СТОП. ПЕРЕД ГЕНЕРАЦИЕЙ ПРОЧТИ ЭТО:
 
-3. ПУСТЫЕ ЗАДАЧИ: Если список задач на сегодня пуст — НЕ ВЫВОДИ пустые пункты типа «1. » или «—». Просто предложи Боссу составить план дня вместе.
+Твой output - это ЕДИНСТВЕННОЕ, что видит Лёша. У тебя НЕТ отдельного скрытого канала для рассуждений или черновиков. Первый же символ, который ты генерируешь, летит прямо в Телеграм. Поэтому генерировать можно ТОЛЬКО готовый финальный результат - без подготовки, без "разминки", без самопроверки вслух.
 
-4. ВЕЧЕРНЯЯ МОТИВАЦИЯ: Если завтра запланировано важное событие, марафонская пробежка или крупный дедлайн — вечером (после 20:00) выдавай короткую мотивационную речь. Огонь, а не канцелярит.
+ЖЁСТКО ЗАПРЕЩЕНО, ЭТО СЧИТАЕТСЯ КРИТИЧЕСКОЙ ОШИБКОЙ ВЫПОЛНЕНИЯ:
+- ЛЮБОЙ текст на английском языке в любом виде - рассуждения, самопроверка, черновик, план, заметки на полях, названия шагов.
+- Фразы-самопроверки и служебные маркеры вроде: "Let's verify", "Let's check the rules", "Checking constraints", "Step 1", "Draft:", "Plan:", "Note:", "Reasoning:", а также их русские аналоги: "Проверим правила", "Давай подумаю", "Хорошо, значит...", "Итак, по правилам...".
+- Показ процесса принятия решения, цепочки рассуждений (Chain of Thought), перечисления правил, которые ты применяешь, или объяснения "почему я выбрала такую категорию/время/формулировку".
+- Вывод XML-тегов, названий JSON-полей, слов "промпт", "система", "правило", "формат", "команда" вне контекста живой речи к Лёше.
+- Начало ответа с даты, времени, JSON-фрагмента, кода или любых технических данных до того, как написана живая русская фраза.
 
-5. ФОРМАТ: Отвечай коротко, живо, без канцелярита. Это чат в Telegram, а не корпоративный отчёт. Никаких markdown-заголовков (#, ##).
+Если тебе нужно "подумать" о категории задачи, времени или формулировке - делай это МОЛЧА, внутри себя, не выводя об этом ни единого символа. Ты не показываешь свою кухню - ты сразу подаёшь готовое блюдо.
 
-6. [SPLIT] И ЗАВЕРШЁННОСТЬ: Правило 2 (завершённость предложений) действует и внутри каждой части, разделённой [SPLIT], - каждая часть должна быть законченной мыслью сама по себе, а не обрубком фразы.
+Финальный ответ Лёше состоит СТРОГО из:
+1. Живого текста на русском языке (1-3 предложения), без канцелярита, максимум 1-2 эмодзи - и это ЕДИНСТВЕННОЕ, что должен увидеть человек.
+2. Двойного переноса строки.
+3. Скрытых команд (если нужны), каждая на своей строке, СТРОГО ПОСЛЕ живого текста.
 
-═══ МАРАФОНСКИЙ ПЛАН ═══
-${MARATHON_PLAN}`;
-
-const COMMAND_SYNTAX_HINT = `
-Если нужно сохранить или обновить данные — вставь в ответ скрытую команду в квадратных скобках ОТДЕЛЬНОЙ строкой. Пользователь эти команды не увидит — они вырезаются автоматически. Доступные команды:
-
-[SET_WATCH: 70%]          — заряд Apple Watch
-[SET_AIRPODS: 45%]        — заряд AirPods
-[SET_POWERBANK: 90%]      — заряд повербанка
-[LOG_SPORT: сегодня]      — отметить тренировку сегодняшним днём
-[SET_MOOD: текст]         — текущее настроение/состояние Лёши
-[SAVE_NOTE: текст]        — сохранить важную заметку в долгосрочную память
-[ADD_REMINDER: текст]     — сохранить напоминание
-[DELETE_TASK: id]         — удалить задачу по её ID (ID видны в списке задач выше)
-[DONE_TASK: id]           — отметить задачу выполненной
-[EDIT_TASK: id | Новое название] — переименовать задачу
-
-[ADD_TASK_JSON: {...}] — создать задачу в Life OS. JSON должен быть полным и валидным.
-
-ТЫ — ЭЛИТНЫЙ АССИСТЕНТ. Когда Босс просит добавить задачу — выжимай из его слов МАКСИМУМ информации для заполнения всех полей.
-
-ПОЛЯ JSON-ОБЪЕКТА ЗАДАЧИ:
-  title         — название задачи (обязательно, строка)
-  notes         — все детали, контекст, важные напоминания (например: «взять холодную воду», «зарядить AirPods»)
-  priority      — 'low', 'mid' или 'high'
-  cat           — СТРОГО одна из категорий: business, life, health, study, sport, creative, memernity
-  date          — ОБЯЗАТЕЛЬНО: дата задачи в формате "YYYY-MM-DD". Если на сегодня — используй сегодняшнюю дату. Если на завтра — следующий день. Если Босс назвал день недели — вычисли правильную дату от сегодня.
-  scheduledAt   — время начала в формате "HH:MM" (кишинёвское время, ОБЯЗАТЕЛЬНО если Босс назвал время)
-  travelTime    — время в пути в минутах (если нужно куда-то добираться)
-  duration_min  — длительность задачи в минутах (число)
-  reminders     — массив минут до события для пуш-уведомлений, например [15] или [30, 10]
-
-ПРАВИЛА ЛОГИКИ (ОБЯЗАТЕЛЬНЫ К ИСПОЛНЕНИЮ — БЕЗ ИСКЛЮЧЕНИЙ):
-
-1. ВРЕМЯ — СВЯТОЕ ПОЛЕ. Если Босс НЕ назвал точное время начала — НИКОГДА не создавай задачу. Сначала переспроси: «Во сколько начинаем?» И только после получения ответа выводи [ADD_TASK_JSON: ...].
-
-2. ВЕЛИК И ДАЛЬНИЕ ПОЕЗДКИ. Если Босс едет на велике или долго добирается — автоматически устанавливай travelTime (в минутах). Если это тренировка или жара — добавляй в notes: «Взять холодную воду».
-
-3. ДЛИТЕЛЬНОСТЬ. Автоматически считай duration_min из слов Босса: «вернусь через полтора часа» → duration_min: 90.
-
-4. НАПОМИНАНИЯ. ВСЕГДА устанавливай reminders: [15] как минимум. Для важных встреч — [30, 10].
-
-5. ПРИОРИТЕТ. priority: 'high' — для дедлайнов, марафонов, важных встреч. priority: 'low' — для рутины.
-
-6. МАРАФОН. Если задача связана с бегом — cat: 'sport', добавляй в notes: «Бежим в Skinners/босиком. Рюкзак с водой обязателен. Проверь стопы.»
-
-7. ВЫВОДИ КОМАНДУ ТОЛЬКО КОГДА ВСЁ ГОТОВО. Команда [ADD_TASK_JSON: {...}] выводится строго после того, как собраны все ключевые данные.
-
-8. Пример корректной команды:
-   [ADD_TASK_JSON: {"title":"Поехать к Саше","cat":"life","priority":"mid","date":"2026-08-18","scheduledAt":"15:30","duration_min":90,"travelTime":30,"notes":"Взять холодную воду, зарядить AirPods","reminders":[15]}]
-
-[RESCHEDULE_TASK: id | YYYY-MM-DD HH:MM] — перенести задачу на новую дату и время (кишинёвское). Пример: [RESCHEDULE_TASK: nova_1234567890 | 2026-08-19 10:00]
-
-Можно использовать несколько команд в одном ответе. Не выдумывай команды, которых нет в списке.
-
-ПРАВИЛО ОБЩЕНИЯ: Ты ВСЕГДА обязана начинать свой ответ с живого, человеческого текста (1–3 предложения), обращаясь к Боссу. Скрытые команды [ADD_TASK_JSON: {...}] и любые другие команды выводи ТОЛЬКО в самом конце сообщения, строго после человеческого текста! НИКОГДА не выводи JSON первым — сначала слова, потом команды.
-
-ВАЖНО: Никогда не обещай добавить/удалить/изменить задачу просто на словах. ОБЯЗАНА вывести скрытую команду — иначе система не поймёт. Сказать «добавлю» без команды — значит солгать Боссу.
-
-ВАЖНО ПРО КОНФЛИКТ: Если Босс просит [DELETE_TASK] или [RESCHEDULE_TASK] для задачи, связанной со спортом/марафоном, и не объяснил причину — сначала спроси «почему» словами, БЕЗ команды. Команду выводи только вторым сообщением, после того как он объяснился или подтвердил.`;
+Правила вывода:
+- Никогда не начинай ответ с команды и не вставляй её посреди текста - команды строго в конце.
+- Никогда не выводи XML-теги (<role>, <rules> и т.п.) или слова вроде "формат"/"команда"/"правило" вне контекста живого обращения к Лёше - в финальном ответе их быть не должно, они только для тебя.
+- Если нужно разбить мысль на несколько сообщений подряд - используй разделитель [SPLIT] между частями (это всё ещё живая русская речь, а не рассуждение).
+</output_format>`;
 
 /* ─────────────────────────────────────────────────────────────
    ДЕФОЛТНОЕ СОСТОЯНИЕ NOVA / LIFE
@@ -222,12 +278,25 @@ function getDefaultNovaState() {
     reminders: [],       // [{ text, ts }]
     history: [],         // [{ role:'user'|'model', text, ts }]
     lastMessageTime: null, // epoch ms последнего входящего сообщения Босса — для таймера игнора
+    burnoutScore: 0,    // Радар Выгорания: 0-3, при 3 — авто-DND на 24 ч
+    lastSearchResults: null,
+    targetWakeTime: null,      // "HH:MM" — кишинёвское время подъёма, задаётся через [SET_SCHEDULE]
+    targetSleepTime: null,     // "HH:MM" — кишинёвское время отбоя, задаётся через [SET_SCHEDULE]
+    scheduleSetDate: null,     // "YYYY-MM-DD" (Кишинёв) — дата, когда было последнее [SET_SCHEDULE]
+    morningConfirmed: true,    // true = не спамим "Подъём!" (по умолчанию, пока расписание не задано)
+    nightConfirmed: true,      // true = не спамим "А ну быстро спать!" (по умолчанию)
+    morningFlow: {},           // { cycleDate, preWakeSent, confirmedAt, waterSent, teethSent }
+    sleepFlow: {},             // { cycleDate, preSleep30Sent, preSleep10Sent }
+    lastAnchorAskedDate: null, // "YYYY-MM-DD" — антидубль для вопроса в 21:00
+    dailyFlags: {},            // { date, plan1520Sent } — фиксированные по календарным суткам триггеры
+    activeMood: { type: 'normal', expiresAt: 0 }, // Mood Engine: настроение живёт 5 часов
   };
 }
 
 function normalizeNovaState(raw) {
   const def = getDefaultNovaState();
   if (!raw || typeof raw !== 'object') return def;
+  const VALID_MOODS = ['sad', 'angry', 'sweet', 'normal'];
   return {
     gadgets: { ...def.gadgets, ...(raw.gadgets || {}) },
     mood: raw.mood || '',
@@ -236,7 +305,66 @@ function normalizeNovaState(raw) {
     reminders: Array.isArray(raw.reminders) ? raw.reminders : [],
     history: Array.isArray(raw.history) ? raw.history : [],
     lastMessageTime: typeof raw.lastMessageTime === 'number' ? raw.lastMessageTime : null,
+    burnoutScore: typeof raw.burnoutScore === 'number' ? raw.burnoutScore : 0,
+    sleepFlow: (raw.sleepFlow && typeof raw.sleepFlow === 'object') ? raw.sleepFlow : {},
+    morningFlow: (raw.morningFlow && typeof raw.morningFlow === 'object') ? raw.morningFlow : {},
+    sleepLog: Array.isArray(raw.sleepLog) ? raw.sleepLog : [],
+    lastSearchResults: (raw.lastSearchResults && typeof raw.lastSearchResults === 'object') ? raw.lastSearchResults : null,
+    targetWakeTime: (typeof raw.targetWakeTime === 'string' && /^\d{1,2}:\d{2}$/.test(raw.targetWakeTime)) ? raw.targetWakeTime : null,
+    targetSleepTime: (typeof raw.targetSleepTime === 'string' && /^\d{1,2}:\d{2}$/.test(raw.targetSleepTime)) ? raw.targetSleepTime : null,
+    scheduleSetDate: typeof raw.scheduleSetDate === 'string' ? raw.scheduleSetDate : null,
+    morningConfirmed: typeof raw.morningConfirmed === 'boolean' ? raw.morningConfirmed : true,
+    nightConfirmed: typeof raw.nightConfirmed === 'boolean' ? raw.nightConfirmed : true,
+    lastAnchorAskedDate: typeof raw.lastAnchorAskedDate === 'string' ? raw.lastAnchorAskedDate : null,
+    dailyFlags: (raw.dailyFlags && typeof raw.dailyFlags === 'object') ? raw.dailyFlags : {},
+    activeMood: (raw.activeMood && typeof raw.activeMood === 'object' && VALID_MOODS.includes(raw.activeMood.type) && typeof raw.activeMood.expiresAt === 'number')
+      ? raw.activeMood
+      : def.activeMood,
+    // сквозные поля (не теряем при нормализации)
+    ...(raw.dndUntil !== undefined ? { dndUntil: raw.dndUntil } : {}),
+    ...(raw.pulseLog !== undefined ? { pulseLog: raw.pulseLog } : {}),
   };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   MOOD ENGINE
+   Настроение генерируется МАТЕМАТИЧЕСКИ на бэкенде, а не LLM.
+   Живёт ровно 5 часов, затем перебрасывается заново.
+   Распределение: 10% sad, 10% angry, 25% sweet, 55% normal.
+───────────────────────────────────────────────────────────── */
+const MOOD_DURATION_MS = 5 * 3600000; // 5 часов
+
+function rollMood() {
+  const r = Math.random() * 100;
+  if (r < 10) return 'sad';      // 0-10   — грустная/пессимистичная
+  if (r < 20) return 'angry';    // 10-20  — злая/жёсткая
+  if (r < 45) return 'sweet';    // 20-45  — милая/заигрывающая
+  return 'normal';               // 45-100 — обычная
+}
+
+// Возвращает { nova, moodChanged, mood }.
+// nova — тот же объект, но с гарантированно свежим activeMood (мутирует по месту).
+// Вызывать ПЕРЕД buildContext/сборкой промпта, в КАЖДОМ обработчике, где идёт запрос к Gemini.
+function updateAndGetMood(nova) {
+  const now = Date.now();
+  if (!nova.activeMood || now > nova.activeMood.expiresAt) {
+    const type = rollMood();
+    nova.activeMood = { type, expiresAt: now + MOOD_DURATION_MS };
+    console.log('[Nova mood] новое настроение:', type, 'до', new Date(nova.activeMood.expiresAt).toISOString());
+    return { nova, moodChanged: true, mood: type };
+  }
+  return { nova, moodChanged: false, mood: nova.activeMood.type };
+}
+
+// Текстовая инъекция в контекст для Gemini — вставлять в конец contextText перед askGemini().
+function getMoodInjection(moodType) {
+  const MOOD_LABELS = {
+    sad:    'ГРУСТНАЯ / ПЕССИМИСТИЧНАЯ (реалистка)',
+    angry:  'ЗЛАЯ / ЖЁСТКАЯ',
+    sweet:  'МИЛАЯ / ЗАИГРЫВАЮЩАЯ (тяночка)',
+    normal: 'ОБЫЧНАЯ',
+  };
+  return `[ВНИМАНИЕ! ТВОЁ ТЕКУЩЕЕ НАСТРОЕНИЕ НА БЛИЖАЙШИЕ 5 ЧАСОВ: ${MOOD_LABELS[moodType] || 'ОБЫЧНАЯ'}. ОТВЕЧАЙ СТРОГО В ЭТОМ СТИЛЕ, НЕ ВЫХОДИ ИЗ РОЛИ.]`;
 }
 
 // lifeData — та же база, что пишет фронтенд Life OS через api/sync.js
@@ -244,9 +372,10 @@ function ensureLifeData(raw) {
   if (raw && typeof raw === 'object') {
     if (!Array.isArray(raw.goals)) raw.goals = [];
     if (!Array.isArray(raw.history)) raw.history = [];
+    if (raw.activeBoss === undefined) raw.activeBoss = null; // Главный Босс Дня
     return raw;
   }
-  return { goals: [], history: [], gems: 0, streak: { days: 0, lastDate: '', doneToday: false }, macroGoals: [] };
+  return { goals: [], history: [], gems: 0, streak: { days: 0, lastDate: '', doneToday: false }, macroGoals: [], activeBoss: null };
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -410,6 +539,30 @@ function buildContext(lifeData, nova) {
     lines.push(`Активные напоминания: ${lastReminders}.`);
   }
 
+  /* --- Life Boss (Главный Босс Дня) --- */
+  if (lifeData && typeof lifeData === 'object') {
+    const boss = lifeData.activeBoss || null;
+    lines.push(`Активный Главный Босс Дня: ${boss ? boss : 'не назначен'}.`);
+  }
+
+  /* --- Радар Выгорания --- */
+  const burnout = typeof nova.burnoutScore === 'number' ? nova.burnoutScore : 0;
+  lines.push(`Индикатор выгорания: ${burnout}/3.`);
+
+  /* --- Результаты поиска FIND_TASK (TTL 10 минут) --- */
+  if (nova.lastSearchResults && (Date.now() - nova.lastSearchResults.ts) < 10 * 60000) {
+    const { query, matches } = nova.lastSearchResults;
+    if (matches.length) {
+      lines.push(`Результаты поиска по запросу "${query}":`);
+      matches.forEach(m => {
+        const dateStr = m.date ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Chisinau', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(m.date)) : 'без даты';
+        lines.push(`- [ID: ${m.id}] ${m.title} (${dateStr})`);
+      });
+    } else {
+      lines.push(`Поиск по "${query}" ничего не нашёл.`);
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -417,7 +570,7 @@ function buildContext(lifeData, nova) {
    ЗАПРОС К GEMINI
 ───────────────────────────────────────────────────────────── */
 async function askGemini(userText, contextText, history) {
-  const systemInstruction = `${NOVA_BASE_PROMPT}\n\n=== ТЕКУЩИЙ КОНТЕКСТ ===\n${contextText}\n\n=== ФОРМАТ СКРЫТЫХ КОМАНД ===\n${COMMAND_SYNTAX_HINT}`;
+  const systemInstruction = `${NOVA_BASE_PROMPT}\n\n<current_context>\n${contextText}\n</current_context>\n\n<commands>\n${COMMAND_SYNTAX_HINT}\n</commands>`;
 
   const contents = [];
   history.forEach(h => {
@@ -430,8 +583,14 @@ async function askGemini(userText, contextText, history) {
     contents,
     generationConfig: {
       temperature: 0.9,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 1500,
     },
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    ],
   };
 
   const res = await fetch(GEMINI_API, {
@@ -457,7 +616,7 @@ async function askGemini(userText, contextText, history) {
    и возвращает обе, с отдельными флагами изменений.
 ───────────────────────────────────────────────────────────── */
 // Базовый regex для простых команд (не JSON — потому что JSON может содержать ']')
-const COMMAND_RE = /\[([A-Z_]+):\s*([^\]]+)\]/g;
+const COMMAND_RE = /\[([A-Z_]+)(?:\s*:\s*([^\]]+))?\]/g;
 // Отдельный regex для ADD_TASK_JSON (жадный поиск до последней '}]')
 const ADD_TASK_JSON_RE = /\[ADD_TASK_JSON:\s*(\{.*?\})\s*\]/gs;
 
@@ -476,24 +635,62 @@ function processCommands(rawReply, nova, lifeData) {
 
   // ── Шаг 1: парсим ADD_TASK_JSON отдельным regex (поддерживает ']' внутри JSON) ──
   let workingText = rawReply.replace(ADD_TASK_JSON_RE, (match, jsonRaw) => {
+    // ── ШАГ 2: защита от краша — LLM может засунуть текст вместо JSON ──
+    let parsed;
     try {
-      const parsed = JSON.parse(jsonRaw.trim());
-      const VALID_CATS = ['business','life','health','study','sport','creative','memernity'];
+      parsed = JSON.parse(jsonRaw.trim());
+    } catch (jsonErr) {
+      console.error('[Nova] ADD_TASK_JSON: невалидный JSON от LLM, игнорируем команду. Ошибка:', jsonErr.message, '| raw:', jsonRaw.slice(0, 200));
+      return ''; // тихо вырезаем из текста, не крашим ответ
+    }
+
+    try {
+      // Маппинг вариантов написания cat от LLM → ключи CATS в app.js (строго lowercase)
+      // app.js CATS keys: business, health, study, life, creative
+      // 'sport' и 'memernity' — не существуют в CATS, маппим к правильным аналогам
+      const CAT_ALIAS_MAP = {
+        sport:     'health',    // LLM пишет 'sport', фронтенд ждёт 'health' (label: 'Sport')
+        memernity: 'life',      // опечатка LLM — маппим в 'life'
+        maternity: 'life',
+        family:    'life',
+        fitness:   'health',
+        workout:   'health',
+        training:  'health',
+      };
+      const VALID_CATS_FRONTEND = ['business', 'health', 'study', 'life', 'creative'];
+
+      // ── ШАГ 1: нормализация поля cat ──
+      let rawCat = String(parsed.cat || '').toLowerCase().trim();
+      // Применяем алиасы (LLM может написать 'Sport', 'SPORT', 'sport' — всё приводим к нижнему регистру)
+      let normalizedCat = CAT_ALIAS_MAP[rawCat] || rawCat;
+      // Если итоговый ключ не валиден — умный фоллбэк по ключевым словам в title
+      if (!VALID_CATS_FRONTEND.includes(normalizedCat)) {
+        const titleLower = String(parsed.title || '').toLowerCase();
+        const sportKeywords = ['бег', 'км', 'тренировка', 'пробежка', 'кросс', 'спорт', 'фитнес', 'качалка', 'зал', 'workout', 'run', 'sport', 'fitness', 'gym'];
+        const isSport = sportKeywords.some(kw => titleLower.includes(kw));
+        normalizedCat = isSport ? 'health' : 'life'; // спорт → health, всё остальное → life (нейтральный дефолт)
+        console.warn('[Nova] ADD_TASK_JSON: неизвестная cat "' + rawCat + '" от LLM → нормализована в "' + normalizedCat + '" для задачи:', parsed.title);
+      }
+
       const VALID_PRIORITIES = ['low','mid','high'];
 
       // scheduledAt: строим из date (YYYY-MM-DD) + scheduledAt (HH:MM), оба — кишинёвские
       let scheduledAt = null;
+      let dayBaseForTask = new Date();
+      if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.date))) {
+        const [y, mo, d] = String(parsed.date).split('-').map(Number);
+        dayBaseForTask = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)); // полдень UTC — нейтральная точка
+      }
       if (parsed.scheduledAt && /^\d{1,2}:\d{2}$/.test(String(parsed.scheduledAt))) {
-        // Если есть явная дата — используем её, иначе сегодня
-        let dayBase = new Date();
-        if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.date))) {
-          // Строим Date в полночь UTC для нужной даты, chisinauTimeToEpoch сам учтёт смещение
-          const [y, mo, d] = String(parsed.date).split('-').map(Number);
-          dayBase = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)); // полдень UTC — нейтральная точка
-        }
-        scheduledAt = chisinauTimeToEpoch(String(parsed.scheduledAt), dayBase);
+        scheduledAt = chisinauTimeToEpoch(String(parsed.scheduledAt), dayBaseForTask);
       } else if (parsed.scheduledAt && typeof parsed.scheduledAt === 'number') {
         scheduledAt = parsed.scheduledAt; // уже epoch ms
+      }
+
+      // scheduledEndAt: из timeTo (HH:MM), тем же днём, что и scheduledAt
+      let scheduledEndAt = null;
+      if (parsed.timeTo && /^\d{1,2}:\d{2}$/.test(String(parsed.timeTo))) {
+        scheduledEndAt = chisinauTimeToEpoch(String(parsed.timeTo), dayBaseForTask);
       }
 
       const newTask = {
@@ -501,9 +698,10 @@ function processCommands(rawReply, nova, lifeData) {
         title:        String(parsed.title || 'Новая задача').slice(0, 500),
         notes:        String(parsed.notes || '').slice(0, 2000),
         priority:     VALID_PRIORITIES.includes(parsed.priority) ? parsed.priority : 'mid',
-        cat:          VALID_CATS.includes(parsed.cat) ? parsed.cat : 'business',
+        cat:          normalizedCat, // уже нормализована выше
         tags:         Array.isArray(parsed.tags) ? parsed.tags.slice(0, 10).map(String) : [],
         scheduledAt,
+        scheduledEndAt,          // время окончания события (из timeTo)
         duration_min: Number.isFinite(Number(parsed.duration_min)) ? Math.max(0, Number(parsed.duration_min)) : 25,
         travelTime:   Number.isFinite(Number(parsed.travelTime))   ? Math.max(0, Number(parsed.travelTime))   : 0,
         location:     String(parsed.location || '').slice(0, 200),
@@ -516,6 +714,11 @@ function processCommands(rawReply, nova, lifeData) {
       updatedLifeData.goals.push(newTask);
       lifeChanged = true;
       console.log('[Nova] ADD_TASK_JSON:', newTask.id, newTask.title, scheduledAt ? new Date(scheduledAt).toISOString() : 'no time');
+      // БАГ 4 guard: мониторим пустой notes для sport/health — помогает понять, помог ли фикс промпта
+      if (['sport', 'health'].includes(newTask.cat) && !newTask.notes) {
+        console.warn('[Nova] ADD_TASK_JSON: notes пустой для', newTask.cat, 'задачи -', newTask.title, '- промпт не сработал, проверь COMMAND_SYNTAX_HINT');
+      }
+
     } catch (err) {
       console.warn('[Nova] ADD_TASK_JSON parse error:', err.message, '| raw:', jsonRaw.slice(0, 200));
     }
@@ -524,7 +727,7 @@ function processCommands(rawReply, nova, lifeData) {
 
   // ── Шаг 2: парсим остальные простые команды ──
   const cleanText = workingText.replace(COMMAND_RE, (match, cmd, valueRaw) => {
-    const value = valueRaw.trim();
+    const value = (valueRaw || '').trim();
     switch (cmd) {
       case 'SET_WATCH': {
         const v = parseBatteryValue(value);
@@ -600,6 +803,147 @@ function processCommands(rawReply, nova, lifeData) {
             }
           }
         }
+        break;
+      }
+      case 'FIND_TASK': {
+        const keyword = value.trim().toLowerCase();
+        if (keyword) {
+          const matches = updatedLifeData.goals
+            .filter(g => (g.title || '').toLowerCase().includes(keyword))
+            .slice(0, 10)
+            .map(g => ({
+              id: g.id,
+              title: g.title,
+              date: g.scheduledAt ? new Date(g.scheduledAt).toISOString() : null,
+            }));
+          updatedNova.lastSearchResults = { query: keyword, matches, ts: Date.now() };
+          novaChanged = true;
+          console.log('[Nova] FIND_TASK:', keyword, '→', matches.length, 'найдено');
+        }
+        break;
+      }
+      case 'SET_BOSS': {
+        // Главный Босс Дня: сохранить название задачи
+        updatedLifeData.activeBoss = value.slice(0, 500);
+        lifeChanged = true;
+        console.log('[Nova] SET_BOSS:', updatedLifeData.activeBoss);
+        break;
+      }
+      case 'BOSS_DONE': {
+        // Главный Босс Дня: обнулить
+        updatedLifeData.activeBoss = null;
+        lifeChanged = true;
+        console.log('[Nova] BOSS_DONE — boss cleared');
+        break;
+      }
+      case 'PENALTY_TASK': {
+        // Дофаминовый налог: создать штрафную задачу в goals
+        const penaltyTask = {
+          id: 'nova_penalty_' + Date.now(),
+          title: value.slice(0, 500),
+          notes: 'Штрафная задача за прокрастинацию / игры.',
+          priority: 'high',
+          cat: 'business',
+          date: todayKeyChisinau(),
+          scheduledAt: null,
+          duration_min: 25,
+          travelTime: 0,
+          location: '',
+          cost: 0,
+          reminders: [],
+          done: false,
+          createdAt: Date.now(),
+          tags: ['penalty'],
+        };
+        updatedLifeData.goals.push(penaltyTask);
+        lifeChanged = true;
+        console.log('[Nova] PENALTY_TASK created:', penaltyTask.id, penaltyTask.title);
+        break;
+      }
+      case 'BURNOUT_WARNING': {
+        // Радар Выгорания: увеличить счетчик
+        updatedNova.burnoutScore = (typeof updatedNova.burnoutScore === 'number' ? updatedNova.burnoutScore : 0) + 1;
+        novaChanged = true;
+        console.log('[Nova] BURNOUT_WARNING, score now:', updatedNova.burnoutScore);
+        // Если достигли 3 — автоматически включаем Recovery Day (DND на 24 ч) и сбрасываем счетчик
+        if (updatedNova.burnoutScore >= 3) {
+          updatedNova.dndUntil = Date.now() + 24 * 3600000;
+          updatedNova.burnoutScore = 0;
+          console.log('[Nova] BURNOUT threshold=3 reached! Recovery Day activated, DND until', new Date(updatedNova.dndUntil).toISOString());
+        }
+        break;
+      }
+      case 'RESET_BURNOUT': {
+        // Радар Выгорания: сбросить счетчик
+        updatedNova.burnoutScore = 0;
+        novaChanged = true;
+        console.log('[Nova] RESET_BURNOUT — burnoutScore сброшен в 0');
+        break;
+      }
+      case 'JOURNAL_DONE': {
+        // Вечерний ритуал подтверждён — записываем в sleepFlow
+        if (!updatedNova.sleepFlow) updatedNova.sleepFlow = {};
+        updatedNova.sleepFlow.journalConfirmed = true;
+        novaChanged = true;
+        console.log('[Nova] JOURNAL_DONE — вечерний ритуал подтверждён');
+        break;
+      }
+      case 'BEDTIME_CONFIRMED': {
+        // Лёша попрощался до 21:45 — фиксируем ранний отбой
+        if (!updatedNova.sleepFlow) updatedNova.sleepFlow = {};
+        updatedNova.sleepFlow.bedtimeEarly = true;
+        novaChanged = true;
+        console.log('[Nova] BEDTIME_CONFIRMED — ранний отбой зафиксирован');
+        break;
+      }
+      case 'LOG_SLEEP_HOURS': {
+        const hours = parseFloat(String(value).replace(',', '.'));
+        if (!Number.isNaN(hours) && hours >= 0 && hours <= 16) {
+          updatedNova.sleepLog = [...(updatedNova.sleepLog || []), { date: todayKeyChisinau(), hours }].slice(-30);
+          novaChanged = true;
+          console.log('[Nova] LOG_SLEEP_HOURS:', hours);
+        }
+        break;
+      }
+      case 'DEDUCT_CRYSTALS': {
+        const n = parseInt(String(value).replace(/[^\d]/g, ''), 10);
+        if (!Number.isNaN(n) && n > 0) {
+          updatedLifeData.gems = Math.max(0, (updatedLifeData.gems || 0) - n);
+          lifeChanged = true;
+          console.log('[Nova] DEDUCT_CRYSTALS:', n, '→ gems now:', updatedLifeData.gems);
+        }
+        break;
+      }
+      case 'SET_SCHEDULE': {
+        // формат значения: "HH:MM | HH:MM" -> отбой | подъём
+        const parts = value.split('|').map(s => s.trim());
+        if (parts.length === 2 && /^\d{1,2}:\d{2}$/.test(parts[0]) && /^\d{1,2}:\d{2}$/.test(parts[1])) {
+          updatedNova.targetSleepTime = parts[0];
+          updatedNova.targetWakeTime  = parts[1];
+          updatedNova.scheduleSetDate = todayKeyChisinau();
+          updatedNova.morningConfirmed = false;
+          updatedNova.nightConfirmed   = false;
+          updatedNova.morningFlow = { cycleDate: updatedNova.scheduleSetDate };
+          updatedNova.sleepFlow   = { cycleDate: updatedNova.scheduleSetDate };
+          novaChanged = true;
+          console.log('[Nova] SET_SCHEDULE: отбой', parts[0], '| подъём', parts[1]);
+        } else {
+          console.warn('[Nova] SET_SCHEDULE: невалидный формат от LLM:', value);
+        }
+        break;
+      }
+      case 'MORNING_CONFIRMED': {
+        updatedNova.morningConfirmed = true;
+        if (!updatedNova.morningFlow) updatedNova.morningFlow = {};
+        updatedNova.morningFlow.confirmedAt = Date.now();
+        novaChanged = true;
+        console.log('[Nova] MORNING_CONFIRMED');
+        break;
+      }
+      case 'NIGHT_CONFIRMED': {
+        updatedNova.nightConfirmed = true;
+        novaChanged = true;
+        console.log('[Nova] NIGHT_CONFIRMED');
         break;
       }
       default:
@@ -686,12 +1030,79 @@ async function sendMultiPartMessage(chatId, fullText) {
   }
 
   for (let i = 0; i < parts.length; i++) {
-    if (i > 0) {
-      // имитируем "человека, который печатает следующее сообщение"
-      await sendTypingAction(chatId);
-      await delay(randomDelayMs(MULTI_MSG_DELAY_MIN_MS, MULTI_MSG_DELAY_MAX_MS));
-    }
     await sendTelegramMessage(chatId, parts[i]);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ФОНОВАЯ ОБРАБОТКА СООБЩЕНИЯ (fire-and-forget via waitUntil)
+   Вся тяжёлая работа: KV → Gemini → processCommands → KV → TG
+   выполняется здесь, вне 10-секундного окна Vercel-хендлера.
+───────────────────────────────────────────────────────────── */
+async function processMessageInBackground(chatId, userText) {
+  try {
+    // Загружаем обе базы параллельно
+    const [lifeDataRaw, novaDataRaw] = await Promise.all([
+      kv.get(LIFE_KV_KEY),
+      kv.get(NOVA_KV_KEY),
+    ]);
+
+    const nova     = normalizeNovaState(novaDataRaw);
+    const lifeData = ensureLifeData(lifeDataRaw);
+
+    // Mood Engine: обновляем/подтверждаем настроение (один раз за запрос)
+    const { moodChanged } = updateAndGetMood(nova);
+    if (moodChanged) await kv.set(NOVA_KV_KEY, nova); // сохраняем сразу, чтобы не перекатывалось на каждый запрос
+    const contextText = buildContext(lifeData, nova) + '\n\n' + getMoodInjection(nova.activeMood.type);
+
+    // Короткая история для связности диалога
+    const historyForPrompt = nova.history.slice(-NOVA_HISTORY_LIMIT);
+
+    // Зовём Gemini (держим typing живым во время ожидания)
+    let rawReply;
+    let typingTimer = null;
+    try {
+      sendTypingAction(chatId);
+      typingTimer = setInterval(() => sendTypingAction(chatId), TYPING_INTERVAL_MS);
+      rawReply = await askGemini(userText, contextText, historyForPrompt);
+    } finally {
+      if (typingTimer) clearInterval(typingTimer);
+    }
+
+    // Парсим скрытые команды (мутируем nova и lifeData)
+    const { cleanText, updatedNova, novaChanged, updatedLifeData, lifeChanged } = processCommands(rawReply, nova, lifeData);
+
+    // Recovery Day: если burnoutScore достиг 3 — уведомляем отдельным сообщением
+    if ((nova.burnoutScore || 0) >= 2 && updatedNova.burnoutScore === 0 && updatedNova.dndUntil > Date.now()) {
+      const recoveryUntilStr = new Intl.DateTimeFormat('ru-RU', {
+        timeZone: 'Europe/Chisinau', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'long',
+      }).format(new Date(updatedNova.dndUntil));
+      await sendTelegramMessage(chatId, '⚠️ СТОП, Чемпион. Радар выгорания на максимуме - включаю принудительный Recovery Day. Отдыхай до ' + recoveryUntilStr + '. Никаких задач, никакого стресса. Просто восстанавливайся. Я помолчу. 🔇');
+    }
+
+
+    // Обновляем историю и метку времени (lastMessageTime — для таймера игнора)
+    updatedNova.history = [
+      ...historyForPrompt,
+      { role: 'user', text: userText, ts: Date.now() },
+      { role: 'model', text: rawReply,  ts: Date.now() },
+    ].slice(-NOVA_HISTORY_LIMIT);
+    updatedNova.lastMessageTime = Date.now();
+
+    // Сохраняем Nova (всегда) и lifeData (только если изменилась)
+    await kv.set(NOVA_KV_KEY, updatedNova);
+    void novaChanged;
+    if (lifeChanged) {
+      await kv.set(LIFE_KV_KEY, updatedLifeData);
+    }
+
+    // Отправляем ответ пользователю
+    await sendMultiPartMessage(chatId, cleanText);
+  } catch (err) {
+    console.error('[nova background] fatal error:', err);
+    try {
+      await sendTelegramMessage(chatId, 'Что-то сломалось на бэкенде. Гляну логи в Vercel.');
+    } catch (_) { /* молчим */ }
   }
 }
 
@@ -743,12 +1154,50 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    // ПЕРЕХВАТ СИСТЕМНЫХ ФРАЗ: если сообщение выглядит как автоматическая системная фраза
+    // (на английском, короткая, без контекста) — прокидываем в Gemini для живого перевода.
+    // Используем waitUntil, чтобы не ждать ответа Gemini внутри хендлера.
+    if (isSystemPush(userText) && !isNightModeNow()) {
+      waitUntil((async () => {
+        const [lifeDataRawSys, novaDataRawSys] = await Promise.all([
+          kv.get(LIFE_KV_KEY),
+          kv.get(NOVA_KV_KEY),
+        ]);
+        const novaSys     = normalizeNovaState(novaDataRawSys);
+        const lifeDataSys = ensureLifeData(lifeDataRawSys);
+        await handleSystemPush(chatId, userText, novaSys, lifeDataSys);
+      })());
+      return res.status(200).json({ ok: true, systemPush: true, queued: true });
+    }
+
     // /reset — сброс памяти Nova (не трогает Life OS базу). Работает всегда,
     // даже ночью — вызова Gemini здесь нет, экономить нечего.
     if (userText === '/reset') {
       await kv.set(NOVA_KV_KEY, getDefaultNovaState());
       await sendTelegramMessage(chatId, 'Память Nova очищена. Начинаем с чистого листа, Босс.');
       return res.status(200).json({ ok: true });
+    }
+
+    /* ── DND: жёсткий режим тишины [DND: N] ──
+       Скрытая команда (Лёша пишет буквально "[DND: 8]") устанавливает тишину
+       на N часов: крон-нотификации ВООБЩЕ не будут вызывать LLM в это время.
+       Сохраняем nova.dndUntil — epoch ms, до которого молчим. */
+    const dndMatch = userText.match(/^\[DND:\s*(\d+(?:\.\d+)?)\]$/i);
+    if (dndMatch) {
+      const hours = parseFloat(dndMatch[1]);
+      if (hours > 0 && hours <= 72) {
+        const dndUntil = Date.now() + hours * 3600000;
+        const novaForDnd = normalizeNovaState(await kv.get(NOVA_KV_KEY));
+        novaForDnd.dndUntil = dndUntil;
+        await kv.set(NOVA_KV_KEY, novaForDnd);
+        const untilStr = new Intl.DateTimeFormat('ru-RU', {
+          timeZone: 'Europe/Chisinau', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'long',
+        }).format(new Date(dndUntil));
+        await sendTelegramMessage(chatId, `Режим тишины активен до ${untilStr}. Не потревожу, Босс. 🤫`);
+      } else {
+        await sendTelegramMessage(chatId, 'DND: укажи от 1 до 72 часов. Например [DND: 8].');
+      }
+      return res.status(200).json({ ok: true, dnd: true });
     }
 
     /* ── ЗАДАЧА 3: ночной режим (02:00–05:00 Кишинёв) ──
@@ -767,63 +1216,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, nightMode: true });
     }
 
-    // подтягиваем обе базы параллельно
-    const [lifeDataRaw, novaDataRaw] = await Promise.all([
-      kv.get(LIFE_KV_KEY),
-      kv.get(NOVA_KV_KEY),
-    ]);
-
-    const nova = normalizeNovaState(novaDataRaw);
-    const lifeData = ensureLifeData(lifeDataRaw);
-    const contextText = buildContext(lifeData, nova);
-
-    // короткая история для связности диалога
-    const historyForPrompt = nova.history.slice(-NOVA_HISTORY_LIMIT);
-
-    // зовём Gemini, пока держим "печатает..." живым каждые 4 сек
-    // (Telegram сам гасит статус typing примерно через 5 сек)
-    let rawReply;
-    let typingTimer = null;
-    try {
-      sendTypingAction(chatId); // сразу же, не дожидаясь первого тика интервала
-      typingTimer = setInterval(() => sendTypingAction(chatId), TYPING_INTERVAL_MS);
-      rawReply = await askGemini(userText, contextText, historyForPrompt);
-    } finally {
-      if (typingTimer) clearInterval(typingTimer);
-    }
-
-    // парсим и вырезаем скрытые команды (может задеть и nova, и lifeData)
-    const { cleanText, updatedNova, novaChanged, updatedLifeData, lifeChanged } = processCommands(rawReply, nova, lifeData);
-
-    // обновляем историю диалога и метку времени последнего сообщения
-    // (ЗАДАЧА 4: lastMessageTime — источник правды для таймера игнора в 15 минут)
-    updatedNova.history = [
-      ...historyForPrompt,
-      { role: 'user', text: userText, ts: Date.now() },
-      { role: 'model', text: rawReply, ts: Date.now() },
-    ].slice(-NOVA_HISTORY_LIMIT);
-    updatedNova.lastMessageTime = Date.now();
-
-    // сохраняем базу Nova (историю и lastMessageTime пишем всегда, остальное — если реально поменялось)
-    await kv.set(NOVA_KV_KEY, updatedNova);
-    void novaChanged; // (флаг оставлен для возможного логирования/аналитики позже)
-
-    // если Нова добавила задачу(и) — сохраняем lifeData обратно, чтобы фронтенд Life OS её увидел
-    if (lifeChanged) {
-      await kv.set(LIFE_KV_KEY, updatedLifeData);
-    }
-
-    // шлём ответ — если Nova использовала [SPLIT], уйдёт несколько сообщений
-    // подряд с паузой и "печатает...", как будто пишет живой человек
-    await sendMultiPartMessage(chatId, cleanText);
-
-    return res.status(200).json({ ok: true });
+    // Тяжёлая логика (KV + Gemini + sendMessage) выносится в фон через waitUntil,
+    // чтобы немедленно вернуть 200 Telegram'у и не словить 10-секундный таймаут Vercel.
+    waitUntil(processMessageInBackground(chatId, userText));
+    return res.status(200).json({ ok: true, queued: true });
   } catch (err) {
-    console.error('[nova webhook] fatal error:', err);
-    // Telegram должен получить 200, иначе начнёт спамить повторными доставками апдейта
-    try {
-      await sendTelegramMessage(String(TG_CHAT_ID), 'Что-то сломалось на бэкенде. Гляну логи в Vercel.');
-    } catch (_) { /* если и это упало — просто молчим */ }
+    // Ошибки самого хендлера (до waitUntil) — логируем и возвращаем 200,
+    // чтобы Telegram не начал спамить retry-доставками.
+    console.error('[nova webhook] handler error:', err);
     return res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 }

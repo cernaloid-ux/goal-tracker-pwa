@@ -1,533 +1,752 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#000000">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Life OS">
-  <meta name="description" content="Life OS — трекер задач, таймер, календарь, привычки">
-  <title>Life OS — Умный Планировщик</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=0" />
+  <title>Nova OS — Productivity</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            base: '#1C1C1E',
+            surface: '#2C2C2E',
+            accent: '#FF3B30',
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Inter', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { height: 100%; }
+    body {
+      background:
+        radial-gradient(1100px 560px at 12% -12%, rgba(255,59,48,0.16), transparent 58%),
+        radial-gradient(900px 520px at 100% 6%, rgba(255,59,48,0.06), transparent 55%),
+        #1C1C1E;
+      background-attachment: fixed;
+      overscroll-behavior: none;
+    }
+    .glass {
+      background: rgba(60, 60, 66, 0.30);
+      backdrop-filter: blur(26px) saturate(150%);
+      -webkit-backdrop-filter: blur(26px) saturate(150%);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 24px 48px -24px rgba(0,0,0,0.7);
+    }
+    .glass-soft {
+      background: rgba(70, 70, 76, 0.18);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+    .glass-hover { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease, background .25s ease; }
+    .glass-hover:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255,59,48,0.45);
+      box-shadow: 0 0 0 1px rgba(255,59,48,0.22), 0 26px 52px -20px rgba(255,59,48,0.30), inset 0 1px 0 rgba(255,255,255,0.08);
+      background: rgba(80,80,86,0.30);
+    }
+    .accent-grad { background: linear-gradient(145deg,#FF3B30,#b71f16); }
+    .accent-glow { box-shadow: 0 0 22px rgba(255,59,48,0.55), 0 0 60px rgba(255,59,48,0.22); }
+    .tag { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 500; background: rgba(255,59,48,0.14); color: #ff8f88; border: 1px solid rgba(255,59,48,0.22); }
+    .tag-grey { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.08); }
+    .tag-mini { font-size:9px; padding:2px 6px; border-radius:999px; font-weight:500; line-height:1.4; }
+    .cal-event-time { font-size:10px; color:rgba(255,255,255,.45); font-variant-numeric:tabular-nums; }
+    .task-group-header { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:rgba(255,255,255,.35); margin:14px 0 8px; display:flex; align-items:center; gap:8px; }
+    .task-group-header:first-child { margin-top:0; }
+    .task-group-count { font-size:10px; padding:1px 7px; border-radius:999px; background:rgba(255,255,255,.08); color:rgba(255,255,255,.5); font-weight:600; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,59,48,0.4); }
+    .view, .subview { animation: fade .4s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .nav-item.active { background: rgba(255,59,48,0.16); border-color: rgba(255,59,48,0.5); color: #fff; }
+    .nav-item.active .nav-ic { color: #FF3B30; }
+    .subtab.active { color: #fff; background: rgba(255,59,48,0.18); border-color: rgba(255,59,48,0.5); }
+    .chk { appearance: none; -webkit-appearance: none; width: 22px; height: 22px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.04); cursor: pointer; position: relative; transition: all .2s; flex: none; }
+    .chk:hover { border-color: rgba(255,59,48,0.6); }
+    .chk:checked { background: #FF3B30; border-color: #FF3B30; box-shadow: 0 0 14px rgba(255,59,48,0.6); }
+    .chk:checked::after { content: ''; position: absolute; left: 7px; top: 3px; width: 6px; height: 11px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+    .chk:checked + .tasklabel { text-decoration: line-through; opacity: 0.45; }
+    .toggle { width: 52px; height: 30px; border-radius: 999px; background: rgba(120,120,128,0.32); position: relative; cursor: pointer; transition: background .3s; flex: none; }
+    .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 999px; background: #fff; transition: transform .3s; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+    .toggle.on { background: #FF3B30; }
+    .toggle.on::after { transform: translateX(22px); }
+    input[type=range] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.12); outline: none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 999px; background: #FF3B30; cursor: pointer; box-shadow: 0 0 14px rgba(255,59,48,0.6); }
+    .field { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 12px 14px; color: #fff; font-size: 14px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    .field:focus { border-color: rgba(255,59,48,0.6); box-shadow: 0 0 0 3px rgba(255,59,48,0.15); }
+    .field::placeholder { color: rgba(255,255,255,0.3); }
+    .modal-backdrop { background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    .modal-card { animation: pop .3s cubic-bezier(.2,.9,.3,1.2); }
+    @keyframes pop { from { opacity:0; transform: scale(.94) translateY(10px);} to {opacity:1; transform: scale(1) translateY(0);} }
+    .drag-hint { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0 6px, transparent 6px 12px); }
+    .heat { width: 6px; height: 6px; border-radius: 999px; }
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 16px; opacity:.55; text-align:center; }
+    .empty-icon { font-size:32px; margin-bottom:10px; }
+    .empty-title { font-weight:600; font-size:14px; }
+    .empty-sub { color:rgba(255,255,255,.4); font-size:12px; margin-top:4px; }
+    .expand-chevron { transition: transform .25s ease; }
+    .expand-chevron.open { transform: rotate(90deg); }
+    .color-dot { transition: border-color .2s, box-shadow .2s; }
+
+    /* ═══════════════════════════════════════════════════════════
+       MOBILE RESPONSIVE LAYER (≤767px)
+       — Sidebar collapses into a fixed bottom tab bar. All 6 items
+         (5 nav + Settings) live in one grid row of equal-width
+         columns, so nothing is squished or oversized.
+       — Glassmorphism blur is reduced for GPU-weak phones.
+       — Main content gets bottom clearance for the tab bar so the
+         last row of content is never hidden behind it.
+       Nothing here changes the desktop (≥768px) appearance.
+    ═══════════════════════════════════════════════════════════ */
+    @media (max-width: 767px) {
+      #sidebar {
+        width: 100% !important;
+        display: grid !important;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        align-items: stretch;
+        gap: 4px;
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+      }
+      #sidebar #navList {
+        display: contents;
+      }
+      #sidebar #navList > button,
+      #sidebar > #btn-open-settings {
+        width: 100%;
+        min-width: 0;
+        flex: none;
+      }
+      #sidebar .hidden.md\:flex,
+      #sidebar #collapseBtn {
+        display: none !important;
+      }
+      main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important; }
+      .view, .subview { padding-bottom: 1.5rem; }
+      .glass {
+        backdrop-filter: blur(14px) saturate(130%);
+        -webkit-backdrop-filter: blur(14px) saturate(130%);
+      }
+      .glass-soft {
+        backdrop-filter: blur(10px) saturate(120%);
+        -webkit-backdrop-filter: blur(10px) saturate(120%);
+      }
+      .glass-hover:hover {
+        transform: none;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 24px 48px -24px rgba(0,0,0,0.7);
+      }
+      .modal-backdrop { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+    }
+  </style>
 </head>
-<body>
-<div id="app">
+<body class="text-white/90 font-sans antialiased overflow-hidden">
 
-  <!-- ══ DRAWER OVERLAY ══ -->
-  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <div class="flex h-screen w-screen">
 
-  <!-- ══ DRAWER ══ -->
-  <nav class="drawer" id="drawer" aria-label="Основная навигация">
-    <div class="drawer-header">
-      <div class="drawer-logo">🧠 Life OS</div>
-      <div class="drawer-sync" id="sync-badge"></div>
-    </div>
-    <ul class="drawer-nav">
-      <li><button class="drawer-link active" data-view="tasks">
-        <span class="dl-icon">☑️</span><span class="dl-label">Задачи</span>
-      </button></li>
-      <li><button class="drawer-link" data-view="calendar">
-        <span class="dl-icon">📅</span><span class="dl-label">Календарь</span>
-      </button></li>
-      <li><button class="drawer-link" data-view="timer">
-        <span class="dl-icon">⏱</span><span class="dl-label">Фокус-таймер</span>
-      </button></li>
-      <li><button class="drawer-link" data-view="sleep">
-        <span class="dl-icon">🌙</span><span class="dl-label">Сон и Рутины</span>
-      </button></li>
-      <li><button class="drawer-link" data-view="profile">
-        <span class="dl-icon">👤</span><span class="dl-label">Профиль</span>
-      </button></li>
-    </ul>
-    <div class="drawer-footer">
-      <button class="drawer-settings-btn" id="btn-settings">⚙️ Настройки</button>
-    </div>
-  </nav>
+    <!-- ============ LEFT SIDEBAR (desktop) / BOTTOM TAB BAR (mobile) ============ -->
+    <aside id="sidebar" class="glass fixed md:relative inset-x-0 bottom-0 md:inset-auto m-0 md:m-3 rounded-t-3xl md:rounded-3xl flex flex-row md:flex-col items-center md:items-stretch py-2 md:py-6 px-2 md:px-3 transition-all duration-300 z-40 md:z-auto flex-none" style="width: 240px;">
+      <div class="hidden md:flex items-center gap-3 mb-8 px-2">
+        <div class="w-11 h-11 rounded-2xl accent-grad accent-glow flex items-center justify-center flex-none">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l2.5 6H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5L12 3Z"/></svg>
+        </div>
+        <div class="logo-text leading-tight">
+          <p class="font-bold text-lg tracking-tight">Nova<span class="text-accent"> OS</span></p>
+          <p class="text-[11px] text-white/35 -mt-0.5">Productivity</p>
+        </div>
+      </div>
 
-  <!-- ══ APP SHELL ══ -->
-  <div class="app-shell" id="app-shell">
+      <nav class="flex flex-row md:flex-col gap-1 md:gap-2 w-full flex-1 justify-around md:justify-start items-stretch min-w-0" id="navList">
+        <button data-view="tasks" id="nav-tasks" class="nav-item active glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Tasks">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9 2 2 4-4"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Tasks</span>
+        </button>
+        <button data-view="focus" id="nav-focus" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Focus">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path stroke-linecap="round" d="M12 9v4l2 2M9 3h6"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Focus</span>
+        </button>
+        <button data-view="calendar" id="nav-calendar" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Calendar">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M3 9h18M8 3v4M16 3v4"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Calendar</span>
+        </button>
+        <button data-view="sleep" id="nav-sleep" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Sleep &amp; Routines">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Sleep &amp; Routines</span>
+        </button>
+        <button data-view="profile" id="nav-profile" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Profile">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Profile</span>
+        </button>
+      </nav>
 
-    <!-- GLOBAL HEADER -->
-    <header class="global-header" id="global-header">
-      <button class="hdr-icon-btn" id="btn-drawer-toggle" aria-label="Меню">
-        <span class="hamburger"></span>
-        <span class="hamburger"></span>
-        <span class="hamburger"></span>
+      <div class="hidden md:flex glass-soft rounded-2xl px-3 py-3 items-center gap-3 mb-3">
+        <svg class="w-5 h-5 text-accent flex-none" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg>
+        <div class="navlabel leading-tight whitespace-nowrap">
+          <p id="sidebar-gems" class="text-sm font-semibold">0</p>
+          <p class="text-[11px] text-white/40 -mt-0.5">Crystals</p>
+        </div>
+      </div>
+
+      <button id="collapseBtn" class="hidden md:flex w-full glass-soft glass-hover rounded-xl py-2.5 items-center justify-center gap-2 text-white/50 mb-2" title="Collapse sidebar">
+        <svg id="collapseIcon" class="w-5 h-5 transition-transform rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <span class="navlabel text-xs font-medium">Collapse</span>
       </button>
-      <div class="hdr-center">
-        <div class="hdr-title" id="hdr-title">Задачи</div>
-        <div class="hdr-subtitle" id="tasks-view-subtitle">Загрузка…</div>
-      </div>
-      <div class="hdr-right">
-        <button class="hdr-icon-btn" id="btn-search-toggle" aria-label="Поиск">🔍</button>
-        <button class="hdr-icon-btn" id="btn-sort" aria-label="Сортировка">⇅</button>
-        <button class="hdr-icon-btn create-btn" id="btn-create" aria-label="Создать задачу">+</button>
-      </div>
-    </header>
 
-    <!-- SEARCH BAR -->
-    <div class="search-wrap" id="search-wrap">
-      <div class="search-bar">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="Поиск задач…" autocomplete="off">
-        <button class="search-clear" id="search-clear">✕</button>
-      </div>
-    </div>
+      <button id="btn-open-settings" class="md:w-full glass-soft glass-hover rounded-xl py-2 md:py-2.5 flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2 text-white/50 flex-1 md:flex-none min-w-0" title="Settings">
+        <svg class="w-5 h-5 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <span class="navlabel hidden md:inline text-[10px] md:text-xs font-medium truncate">Settings</span>
+      </button>
+    </aside>
+        <!-- ============ MAIN ============ -->
+    <main class="flex-1 overflow-y-auto p-3 md:p-3 pr-3 md:pr-4 pb-28 md:pb-3">
 
-    <!-- ══ VIEWS ══ -->
+      <!-- ===== VIEW 1 : TASKS ===== -->
+      <section id="view-tasks" class="view flex flex-col lg:flex-row gap-4 h-full">
+        <div class="flex-1 min-w-0">
+          <header class="flex items-center justify-between mb-4 md:mb-6 flex-wrap gap-3">
+            <div class="min-w-0">
+              <p class="text-white/40 text-sm">Good to see you,</p>
+              <h1 id="profile-name-header" class="text-2xl md:text-3xl font-bold tracking-tight truncate max-w-[60vw] md:max-w-none">—</h1>
+            </div>
+            <div class="flex items-center gap-2 md:gap-3 flex-wrap">
+              <button id="btn-new-task" class="glass-hover accent-grad accent-glow rounded-2xl px-4 py-2.5 md:px-5 md:py-3 text-sm font-semibold flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+                New Task
+              </button>
+              <button id="btn-new-macro" class="glass-soft glass-hover rounded-2xl px-4 py-2.5 md:px-5 md:py-3 text-sm font-semibold flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+                New Project
+              </button>
+              <button id="btn-open-voice" class="w-11 h-11 md:w-12 md:h-12 glass glass-hover rounded-full flex items-center justify-center flex-none" title="Voice input" aria-label="Voice input">
+                <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+              </button>
+            </div>
+          </header>
 
-    <!-- VIEW: TASKS -->
-    <section class="view" data-view="tasks" id="view-tasks">
-      <div class="filter-nav">
-        <div class="seg-ctrl" id="task-filter-ctrl" role="tablist">
-          <button class="seg-btn active" data-filter="today" role="tab">Сегодня</button>
-          <button class="seg-btn" data-filter="tomorrow" role="tab">Завтра</button>
-          <button class="seg-btn" data-filter="week" role="tab">Неделя</button>
-          <button class="seg-btn" data-filter="all" role="tab">Все</button>
-          <button class="seg-btn" data-filter="done" role="tab">✓ Готово</button>
-        </div>
-      </div>
-      <div class="tag-filter-row" id="tag-filter-row"></div>
-      <div class="sunday-banner hidden" id="sunday-banner">😴 Воскресенье — день отдыха. Стрик заморожен.</div>
-      <div class="task-list" id="task-list" role="list"></div>
-    </section>
+          <!-- Live projects (macro goals) -->
+          <div id="projects-container" class="space-y-4 mb-4">
+            <!-- rendered by JS: project cards (macro goal -> sprint -> tasks) -->
+          </div>
 
-    <!-- VIEW: CALENDAR -->
-    <section class="view hidden" data-view="calendar" id="view-calendar">
-      <div class="cal-header-hero">
-        <div class="cal-hero-nav">
-          <button class="cal-nav-btn" id="cal-prev">‹</button>
-          <div class="cal-hero-title" id="cal-nav-title"></div>
-          <button class="cal-nav-btn" id="cal-next">›</button>
+          <!-- Task list panel -->
+          <div class="glass rounded-3xl p-4 md:p-6">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px;">
+              <h2 class="text-xl font-bold">My Tasks</h2>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div id="task-filter-ctrl" class="max-w-full overflow-x-auto" style="display:flex;gap:4px;background:rgba(255,255,255,.05);border-radius:12px;padding:3px;">
+                  <button class="seg-btn glass-hover active" data-filter="today" style="font-size:12px;padding:6px 12px;border-radius:9px;background:rgba(255,59,48,.18);color:#fff;white-space:nowrap;">Today</button>
+                  <button class="seg-btn glass-hover" data-filter="tomorrow" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Tomorrow</button>
+                  <button class="seg-btn glass-hover" data-filter="week" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Week</button>
+                  <button class="seg-btn glass-hover" data-filter="all" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">All</button>
+                  <button class="seg-btn glass-hover" data-filter="done" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Done</button>
+                </div>
+                <button id="btn-search-toggle" class="glass-soft glass-hover rounded-lg" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);">🔍</button>
+                <button id="btn-sort" class="glass-soft glass-hover rounded-lg text-xs font-medium" style="padding:7px 12px;color:rgba(255,255,255,.6);">⇅ Date</button>
+              </div>
+            </div>
+            <div id="search-wrap" style="display:none;margin-bottom:10px;">
+              <input id="search-input" class="field" placeholder="Search tasks…">
+            </div>
+            <div id="tag-filter-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+            <p id="tasks-view-subtitle" class="text-white/40 text-xs" style="margin-bottom:10px;"></p>
+            <div id="task-list" class="space-y-3"></div>
+          </div>
         </div>
-        <div class="cal-view-switcher" id="cal-view-switcher" role="tablist">
-          <button class="cal-vsw-btn" data-cal-view="day" role="tab">День</button>
-          <button class="cal-vsw-btn" data-cal-view="week" role="tab">Неделя</button>
-          <button class="cal-vsw-btn active" data-cal-view="month" role="tab">Месяц</button>
-          <button class="cal-vsw-btn" data-cal-view="year" role="tab">Год</button>
-        </div>
-      </div>
-      <div class="cal-container" id="cal-container"></div>
-    </section>
 
-    <!-- VIEW: TIMER -->
-    <section class="view hidden" data-view="timer" id="view-timer">
-      <div class="timer-inner">
-        <div class="timer-mode-ctrl">
-          <button class="timer-mode-btn active" data-mode="countdown">⏳ Таймер</button>
-          <button class="timer-mode-btn" data-mode="pomodoro">🍅 Помодоро</button>
-          <button class="timer-mode-btn" data-mode="stopwatch">⏱ Секундомер</button>
-        </div>
-        <div class="timer-goal-card">
-          <div class="tgc-label">Текущая задача</div>
-          <div class="tgc-row">
-            <div class="tgc-name" id="timer-goal-name">Не выбрана</div>
-            <button class="tgc-btn" id="btn-pick-timer-goal">Выбрать</button>
-          </div>
-        </div>
-        <div class="timer-ring-wrap" id="timer-ring-wrap">
-          <svg class="timer-ring-svg" viewBox="0 0 200 200">
-            <circle class="ring-track" cx="100" cy="100" r="88"/>
-            <circle class="ring-fill" cx="100" cy="100" r="88" id="ring-fill"/>
-          </svg>
-          <div class="ring-center">
-            <div class="ring-cat-badge" id="ring-cat-badge">Бизнес</div>
-            <div class="ring-time" id="ring-time">25:00</div>
-            <div class="ring-pct" id="ring-pct">0%</div>
-          </div>
-        </div>
-        <div class="subtask-rings" id="subtask-rings"></div>
-        <div class="timer-controls">
-          <button class="t-ctrl secondary" id="btn-timer-reset">↺</button>
-          <button class="t-ctrl primary" id="btn-timer-play">▶</button>
-          <button class="t-ctrl success-c" id="btn-timer-done">✓</button>
-        </div>
-        <div class="pomo-status hidden" id="pomo-status-wrap">
-          <div class="pomo-phase" id="pomo-phase-label">📚 Фокус</div>
-          <div class="pomo-dots" id="pomo-dots"></div>
-        </div>
-        <div class="pomo-settings hidden" id="pomo-settings">
-          <div class="pomo-row"><span>Работа</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-work-dec">−</button><span id="pomo-work-val">25</span>м<button class="pomo-adj" id="pomo-work-inc">+</button></div></div>
-          <div class="pomo-row"><span>Короткий перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-short-dec">−</button><span id="pomo-short-val">5</span>м<button class="pomo-adj" id="pomo-short-inc">+</button></div></div>
-          <div class="pomo-row"><span>Длинный перерыв</span><div class="pomo-ctrl"><button class="pomo-adj" id="pomo-long-dec">−</button><span id="pomo-long-val">15</span>м<button class="pomo-adj" id="pomo-long-inc">+</button></div></div>
-        </div>
-      </div>
-    </section>
+        <!-- Right filter sidebar -->
+        <aside class="glass rounded-3xl p-5 w-64 flex-none hidden lg:block">
+          <h3 class="font-semibold mb-4 text-sm text-white/50 uppercase tracking-wider">Categories</h3>
+          <div id="category-filter-list" class="space-y-2 mb-6"></div>
+          <h3 class="font-semibold mb-4 text-sm text-white/50 uppercase tracking-wider">Deadlines</h3>
+          <div id="deadline-filter-list" class="space-y-2"></div>
+        </aside>
+      </section>
 
-    <!-- VIEW: SLEEP -->
-    <section class="view hidden" data-view="sleep" id="view-sleep">
-      <div class="sleep-scroll">
-        <div class="sleep-section">
-          <div class="sleep-section-title">💤 Режим сна</div>
-          <div class="form-row2">
-            <div class="form-group"><label class="form-label" for="sleep-bedtime">Отбой</label><input class="form-input" type="time" id="sleep-bedtime" value="23:00"></div>
-            <div class="form-group"><label class="form-label" for="sleep-waketime">Подъём</label><input class="form-input" type="time" id="sleep-waketime" value="07:00"></div>
+      <!-- ===== VIEW 2 : FOCUS ===== -->
+      <section id="view-focus" class="view hidden h-full flex-col">
+        <header class="glass rounded-2xl px-3 py-2 md:px-5 md:py-3 flex items-center justify-between mb-4 md:mb-5 flex-wrap gap-3">
+          <div class="flex items-center gap-2 overflow-x-auto max-w-full" id="focusTabs">
+            <button data-sub="timer" class="subtab active glass-soft rounded-xl px-4 py-2 text-sm font-medium border border-transparent whitespace-nowrap">Timer</button>
+            <button data-sub="history" class="subtab glass-soft rounded-xl px-4 py-2 text-sm text-white/50 border border-transparent whitespace-nowrap">History</button>
+            <button data-sub="shop" class="subtab glass-soft rounded-xl px-4 py-2 text-sm text-white/50 border border-transparent whitespace-nowrap">Shop</button>
           </div>
-          <div class="form-row2">
-            <div class="form-group"><label class="form-label" for="routine-evening-prep">Подготовка ко сну (мин)</label><input class="form-input center" type="number" id="routine-evening-prep" min="0" value="30"></div>
-            <div class="form-group"><label class="form-label" for="routine-evening-gratitude">Благодарность (мин)</label><input class="form-input center" type="number" id="routine-evening-gratitude" min="0" value="15"></div>
+          <div class="flex items-center gap-2 md:gap-3 flex-wrap">
+            <div class="glass-soft rounded-xl px-3 py-2 md:px-4 flex items-center gap-2 text-sm"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg><span id="focus-gems" class="font-semibold">0</span> <span class="text-white/40">Crystals</span></div>
+            <div class="glass-soft rounded-xl px-3 py-2 md:px-4 flex items-center gap-2 text-sm"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2s6 5 6 11a6 6 0 0 1-12 0c0-2 1-3 1-3s1 2 2 2c0-3 3-4 3-7Z"/></svg><span id="focus-streak" class="font-semibold">0</span> <span class="text-white/40">day streak</span></div>
           </div>
-          <div class="settings-row">
-            <div class="settings-row-label">Мягкий будильник</div>
-            <label class="toggle-switch"><input type="checkbox" id="soft-alarm-enabled" checked><span class="toggle-track"></span></label>
-          </div>
-        </div>
-        <div class="sleep-section">
-          <div class="sleep-section-title">☀️ Утренняя цепочка</div>
-          <div class="form-row2">
-            <div class="form-group"><label class="form-label" for="routine-morning-water">Вода (мин после подъёма)</label><input class="form-input center" type="number" id="routine-morning-water" min="0" value="5"></div>
-            <div class="form-group"><label class="form-label" for="routine-morning-brush">Зубы (мин)</label><input class="form-input center" type="number" id="routine-morning-brush" min="0" value="10"></div>
-          </div>
-          <button class="btn btn-primary btn-full" id="btn-save-sleep">💾 Сохранить настройки сна</button>
-          <button class="btn btn-secondary btn-full" id="btn-morning-routine" style="margin-top:8px">☀️ Запустить утреннюю цепочку</button>
-        </div>
-      </div>
-    </section>
+        </header>
 
-    <!-- VIEW: PROFILE -->
-    <section class="view hidden" data-view="profile" id="view-profile">
-      <div class="profile-scroll">
-        <div class="profile-hero">
-          <div class="profile-avatar">🏆</div>
-          <div class="profile-info">
-            <div class="profile-name">Мой профиль</div>
-            <div class="profile-level" id="profile-level">🌱 Новичок</div>
+        <!-- FOCUS: TIMER -->
+        <div id="focus-timer" class="subview flex-1 flex gap-4 md:gap-5 flex-col xl:flex-row">
+          <div class="flex-1 glass rounded-3xl flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden">
+            <div class="absolute inset-0 opacity-40" style="background:radial-gradient(circle at center, rgba(255,59,48,0.22), transparent 62%)"></div>
+            <div class="relative w-full max-w-[340px]">
+              <svg width="100%" height="100%" viewBox="0 0 340 340" class="drop-shadow-2xl">
+                <circle cx="170" cy="170" r="150" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="18"/>
+                <circle id="timer-ring-progress" cx="170" cy="170" r="150" fill="none" stroke="#FF3B30" stroke-width="18" stroke-linecap="round" stroke-dasharray="942.48" stroke-dashoffset="942.48" transform="rotate(-90 170 170)" style="filter: drop-shadow(0 0 14px rgba(255,59,48,0.85))"/>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-4 md:px-8">
+                <span id="timer-time-text" class="text-4xl md:text-6xl font-bold tabular-nums tracking-tight">60:00</span>
+                <span id="timer-task-name" class="text-white/60 mt-2 font-medium truncate max-w-full">No task selected</span>
+                <div id="timer-task-tags" class="flex gap-2 mt-3 flex-wrap justify-center"></div>
+                <div class="flex gap-2 mt-5 flex-wrap justify-center">
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-5m" data-action="add-minutes" data-minutes="5">+5m</button>
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-10m" data-action="add-minutes" data-minutes="10">+10m</button>
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-20m" data-action="add-minutes" data-minutes="20">+20m</button>
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-30m" data-action="add-minutes" data-minutes="30">+30m</button>
+                </div>
+                <div class="flex gap-2 md:gap-3 mt-4 flex-wrap justify-center">
+                  <button id="btn-timer-toggle" class="glass-hover accent-grad accent-glow rounded-xl px-4 md:px-5 py-2 text-sm font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/></svg><span id="btn-timer-toggle-label">Start</span></button>
+                  <button id="btn-timer-restart" data-action="timer-restart" class="glass-soft glass-hover rounded-xl px-4 md:px-5 py-2 text-sm font-medium text-white/70 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0 1 14-3M20 15a8 8 0 0 1-14 3"/></svg>Restart</button>
+                  <button id="btn-timer-delete" data-action="timer-delete" class="glass-soft glass-hover rounded-xl px-4 md:px-5 py-2 text-sm font-medium text-white/70 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7"/></svg>Delete</button>
+                </div>
+                <button id="btn-timer-pick-task" data-action="pick-task" class="mt-3 text-xs text-white/40 hover:text-white/70 underline underline-offset-2">Choose a different task</button>
+              </div>
+            </div>
           </div>
-          <div class="profile-gems">
-            <div class="profile-gem-count" id="profile-gem-count">0</div>
-            <span>💎</span>
-            <button class="hdr-icon-btn" id="btn-cart" aria-label="Корзина">🛒</button>
-            <button class="hdr-icon-btn" id="btn-purchases" aria-label="Покупки">🧾</button>
-          </div>
-        </div>
-        <div class="profile-stats">
-          <div class="pstat"><div class="pstat-val" id="stat-streak">0</div><div class="pstat-label">🔥 Стрик</div></div>
-          <div class="pstat"><div class="pstat-val" id="stat-done-today">0</div><div class="pstat-label">✅ Сегодня</div></div>
-          <div class="pstat"><div class="pstat-val" id="stat-total-done">0</div><div class="pstat-label">📊 Всего</div></div>
-        </div>
-        <div class="streak-card" id="streak-card"></div>
-        <div class="p-section">
-          <div class="p-section-header">
-            <div class="p-section-title">🎯 Большие цели</div>
-            <button class="p-section-action" id="btn-add-macro">+ Добавить</button>
-          </div>
-          <div class="macro-list" id="macro-list"></div>
-        </div>
-        <div class="p-section">
-          <div class="p-section-header"><div class="p-section-title">🏪 Магазин наград</div></div>
-          <div class="store-grid" id="store-grid"></div>
-        </div>
-        <div class="p-section">
-          <div class="p-section-header">
-            <div class="p-section-title">📜 История</div>
-            <button class="p-section-action" id="btn-clear-history">Очистить</button>
-          </div>
-          <div class="history-list" id="history-list"></div>
-        </div>
-      </div>
-    </section>
 
-  </div><!-- /app-shell -->
-
-  <!-- ══ FOCUS OVERLAY ══ -->
-  <div class="focus-overlay" id="focus-overlay">
-    <button class="focus-exit" id="btn-focus-exit">✕</button>
-    <div class="focus-badge" id="focus-badge">Бизнес</div>
-    <div class="focus-task-title" id="focus-task-title"></div>
-    <div class="focus-time-display" id="focus-time-display">25:00</div>
-    <div class="focus-controls">
-      <button class="t-ctrl secondary" id="btn-focus-pause">▶</button>
-      <button class="t-ctrl success-c" id="btn-focus-done">✓</button>
-    </div>
-  </div>
-
-  <!-- ══ MODAL: TASK ══ -->
-  <div class="modal-overlay" id="modal-task" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title" id="modal-task-title">Новая задача</div>
-        <button class="modal-close" data-close="modal-task">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="nlp-hint hidden" id="nlp-hint"></div>
-        <div class="form-group">
-          <label class="form-label" for="task-title-input">Название</label>
-          <input class="form-input lg" type="text" id="task-title-input" placeholder="Напиши задачу… (NLP активен)" autocomplete="off">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="task-notes-input">Заметки</label>
-          <textarea class="form-input" id="task-notes-input" rows="3" placeholder="Детали, ссылки…"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Приоритет</label>
-          <div class="seg-ctrl" id="priority-ctrl">
-            <button class="seg-btn" data-priority="high">🔴 Высокий</button>
-            <button class="seg-btn active" data-priority="mid">🟡 Средний</button>
-            <button class="seg-btn" data-priority="low">⚪ Низкий</button>
-          </div>
-        </div>
-        <div class="form-row2">
-          <div class="form-group">
-            <label class="form-label" for="task-date-input">Дата</label>
-            <input class="form-input" type="date" id="task-date-input">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="task-category-select">Категория</label>
-            <select class="form-select" id="task-category-select">
-              <option value="business">💼 Бизнес</option>
-              <option value="health">💪 Здоровье</option>
-              <option value="study">📚 Учёба</option>
-              <option value="creative">🎨 Творчество</option>
-              <option value="life">🌱 Жизнь</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row2">
-          <div class="form-group">
-            <label class="form-label" for="task-start-time-input">⏰ Начало</label>
-            <input class="form-input" type="time" id="task-start-time-input">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="task-end-time-input">🏁 Конец</label>
-            <input class="form-input" type="time" id="task-end-time-input">
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="task-location-input">📍 Место</label>
-          <input class="form-input" type="text" id="task-location-input" placeholder="Офис, кафе…">
-        </div>
-        <div class="form-row2">
-          <div class="form-group">
-            <label class="form-label" for="task-travel-input">🚗 Дорога (мин)</label>
-            <input class="form-input center" type="number" id="task-travel-input" min="0" value="0">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="task-cost-input">💰 Бюджет</label>
-            <input class="form-input center" type="number" id="task-cost-input" min="0" value="0">
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Теги</label>
-          <div class="tags-picker" id="task-tags-picker"></div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Цвет</label>
-          <div class="color-pal" id="task-color-pal"></div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Напоминания</label>
-          <div class="rem-row" id="task-reminders"></div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Подзадачи</label>
-          <div class="st-input-list" id="subtask-input-list"></div>
-          <button class="st-add" id="btn-add-subtask">+ Добавить подзадачу</button>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Участники</label>
-          <div class="parts-list" id="participants-list"></div>
-          <div class="part-add-row">
-            <input class="form-input sm" type="text" id="participant-input" placeholder="Имя участника">
-            <button class="part-add-btn" id="btn-add-participant">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-danger hidden" id="btn-delete-task">Удалить</button>
-        <button class="btn btn-secondary" data-close="modal-task">Отмена</button>
-        <button class="btn btn-primary" id="btn-save-task">Создать</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ MODAL: DETAIL ══ -->
-  <div class="modal-overlay" id="modal-task-detail" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title" id="td-title"></div>
-        <button class="modal-close" data-close="modal-task-detail">✕</button>
-      </div>
-      <div class="modal-body" id="task-detail-body"></div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="btn-td-timer">⏱ Фокус</button>
-        <button class="btn btn-secondary" id="btn-td-edit">✏️ Изменить</button>
-        <button class="btn btn-success" id="btn-td-done">✅ Готово</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ MODAL: VOICE ══ -->
-  <div class="modal-overlay" id="modal-voice" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title">🎙 Голосовой ввод</div>
-        <button class="modal-close" data-close="modal-voice">✕</button>
-      </div>
-      <div class="voice-state-wrap">
-        <div id="voice-state-idle">
-          <div class="voice-orb-wrap"><button class="voice-orb" id="btn-voice-start">🎙️</button></div>
-          <div class="voice-prompt">Нажми микрофон и скажи задачу</div>
-          <div class="voice-hints">
-            <div class="voice-hint-title">Примеры:</div>
-            <div class="voice-hint-row">«Встреча завтра в 15:00 @работа на 1 час»</div>
-            <div class="voice-hint-row">«Купить продукты сегодня p1»</div>
-          </div>
-          <div class="voice-or">или</div>
-          <div class="voice-api-row">
-            <input class="form-input" type="text" id="voice-text-input" placeholder="Введи задачу текстом…">
-            <button class="btn btn-primary btn-full" id="btn-voice-text-parse" style="margin-top:8px">Создать задачу</button>
-          </div>
-        </div>
-        <div id="voice-state-listening" class="hidden">
-          <div class="voice-pulse-wrap">
-            <div class="v-pulse-ring"></div><div class="v-pulse-ring"></div><div class="v-pulse-ring"></div>
-            <div class="voice-mic-icon">🎙️</div>
-          </div>
-          <div class="voice-transcript" id="voice-transcript-text">Слушаю…</div>
-          <button class="btn btn-danger btn-full" id="btn-voice-stop">⏹ Остановить</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ MODAL: SETTINGS ══ -->
-  <div class="modal-overlay" id="modal-settings" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title">⚙️ Настройки</div>
-        <button class="modal-close" data-close="modal-settings">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="settings-section">
-          <div class="settings-section-title">Внешний вид</div>
-          <div class="settings-row">
-            <div class="settings-row-label">Тема</div>
-            <div class="theme-ctrl">
-              <button class="theme-btn active" data-theme="dark">Тёмная</button>
-              <button class="theme-btn" data-theme="light">Светлая</button>
+          <!-- Grand spheres -->
+          <div class="w-full xl:w-80 flex flex-col gap-3 md:gap-4 flex-none">
+            <div class="glass glass-hover rounded-3xl p-4 md:p-5 flex items-center gap-4" id="sphere-current-goal">
+              <div class="relative w-16 h-16 md:w-20 md:h-20 flex-none">
+                <svg width="100%" height="100%" viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/><circle id="sphere-current-ring" cx="40" cy="40" r="32" fill="none" stroke="#FF3B30" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 40 40)" style="filter:drop-shadow(0 0 8px rgba(255,59,48,0.7))"/></svg>
+                <span id="sphere-current-pct" class="absolute inset-0 flex items-center justify-center text-sm font-bold">0%</span>
+              </div>
+              <div class="min-w-0"><p class="font-semibold">Current Goal</p><p id="sphere-current-label" class="text-white/40 text-sm truncate">None selected</p></div>
+            </div>
+            <div class="glass glass-hover rounded-3xl p-4 md:p-5 flex items-center gap-4">
+              <div class="relative w-16 h-16 md:w-20 md:h-20 flex-none">
+                <svg width="100%" height="100%" viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/><circle id="sphere-goals-ring" cx="40" cy="40" r="32" fill="none" stroke="#FF3B30" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 40 40)" style="filter:drop-shadow(0 0 8px rgba(255,59,48,0.7))"/></svg>
+                <span id="sphere-goals-pct" class="absolute inset-0 flex items-center justify-center text-sm font-bold">0%</span>
+              </div>
+              <div class="min-w-0"><p class="font-semibold">Big Goals</p><p id="sphere-goals-label" class="text-white/40 text-sm truncate">0 of 0 completed</p></div>
+            </div>
+            <div class="glass glass-hover rounded-3xl p-4 md:p-5 flex items-center gap-4">
+              <div class="relative w-16 h-16 md:w-20 md:h-20 flex-none" id="sphere-streak-glow">
+                <svg width="100%" height="100%" viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/><circle id="sphere-streak-ring" cx="40" cy="40" r="32" fill="none" stroke="#FF3B30" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 40 40)" style="filter:drop-shadow(0 0 8px rgba(255,59,48,0.7))"/></svg>
+                <span id="sphere-streak-count" class="absolute inset-0 flex items-center justify-center text-lg font-bold">0</span>
+              </div>
+              <div class="min-w-0"><p class="font-semibold">Streak</p><p id="sphere-streak-best" class="text-white/40 text-sm truncate">Personal best: 0 days</p></div>
             </div>
           </div>
         </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Теги</div>
-          <div id="tags-manager"></div>
-          <div class="tag-add-row">
-            <div id="new-tag-color-pal" class="tag-color-pal"></div>
-            <input class="form-input sm" type="text" id="new-tag-name" placeholder="Название тега">
-            <button class="btn btn-primary btn-sm" id="btn-add-tag">+</button>
+
+        <!-- FOCUS: HISTORY -->
+        <div id="focus-history" class="subview hidden flex-1">
+          <div id="focus-history-list" class="grid gap-3"></div>
+        </div>
+
+        <!-- FOCUS: SHOP -->
+        <div id="focus-shop" class="subview hidden flex-1">
+          <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div><h2 class="text-xl font-bold">Reward Shop</h2><p class="text-white/40 text-sm">Spend crystals earned from Business &amp; Sport tasks</p></div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="glass-soft rounded-xl px-4 py-2 flex items-center gap-2 text-sm"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg><span id="shop-gems" class="font-semibold">0</span></div>
+              <button id="btn-cart" class="glass-soft glass-hover rounded-xl px-4 py-2 text-sm font-medium flex items-center gap-2">🛒 Cart <span id="cart-count" class="hidden"></span></button>
+              <button id="btn-purchases" class="glass-soft glass-hover rounded-xl px-4 py-2 text-sm font-medium flex items-center gap-2">🧾 History</button>
+            </div>
+          </div>
+          <div id="store-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- ===== VIEW 3 : CALENDAR ===== -->
+      <section id="view-calendar" class="view hidden h-full flex-col">
+        <header class="flex items-center justify-between mb-4 md:mb-5 flex-wrap gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <h1 id="calendar-header-title" class="text-xl md:text-2xl font-bold truncate max-w-[50vw] md:max-w-none">—</h1>
+            <div class="flex gap-1 flex-none">
+              <button id="cal-prev" data-action="cal-prev" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 19l-7-7 7-7"/></svg></button>
+              <button id="cal-next" data-action="cal-next" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg></button>
+              <button id="cal-today" data-action="cal-today" class="glass-soft glass-hover rounded-lg px-3 text-xs font-medium text-white/60">Today</button>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-1 flex gap-1 max-w-full overflow-x-auto" id="calTabs">
+            <button data-cal="day" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Day</button>
+            <button data-cal="week" class="subtab active glass-soft rounded-lg px-4 py-1.5 text-sm border border-transparent whitespace-nowrap">Week</button>
+            <button data-cal="month" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Month</button>
+            <button data-cal="year" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Year</button>
+          </div>
+        </header>
+
+        <!-- CAL: DAY -->
+        <div id="cal-day" class="subview hidden glass rounded-3xl p-4 md:p-5 flex-1 overflow-y-auto">
+          <div class="relative pb-16 md:pb-0" id="dayGrid"></div>
+        </div>
+
+        <!-- CAL: WEEK — horizontal scroll on mobile so the 7-day grid never gets crushed -->
+        <div id="cal-week" class="subview glass rounded-3xl p-4 md:p-5 flex-1 overflow-hidden flex flex-col">
+          <div class="flex-1 overflow-y-auto overflow-x-auto">
+            <div id="weekGrid" class="relative min-w-[640px] md:min-w-0 pb-16 md:pb-0"></div>
           </div>
         </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Telegram-бот</div>
-          <div class="form-group">
-            <label class="form-label" for="tg-bot-token">Bot Token</label>
-            <input class="form-input" type="text" id="tg-bot-token" placeholder="1234567:ABC…">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="tg-chat-id">Chat ID</label>
-            <input class="form-input" type="text" id="tg-chat-id" placeholder="123456789">
-          </div>
-          <button class="btn btn-primary" id="btn-save-tg">Сохранить</button>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Данные</div>
-          <div class="settings-row">
-            <div class="settings-row-label">Экспорт</div>
-            <button class="settings-btn" id="btn-export-data">💾 JSON</button>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">Сброс</div>
-            <button class="settings-btn danger" id="btn-reset-data">🗑 Очистить всё</button>
+
+        <!-- CAL: MONTH — horizontal scroll on mobile so the 7-column grid never gets crushed -->
+        <div id="cal-month" class="subview hidden glass rounded-3xl p-4 md:p-5 flex-1 flex flex-col overflow-x-auto">
+          <div class="min-w-[560px] md:min-w-0 flex flex-col flex-1 pb-16 md:pb-0">
+            <div class="grid grid-cols-7 gap-2 mb-2 flex-none">
+              <div class="text-center text-xs text-white/40 font-medium">Mon</div><div class="text-center text-xs text-white/40 font-medium">Tue</div><div class="text-center text-xs text-white/40 font-medium">Wed</div><div class="text-center text-xs text-white/40 font-medium">Thu</div><div class="text-center text-xs text-white/40 font-medium">Fri</div><div class="text-center text-xs text-white/40 font-medium">Sat</div><div class="text-center text-xs text-white/40 font-medium">Sun</div>
+            </div>
+            <div id="monthGrid" class="grid grid-cols-7 gap-2 flex-1"></div>
           </div>
         </div>
-        <div class="settings-section">
-          <div class="settings-section-title">🎮 Демо</div>
-          <div class="settings-row">
-            <div class="settings-row-label">Тестовые данные</div>
-            <button class="settings-btn" id="btn-load-demo">🎮 Загрузить</button>
+
+        <!-- CAL: YEAR -->
+        <div id="cal-year" class="subview hidden flex-1 overflow-y-auto">
+          <div id="yearGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-16 md:pb-0"></div>
+        </div>
+      </section>
+
+      <!-- ===== VIEW 4 : SLEEP & ROUTINES ===== -->
+      <section id="view-sleep" class="view hidden h-full">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 h-full">
+          <!-- Sleep controls -->
+          <div class="xl:col-span-2 flex flex-col gap-4">
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <h2 class="text-xl font-bold mb-1">Sleep Schedule</h2>
+              <p class="text-white/40 text-sm mb-6">Tonight you should sleep <span id="sleep-duration-label" class="text-accent font-semibold">—</span></p>
+              <div class="flex items-center justify-around mb-8 flex-wrap gap-4">
+                <div class="text-center"><div class="w-16 h-16 rounded-2xl accent-grad flex items-center justify-center mx-auto mb-2"><svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></div><p id="sleep-bedtime-big" class="text-2xl font-bold tabular-nums">23:00</p><p class="text-white/40 text-xs">Bedtime</p></div>
+                <div class="w-px h-16 bg-white/10"></div>
+                <div class="text-center"><div class="w-16 h-16 rounded-2xl glass-soft flex items-center justify-center mx-auto mb-2"><svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="13" r="6"/><path stroke-linecap="round" d="M12 2v2M4.9 5 6 6M19.1 5 18 6"/></svg></div><p id="sleep-waketime-big" class="text-2xl font-bold tabular-nums">07:00</p><p class="text-white/40 text-xs">Wake-up</p></div>
+              </div>
+              <div class="space-y-6">
+                <div><div class="flex justify-between text-sm mb-2"><span class="text-white/60">Bedtime</span><span id="sleep-bedtime-slider-label" class="tabular-nums text-white/40">23:00</span></div><input id="sleep-bedtime-slider" type="range" min="0" max="143" step="1" value="138" data-action="bedtime-slider"></div>
+                <div><div class="flex justify-between text-sm mb-2"><span class="text-white/60">Wake-up</span><span id="sleep-waketime-slider-label" class="tabular-nums text-white/40">07:00</span></div><input id="sleep-waketime-slider" type="range" min="0" max="143" step="1" value="42" data-action="waketime-slider"></div>
+              </div>
+              <div class="mt-6 flex items-center justify-between glass-soft rounded-2xl px-4 py-3 flex-wrap gap-3">
+                <div class="flex items-center gap-3 min-w-0"><svg class="w-5 h-5 text-accent flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14V11a6 6 0 1 0-12 0v3a2 2 0 0 1-.6 1.4L4 17h5m6 0v1a3 3 0 1 1-6 0v-1m6 0H9"/></svg><div class="min-w-0"><p class="text-sm font-medium">Soft Alarm</p><p class="text-white/40 text-xs">Gentle wake within 30m window</p></div></div>
+                <div id="toggle-soft-alarm" class="toggle" data-toggle data-action="toggle-soft-alarm"></div>
+              </div>
+            </div>
+
+            <!-- Sleep quality strip -->
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <div class="flex items-center justify-between mb-4"><h3 class="font-semibold">Last 7 nights</h3><span id="sleep-avg-label" class="text-accent text-sm font-semibold">Avg —</span></div>
+              <div id="sleep-week-bars" class="flex items-end justify-between gap-2 h-28"></div>
+            </div>
+          </div>
+
+          <!-- Routines -->
+          <div class="glass rounded-3xl p-4 md:p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-xl font-bold">Routines</h2>
+              <button id="btn-add-routine" class="glass-hover accent-grad rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>Add</button>
+            </div>
+            <div id="routines-list" class="space-y-3 flex-1 overflow-y-auto"></div>
           </div>
         </div>
+      </section>
+
+      <!-- ===== VIEW 5 : PROFILE ===== -->
+      <section id="view-profile" class="view hidden h-full">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <!-- Profile header + stats -->
+          <div class="xl:col-span-2 flex flex-col gap-4">
+            <div class="glass rounded-3xl p-4 md:p-6 flex items-center gap-4 md:gap-5 flex-wrap">
+              <div id="profile-avatar" class="w-16 h-16 md:w-20 md:h-20 rounded-3xl accent-grad accent-glow flex items-center justify-center flex-none text-2xl md:text-3xl font-bold">—</div>
+              <div class="flex-1 min-w-0">
+                <h1 id="profile-name" class="text-xl md:text-2xl font-bold truncate">—</h1>
+                <p id="profile-level" class="text-white/40 text-sm">—</p>
+                <div class="mt-2 h-2 rounded-full bg-white/10 overflow-hidden w-full max-w-56"><div id="profile-level-bar" class="h-full accent-grad rounded-full" style="width:0%"></div></div>
+              </div>
+              <button id="btn-profile-open-shop" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 flex-none"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg>Open Shop</button>
+            </div>
+
+            <!-- Big stats -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Total Created</p><p id="stat-total-created" class="text-2xl md:text-3xl font-bold tabular-nums">0</p></div>
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Progress</p><p id="stat-progress" class="text-2xl md:text-3xl font-bold tabular-nums text-accent">0%</p></div>
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Success Rate</p><p id="stat-success-rate" class="text-2xl md:text-3xl font-bold tabular-nums">0%</p></div>
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Streak</p><p id="stat-streak" class="text-2xl md:text-3xl font-bold tabular-nums flex items-center gap-1.5">0</p></div>
+            </div>
+
+            <!-- Big Goals tracking -->
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Big Goals</h3>
+                <button id="btn-add-macro" class="glass-soft glass-hover rounded-lg text-xs font-medium" style="padding:6px 12px;color:rgba(255,255,255,.6);">+ Add Goal</button>
+              </div>
+              <div id="macro-goals-list" class="space-y-4"></div>
+            </div>
+          </div>
+
+          <!-- Purchase history -->
+          <div class="glass rounded-3xl p-4 md:p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-5">
+              <h3 class="font-semibold">Purchase History</h3>
+              <button id="btn-profile-see-shop" class="text-accent text-sm font-medium flex items-center gap-1 glass-soft glass-hover rounded-lg px-2.5 py-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg></button>
+            </div>
+            <div id="profile-purchase-history" class="space-y-3 flex-1 overflow-y-auto"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+    <!-- ============ TASK MODAL ============ -->
+  <div id="taskModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="taskModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="taskModalTitle" class="text-xl font-bold truncate">New Task</h2>
+        <button data-close="taskModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div class="modal-footer"><button class="btn btn-primary" data-close="modal-settings">Готово</button></div>
+      <div class="space-y-4">
+        <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="task-title-input" class="field" placeholder="e.g. Design onboarding flow"><p id="nlp-hint" class="text-xs text-white/35 hidden" style="margin-top:4px;"></p></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Date</label><input id="task-date-input" type="date" class="field"></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label class="text-sm text-white/50 mb-1.5 block">Time from</label><input id="task-time-from-input" type="time" class="field"></div>
+          <div><label class="text-sm text-white/50 mb-1.5 block">Time to</label><input id="task-time-to-input" type="time" class="field"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Category</label>
+          <div id="task-category-row" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Tags</label>
+          <div id="task-tags-row" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Link to Big Goal (optional)</label>
+          <select id="task-macro-select" class="field"><option value="">None</option></select>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Link to Sprint (optional)</label>
+          <select id="task-sprint-select" class="field" disabled><option value="">None</option></select>
+        </div>
+        <div>
+          <label class="text-sm text-white/50 mb-1.5 block">Priority</label>
+          <div id="priority-ctrl" style="display:flex;gap:8px;">
+            <button type="button" class="seg-btn glass-hover" data-priority="high" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">🔴 High</button>
+            <button type="button" class="seg-btn glass-hover" data-priority="mid" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">🟡 Mid</button>
+            <button type="button" class="seg-btn glass-hover" data-priority="low" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">⚪ Low</button>
+          </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Notes</label><textarea id="task-notes-input" rows="3" class="field" style="resize:none;" placeholder="Additional details…"></textarea></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Subtasks</label><div id="subtask-input-list"></div><button type="button" id="btn-add-subtask" class="glass-soft glass-hover rounded-lg text-xs" style="padding:6px 12px;color:rgba(255,255,255,.6);">+ Add subtask</button></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Budget</label>
+          <div class="relative"><span class="absolute left-4 top-1/2 -translate-y-1/2 text-white/40">$</span><input id="task-budget-input" class="field pl-8" placeholder="0.00" type="number"></div>
+        </div>
+        <button type="button" id="btn-delete-task" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium hidden" style="color:#ff8f88;" data-action="delete-task">🗑 Delete Task</button>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button id="btn-task-cancel" data-close="taskModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-task-save" data-action="save-task" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Create Task</button>
+      </div>
     </div>
   </div>
 
-  <!-- ══ MODAL: MACRO ══ -->
-  <div class="modal-overlay" id="modal-macro" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title" id="macro-modal-title">Новая цель</div>
-        <button class="modal-close" data-close="modal-macro">✕</button>
+  <!-- ============ TASK DETAIL MODAL ============ -->
+  <div id="taskDetailModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="taskDetailModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="td-title" class="text-xl font-bold truncate max-w-[75%]">Task Details</h2>
+        <button data-close="taskDetailModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div class="modal-body">
+      <div id="task-detail-body"></div>
+      <div class="flex flex-wrap gap-3 mt-6">
+        <button id="btn-td-edit" data-action="detail-edit" class="flex-1 min-w-[90px] glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Edit</button>
+        <button id="btn-td-timer" data-action="detail-timer" class="flex-1 min-w-[90px] glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Timer</button>
+        <button id="btn-td-done" data-action="detail-complete" class="flex-1 min-w-[90px] accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Complete</button>
+      </div>
+      <button id="btn-td-delete" data-action="detail-delete" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium mt-3" style="color:#ff8f88;">🗑 Delete Task</button>
+    </div>
+  </div>
+
+  <!-- ============ ROUTINE MODAL ============ -->
+  <div id="routineModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="routineModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="routineModalTitle" class="text-xl font-bold truncate">New Routine</h2>
+        <button data-close="routineModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
+        <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="routine-title-input" class="field" placeholder="e.g. Evening wind down"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Trigger Time</label><input id="routine-time-input" type="time" class="field" value="22:30"></div>
+        <div class="glass-soft rounded-2xl p-4 space-y-3">
+          <p class="text-sm font-semibold mb-1">Actions</p>
+          <div id="routine-actions-list" class="space-y-3"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input id="routine-new-action-input" class="field" placeholder="Add a custom action…" style="flex:1;">
+            <button id="btn-routine-add-action" type="button" class="glass-soft glass-hover rounded-lg px-3 text-sm flex-none">+</button>
+          </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Repeat on</label>
+          <div id="routine-days-row" class="flex gap-2 flex-wrap"></div>
+        </div>
+        <div class="flex items-center justify-between glass-soft rounded-2xl px-4 py-3 flex-wrap gap-2"><span class="text-sm">Send push notification</span><div id="routine-push-toggle" class="toggle on" data-toggle></div></div>
+        <button type="button" id="btn-delete-routine" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium hidden" style="color:#ff8f88;" data-action="delete-routine">🗑 Delete Routine</button>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button data-close="routineModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-routine-save" data-action="save-routine" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Routine</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MACRO GOAL (PROJECT) MODAL ============ -->
+  <div id="macroModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="macroModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="macroModalTitle" class="text-xl font-bold truncate">New Project</h2>
+        <button data-close="macroModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
         <input type="hidden" id="macro-edit-id">
-        <div class="form-group"><label class="form-label" for="macro-title">Название</label><input class="form-input lg" type="text" id="macro-title" placeholder="Запустить стартап…"></div>
-        <div class="form-group"><label class="form-label" for="macro-deadline">Дедлайн</label><input class="form-input" type="date" id="macro-deadline"></div>
-        <div class="form-group"><label class="form-label" for="macro-gems-reward">Награда 💎</label><input class="form-input center" type="number" id="macro-gems-reward" min="1" value="50"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="macro-title" class="field" placeholder="e.g. Run a half marathon"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Deadline</label><input id="macro-deadline" type="date" class="field"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Crystal Reward</label><input id="macro-gems-reward" type="number" class="field" value="50"></div>
+
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Sprints / Sub-goals</p>
+          <div id="macro-sprints-list" style="margin-bottom:10px;"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input id="macro-new-sprint-input" class="field" placeholder="e.g. Sprint 1 — Core Engine" style="flex:1;min-width:180px;">
+            <button id="btn-macro-add-sprint" type="button" class="glass-soft glass-hover rounded-xl px-4 text-sm font-medium">Add</button>
+          </div>
+        </div>
+
+        <button type="button" id="btn-delete-macro" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium hidden" style="color:#ff8f88;margin-top:20px;" data-action="delete-macro">🗑 Delete Project</button>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-close="modal-macro">Отмена</button>
-        <button class="btn btn-primary" id="btn-save-macro">Сохранить</button>
+      <div class="flex gap-3 mt-6">
+        <button data-close="macroModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-save-macro" data-action="save-macro" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Project</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ MODAL: GOAL PICKER ══ -->
-  <div class="modal-overlay" id="modal-goal-picker" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title">Выбери задачу</div>
-        <button class="modal-close" data-close="modal-goal-picker">✕</button>
+  <!-- ============ CART MODAL ============ -->
+  <div id="cartModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="cartModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Cart</h2>
+        <button data-close="cartModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div class="modal-body"><div id="goal-picker-list"></div></div>
-    </div>
-  </div>
-
-  <!-- ══ MODAL: CART ══ -->
-  <div class="modal-overlay" id="modal-cart" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title">🛒 Корзина</div>
-        <button class="modal-close" data-close="modal-cart">✕</button>
+      <div id="cart-list"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:14px;font-weight:700;"><span>Total</span><span id="cart-total">0 💎</span></div>
+      <div style="margin-top:14px;">
+        <label class="text-sm text-white/50 mb-1.5 block">Why are you redeeming this? <span style="color:#ff8f88;">*</span></label>
+        <textarea id="cart-comment-input" class="field" rows="2" style="resize:none;" placeholder="e.g. Finished the sprint, earned a break"></textarea>
+        <p id="cart-comment-error" class="text-xs hidden" style="color:#ff8f88;margin-top:4px;">A short comment is required before checkout.</p>
       </div>
-      <div class="modal-body">
-        <div id="cart-list"></div>
-        <div class="cart-total-row"><span>Итого</span><span id="cart-total">0 💎</span></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-close="modal-cart">Отмена</button>
-        <button class="btn btn-primary" id="btn-checkout">Купить</button>
+      <div class="flex gap-3 mt-6">
+        <button data-close="cartModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Close</button>
+        <button id="btn-checkout" data-action="checkout" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Checkout</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ MODAL: PURCHASES ══ -->
-  <div class="modal-overlay" id="modal-purchases" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-drag"></div>
-      <div class="modal-hdr">
-        <div class="modal-title">🧾 Покупки</div>
-        <button class="modal-close" data-close="modal-purchases">✕</button>
+  <!-- ============ PURCHASES MODAL ============ -->
+  <div id="purchasesModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="purchasesModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Purchase History</h2>
+        <button data-close="purchasesModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div class="modal-body"><div id="purchases-list"></div></div>
-      <div class="modal-footer"><button class="btn btn-primary" data-close="modal-purchases">Закрыть</button></div>
+      <div id="purchases-list"></div>
     </div>
   </div>
 
-  <!-- ══ GLOBAL UI ══ -->
-  <div id="toast-stack" aria-live="polite"></div>
-  <div id="done-flash" class="done-flash"></div>
-  <div id="alarm-stack"></div>
+  <!-- ============ GOAL PICKER MODAL ============ -->
+  <div id="goalPickerModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="goalPickerModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Pick a task</h2>
+        <button data-close="goalPickerModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="goal-picker-list"></div>
+    </div>
+  </div>
 
-</div><!-- /app -->
-<script src="app.js"></script>
+  <!-- ============ SETTINGS MODAL ============ -->
+  <div id="modal-settings" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-settings"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-11 h-11 rounded-2xl accent-grad flex items-center justify-center flex-none">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          </div>
+          <h2 class="text-xl font-bold">Settings</h2>
+        </div>
+        <button data-close="modal-settings" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
+        <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Profile</p>
+          <label class="text-sm text-white/50 mb-1.5 block">Display Name</label>
+          <input id="settings-profile-name" class="field" placeholder="Your name" maxlength="40">
+        </div>
+
+        <p class="text-sm text-white/50 uppercase tracking-wider font-semibold">Integrations</p>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Telegram Bot Token</label><input id="settings-tg-token" class="field" placeholder="123456789:ABCdef..."></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Telegram Chat ID</label><input id="settings-tg-chat" class="field" placeholder="e.g. -1001234567890"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Server IP / Webhook URL</label><input id="settings-webhook" class="field" placeholder="https://nlp.mynova.dev/webhook"><p class="text-[11px] text-white/35 mt-1.5">Used for backend NLP sync of parsed tasks.</p></div>
+
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Tags</p>
+          <div id="tags-manager" style="margin-bottom:10px;"></div>
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+            <input id="new-tag-name" class="field" placeholder="New tag name" style="flex:1;min-width:160px;">
+            <button id="btn-add-tag" class="glass-soft glass-hover rounded-xl px-4 text-sm font-medium">Add</button>
+          </div>
+          <div id="new-tag-color-pal" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;"></div>
+
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Data</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+            <button id="btn-export-data" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-medium flex-1 min-w-[120px]">💾 Export</button>
+            <button id="btn-load-demo" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-medium flex-1 min-w-[120px]">🎉 Load Demo</button>
+          </div>
+          <button id="btn-reset-data" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium" style="color:#ff8f88;">🗑 Reset All Data</button>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button data-close="modal-settings" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-save-settings" data-action="save-settings" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VOICE MODAL ============ -->
+  <div id="modal-voice" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-voice"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Voice Input</h2>
+        <button data-close="modal-voice" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="flex flex-col items-center text-center">
+        <div id="voiceMic" class="w-24 h-24 rounded-full accent-grad accent-glow flex items-center justify-center mb-4">
+          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </div>
+        <p class="text-sm"><span class="w-2 h-2 inline-block rounded-full bg-white/40 mr-1.5 align-middle" id="voiceDot"></span><span id="voiceStatus" class="text-white/60 align-middle">Ready</span></p>
+      </div>
+      <div class="mt-5"><label class="text-sm text-white/50 mb-1.5 block">Transcript</label><textarea id="voiceTranscript" rows="4" class="field resize-none" placeholder="Your spoken words will appear here..."></textarea></div>
+      <div class="flex gap-3 mt-6">
+        <button id="btn-voice-stop" data-action="voice-stop" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Stop</button>
+        <button id="btn-voice-parse" data-action="voice-parse" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Parse Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TOAST / ALARM CONTAINERS ============ -->
+  <div id="toast-stack" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:340px;"></div>
+  <div id="alarm-stack" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
+  <div id="done-flash" style="position:fixed;inset:0;background:radial-gradient(circle at center,rgba(255,59,48,.25),transparent 60%);opacity:0;pointer-events:none;z-index:9998;transition:opacity .3s;"></div>
+
+  <!-- ============ SCRIPT ============ -->
+  <script src="app.js"></script>
 </body>
 </html>
