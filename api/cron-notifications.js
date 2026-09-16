@@ -29,6 +29,39 @@ const LIFE_KV_KEY = 'цель:master_admin_id';
 const NOVA_KV_KEY = 'цель:master_admin_id:nova';
 const TZ = 'Europe/Chisinau';
 
+// SCHOOL_SCHEDULE: 1=Пн … 5=Пт. s=предмет, r=кабинет.
+const SCHOOL_SCHEDULE = {
+  1: [{s:'Русский', r:'302'}, {s:'Русский', r:'302'}, {s:'Математика', r:'217'}, {s:'Математика', r:'217'}, {s:'Английский', r:'5/212'}, {s:'Английский', r:'5/212'}, {s:'Химия', r:'211'}],
+  2: [{s:'Румынский', r:'405/406'}, {s:'Румынский', r:'405/406'}, {s:'Физика', r:'301'}, {s:'Физика', r:'301'}, {s:'Разв.личности', r:'204'}, {s:'Физ-ра', r:'БСЗ'}, {s:'Химия', r:'211'}],
+  3: [{s:'Математика', r:'217'}, {s:'Математика', r:'217'}, {s:'Русский', r:'305'}, {s:'Русский', r:'305'}, {s:'Биология', r:'6'}, {s:'Английский', r:'5/212'}, {s:'История', r:'303'}],
+  4: [{s:'История', r:'303'}, {s:'География', r:'401'}, {s:'Химия', r:'211'}, {s:'Химия', r:'211'}, {s:'Румынский', r:'218/400'}, {s:'Румынский', r:'218/400'}, {s:'Информатика', r:'203/206'}],
+  5: [{s:'География', r:'401'}, {s:'Математика', r:'10'}, {s:'Физика', r:'301'}, {s:'Биология', r:'6'}, {s:'Физ-ра', r:'БСЗ'}, {s:'Информатика', r:'203'}, {s:'Гражданское', r:'302'}],
+};
+
+// Возвращает день недели по Кишинёву: 1 (Пн) ... 7 (Вс)
+function getChisinauIsoWeekday(base = new Date()) {
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(base);
+  const map = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+  return map[wd] || 7;
+}
+
+// Следующий УЧЕБНЫЙ день: Пн-Чт -> завтра, Пт/Сб/Вс -> ближайший понедельник
+function getNextSchoolDayIsoWeekday(todayIso) {
+  return (todayIso >= 1 && todayIso <= 4) ? todayIso + 1 : 1;
+}
+
+function formatTodaySchoolSchedule(dayIso) {
+  const lessons = SCHOOL_SCHEDULE[dayIso];
+  if (!lessons || !lessons.length) return null;
+  return lessons.map((l, i) => `Урок ${i + 1}: ${l.s}, каб. ${l.r}`).join('\n');
+}
+
+function formatNextDaySubjects(dayIso) {
+  const lessons = SCHOOL_SCHEDULE[dayIso];
+  if (!lessons || !lessons.length) return null;
+  return lessons.map(l => l.s).join(', ');
+}
+
 /* ─────────────────────────────────────────────────────────────
    СИСТЕМНЫЙ ПРОМПТ НОВЫ
 ───────────────────────────────────────────────────────────── */
@@ -225,17 +258,27 @@ function normalizeNovaState(raw) {
 /* ─────────────────────────────────────────────────────────────
    MOOD ENGINE
    Настроение генерируется МАТЕМАТИЧЕСКИ на бэкенде, а не LLM.
-   Живёт ровно 5 часов, затем перебрасывается заново.
+   Сбрасывается ежедневно в 03:00 по Кишинёву.
    Распределение: 10% sad, 10% angry, 25% sweet, 55% normal.
 ───────────────────────────────────────────────────────────── */
-const MOOD_DURATION_MS = 5 * 3600000; // 5 часов
 
 function rollMood() {
   const r = Math.random() * 100;
-  if (r < 10) return 'sad';      // 0-10   — грустная/пессимистичная
-  if (r < 20) return 'angry';    // 10-20  — злая/жёсткая
-  if (r < 45) return 'sweet';    // 20-45  — милая/заигрывающая
-  return 'normal';               // 45-100 — обычная
+  if (r < 30) return 'sad';      // 0-30   — грустная/пессимистичная (30%)
+  if (r < 40) return 'angry';    // 30-40  — злая/жёсткая (10%)
+  if (r < 75) return 'sweet';    // 40-75  — милая/заигрывающая (35%)
+  return 'normal';               // 75-100 — обычная (25%)
+}
+
+// Возвращает epoch ms ближайшего будущего 03:00 по Кишинёву.
+// Если сейчас уже позже 03:00 сегодняшнего дня (по Кишинёву) — берём 03:00 завтра.
+function getNextMoodResetEpoch(base = new Date()) {
+  const todayReset = chisinauTimeToEpoch('03:00', base);
+  if (base.getTime() < todayReset) {
+    return todayReset;
+  }
+  const tomorrow = new Date(base.getTime() + 86400000);
+  return chisinauTimeToEpoch('03:00', tomorrow);
 }
 
 // Возвращает { nova, moodChanged, mood }.
@@ -245,8 +288,8 @@ function updateAndGetMood(nova) {
   const now = Date.now();
   if (!nova.activeMood || now > nova.activeMood.expiresAt) {
     const type = rollMood();
-    nova.activeMood = { type, expiresAt: now + MOOD_DURATION_MS };
-    console.log('[Nova mood] новое настроение:', type, 'до', new Date(nova.activeMood.expiresAt).toISOString());
+    nova.activeMood = { type, expiresAt: getNextMoodResetEpoch(new Date(now)) };
+    console.log('[Nova mood] новое настроение:', type, '— сброс в 03:00 Кишинёва:', new Date(nova.activeMood.expiresAt).toISOString());
     return { nova, moodChanged: true, mood: type };
   }
   return { nova, moodChanged: false, mood: nova.activeMood.type };
@@ -271,6 +314,15 @@ function nowInChisinau() {
     timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   }).format(new Date());
+}
+
+function currentHourChisinau(base = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, hour: '2-digit', hour12: false,
+  });
+  const hourStr = fmt.format(base);
+  const hour = Number(hourStr);
+  return hour === 24 ? 0 : hour;
 }
 
 function todayKeyChisinau(base = new Date()) {
@@ -376,7 +428,7 @@ async function askGemini(promptText, contextText, history = []) {
   const body = {
     systemInstruction: { parts: [{ text: systemInstruction }] },
     contents: [...historyContents, { role: 'user', parts: [{ text: promptText }] }],
-    generationConfig: { temperature: 0.9, maxOutputTokens: 1500 },
+    generationConfig: { temperature: 0.9, maxOutputTokens: 4096 },
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
       { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
@@ -710,6 +762,21 @@ async function handleMorning() {
   lines.push(`Активный Главный Босс Дня: ${currentBoss ? currentBoss : 'не назначен'}.`);
   lines.push(`Индикатор выгорания: ${nova.burnoutScore || 0}/3.`);
 
+  /* --- школьное расписание --- */
+  const todayIsoForSchool = getChisinauIsoWeekday();
+  if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
+    const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
+    if (todaySchedule) {
+      lines.push('Расписание уроков на сегодня:');
+      lines.push(todaySchedule);
+    }
+  }
+  const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
+  const nextSubjects = formatNextDaySubjects(nextSchoolIso);
+  if (nextSubjects) {
+    lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+  }
+
   const prompt = sunday
     ? 'Напиши доброе утреннее сообщение на воскресенье — без напора, но с теплом и лёгким планом на отдых/семью, если это уместно.'
     : today.length === 0
@@ -739,6 +806,21 @@ async function handleNight() {
   const boss = lifeData.activeBoss || null;
   lines.push(`Активный Главный Босс Дня: ${boss ? boss : 'не назначен'}.`);
   lines.push(`Индикатор выгорания: ${nova.burnoutScore || 0}/3.`);
+
+  /* --- школьное расписание --- */
+  const todayIsoForSchool = getChisinauIsoWeekday();
+  if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
+    const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
+    if (todaySchedule) {
+      lines.push('Расписание уроков на сегодня:');
+      lines.push(todaySchedule);
+    }
+  }
+  const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
+  const nextSubjects = formatNextDaySubjects(nextSchoolIso);
+  if (nextSubjects) {
+    lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+  }
 
   const bossStatus = boss
     ? `Главный Босс Дня был: "${boss}". Проверь по списку выполненных задач — выполнен ли он. Если выполнен — искренне поздравь. Если НЕ выполнен — это провал, отчитай жёстко без жалости, объясни почему выполнение Босса Дня критически важно.`
@@ -862,8 +944,9 @@ async function handlePulse() {
       novaFlowChanged = true;
     }
 
-    // Wake time: если не подтверждено - спамим КАЖДЫЙ вызов, без де-дупа
-    if (nowMs >= wakeEpoch && !updatedNova.morningConfirmed) {
+    // Wake time: спамим, но не дольше 4 часов после планового подъёма —
+    // после этого предполагаем сбой и прекращаем беспокоить.
+    if (nowMs >= wakeEpoch && !updatedNova.morningConfirmed && (nowMs < wakeEpoch + 4 * 3600000)) {
       await sendTelegramMessage(TG_CHAT_ID, SCHEDULE_PHRASES.wakeSpam);
     }
 
@@ -911,9 +994,51 @@ async function handlePulse() {
       novaFlowChanged = true;
     }
 
-    // Sleep time: если не подтверждено - спамим КАЖДЫЙ вызов, без де-дупа
+    // Sleep time: спамим, но только в вечернем/ночном окне (18:00–03:00 Кишинёв),
+    // чтобы забытый [NIGHT_CONFIRMED] не бомбил пользователя весь следующий день.
     if (nowMs >= sleepEpoch && !updatedNova.nightConfirmed) {
-      await sendTelegramMessage(TG_CHAT_ID, SCHEDULE_PHRASES.sleepSpam);
+      const hourNow = currentHourChisinau(now);
+      if (hourNow >= 18 || hourNow < 3) {
+        await sendTelegramMessage(TG_CHAT_ID, SCHEDULE_PHRASES.sleepSpam);
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // 07:10 — Утреннее расписание уроков (только будни, без LLM)
+  // ══════════════════════════════════════════════════════
+  {
+    const minStart = minutesUntilTimeToday('07:10', now);
+    const minEnd   = minutesUntilTimeToday('07:15', now);
+    const todayIsoForMorning = getChisinauIsoWeekday(now);
+    if (minStart <= 0 && minEnd >= 0 && !df.morningScheduleSent && todayIsoForMorning >= 1 && todayIsoForMorning <= 5) {
+      const subjects = (SCHOOL_SCHEDULE[todayIsoForMorning] || []).map(l => l.s).join(', ');
+      if (subjects) {
+        await sendTelegramMessage(TG_CHAT_ID, `Доброе утро! Твои уроки на сегодня: ${subjects}`);
+      }
+      df.morningScheduleSent = true;
+      novaFlowChanged = true;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // 20:00 — Вечерняя проверка домашнего задания (через Gemini, каждый день)
+  // ══════════════════════════════════════════════════════
+  {
+    const minStart = minutesUntilTimeToday('20:00', now);
+    const minEnd   = minutesUntilTimeToday('20:05', now);
+    if (minStart <= 0 && minEnd >= 0 && !df.homeworkCheckSent) {
+      const todayIsoForHw = getChisinauIsoWeekday(now);
+      const nextSchoolIsoForHw = getNextSchoolDayIsoWeekday(todayIsoForHw);
+      const nextSubjectsForHw = (SCHOOL_SCHEDULE[nextSchoolIsoForHw] || []).map(l => l.s).join(', ');
+      const hwPrompt = 'Спроси у Лёши, всё ли он сделал по домашке на завтра. Перечисли предметы, которые будут в следующий учебный день, чтобы он мог свериться. Тон бро-коуча.';
+      const hwContext = [
+        `Сейчас: ${nowInChisinau()}.`,
+        `Предметы на следующий учебный день: ${nextSubjectsForHw || 'нет данных'}.`,
+      ].join('\n');
+      await sendGeminiPush(hwPrompt, hwContext, updatedNova, lifeData);
+      df.homeworkCheckSent = true;
+      novaFlowChanged = true;
     }
   }
 

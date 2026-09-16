@@ -11,7 +11,7 @@
  */
 import { createClient } from '@vercel/kv';
 
-const MAX_GOALS     = 200;
+const MAX_GOALS     = 400;
 const MAX_HISTORY   = 200;
 const TTL_SECONDS   = 60 * 60 * 24 * 90; // 90 days
 const MASTER_KV_KEY = 'цель:master_admin_id'; // единственный ключ, который вообще существует
@@ -40,7 +40,14 @@ function sanitizeState(body, clientUserId) {
       notes:        String(g.notes||'').slice(0,2000),
       cat:          String(g.cat||'business').slice(0,20),
       priority:     String(g.priority||'mid').slice(0,10),
-      color:        String(g.color||'#0A84FF').slice(0,10),
+      color:        String(g.color||'').slice(0,10),
+      isEvent:      !!g.isEvent,
+      isProject:    !!g.isProject,
+      parentId:     g.parentId ? String(g.parentId).slice(0,64) : null,
+      gemsReward:   safeNum(g.gemsReward, 0),
+      recurrence:   (g.recurrence && Array.isArray(g.recurrence.days))
+        ? { days: g.recurrence.days.slice(0,7).map(Number), until: g.recurrence.until ? parseInt(g.recurrence.until) : null }
+        : null,
       tags:         Array.isArray(g.tags)?g.tags.slice(0,10).map(String):[],
       scheduledAt:  g.scheduledAt?parseInt(g.scheduledAt):null,
       duration_min: safeNum(g.duration_min,25),
@@ -70,15 +77,6 @@ function sanitizeState(body, clientUserId) {
     // Если клиент её не прислал (старый клиент) — ставим серверное время как fallback.
     updatedAt: (body.updatedAt && Number(body.updatedAt) > 0) ? Number(body.updatedAt) : Date.now(),
   };
-}
-
-async function notifyTelegram(state) {
-  const {tgToken,tgChatId}=state; if(!tgToken||!tgChatId) return;
-  const overdue=(state.goals||[]).filter(g=>!g.done&&g.scheduledAt&&g.scheduledAt<Date.now());
-  if(!overdue.length) return;
-  const text=`⏰ *Life OS — Просрочено ${overdue.length} задач*\n\n`+overdue.slice(0,5).map(g=>`• ${g.title}`).join('\n')+(overdue.length>5?`\n...и ещё ${overdue.length-5}`:'');
-  try { await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:tgChatId,text,parse_mode:'Markdown'})}); }
-  catch(e){console.warn('[TG notify]',e.message);}
 }
 
 export default async function handler(req,res) {
@@ -128,7 +126,6 @@ export default async function handler(req,res) {
       // Клиент новее или равен — полностью перезаписываем базу.
       const sanitized = sanitizeState(body, clientUserId);
       await kv.set(MASTER_KV_KEY, sanitized, {ex: TTL_SECONDS});
-      notifyTelegram(sanitized).catch(() => {});
       return res.status(200).json({ok:true, userId:sanitized.userId, updatedAt:sanitized.updatedAt, gems:sanitized.gems, goalsCount:sanitized.goals.length});
     } catch(e){console.error('[KV POST]',e); return res.status(500).json({error:'KV write error',detail:e.message});}
   }

@@ -56,6 +56,39 @@ const SPLIT_DELIMITER = '[SPLIT]';
 const MULTI_MSG_DELAY_MIN_MS = 1500;
 const MULTI_MSG_DELAY_MAX_MS = 2000;
 
+// SCHOOL_SCHEDULE: 1=Пн … 5=Пт. s=предмет, r=кабинет.
+const SCHOOL_SCHEDULE = {
+  1: [{s:'Русский', r:'302'}, {s:'Русский', r:'302'}, {s:'Математика', r:'217'}, {s:'Математика', r:'217'}, {s:'Английский', r:'5/212'}, {s:'Английский', r:'5/212'}, {s:'Химия', r:'211'}],
+  2: [{s:'Румынский', r:'405/406'}, {s:'Румынский', r:'405/406'}, {s:'Физика', r:'301'}, {s:'Физика', r:'301'}, {s:'Разв.личности', r:'204'}, {s:'Физ-ра', r:'БСЗ'}, {s:'Химия', r:'211'}],
+  3: [{s:'Математика', r:'217'}, {s:'Математика', r:'217'}, {s:'Русский', r:'305'}, {s:'Русский', r:'305'}, {s:'Биология', r:'6'}, {s:'Английский', r:'5/212'}, {s:'История', r:'303'}],
+  4: [{s:'История', r:'303'}, {s:'География', r:'401'}, {s:'Химия', r:'211'}, {s:'Химия', r:'211'}, {s:'Румынский', r:'218/400'}, {s:'Румынский', r:'218/400'}, {s:'Информатика', r:'203/206'}],
+  5: [{s:'География', r:'401'}, {s:'Математика', r:'10'}, {s:'Физика', r:'301'}, {s:'Биология', r:'6'}, {s:'Физ-ра', r:'БСЗ'}, {s:'Информатика', r:'203'}, {s:'Гражданское', r:'302'}],
+};
+
+// Возвращает день недели по Кишинёву: 1 (Пн) ... 7 (Вс)
+function getChisinauIsoWeekday(base = new Date()) {
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Chisinau', weekday: 'short' }).format(base);
+  const map = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+  return map[wd] || 7;
+}
+
+// Следующий УЧЕБНЫЙ день: Пн-Чт -> завтра, Пт/Сб/Вс -> ближайший понедельник
+function getNextSchoolDayIsoWeekday(todayIso) {
+  return (todayIso >= 1 && todayIso <= 4) ? todayIso + 1 : 1;
+}
+
+function formatTodaySchoolSchedule(dayIso) {
+  const lessons = SCHOOL_SCHEDULE[dayIso];
+  if (!lessons || !lessons.length) return null;
+  return lessons.map((l, i) => `Урок ${i + 1}: ${l.s}, каб. ${l.r}`).join('\n');
+}
+
+function formatNextDaySubjects(dayIso) {
+  const lessons = SCHOOL_SCHEDULE[dayIso];
+  if (!lessons || !lessons.length) return null;
+  return lessons.map(l => l.s).join(', ');
+}
+
 // Таймер "игнора": через сколько минут отсутствия ответа Босса считать,
 // что он проигнорировал сообщение/напоминание. Раньше было 60 минут — сократили до 15.
 // Используется отдельной cron-функцией (например api/check-ignore.js), которая
@@ -238,6 +271,7 @@ const COMMAND_SYNTAX_HINT = `<commands_syntax>
 2. Если задач несколько - выведи все команды [ADD_TASK_JSON: ...] подряд, каждую на новой строке, полностью до закрывающей \`}]\`. Лучше 5 полных команд, чем 6 команд с одной оборванной.
 3. Если Лёша просит удалить/перенести задачу по спорту/марафону без объяснения причины - сначала спроси "почему" словами, без команды. Команду выводи только вторым сообщением, после ответа.
 4. Никогда не пиши "добавлю" без реальной команды - это будет ложью Боссу.
+5. ТЕСТЫ И КОНТРОЛЬНЫЕ: Если Лёша просит напомнить про тест/контрольную, ты ОБЯЗАНА поставить напоминание на длительный срок для подготовки (например, за день [1440] или за два дня [2880]). Для обычного ДЗ ставь стандартные напоминания (например, за пару часов [120]). При ответе в чат делай акцент: «Напомню тебе подготовиться к тесту заранее».
 </add_task_command>
 </commands_syntax>
 
@@ -329,17 +363,27 @@ function normalizeNovaState(raw) {
 /* ─────────────────────────────────────────────────────────────
    MOOD ENGINE
    Настроение генерируется МАТЕМАТИЧЕСКИ на бэкенде, а не LLM.
-   Живёт ровно 5 часов, затем перебрасывается заново.
+   Сбрасывается ежедневно в 03:00 по Кишинёву.
    Распределение: 10% sad, 10% angry, 25% sweet, 55% normal.
 ───────────────────────────────────────────────────────────── */
-const MOOD_DURATION_MS = 5 * 3600000; // 5 часов
 
 function rollMood() {
   const r = Math.random() * 100;
-  if (r < 10) return 'sad';      // 0-10   — грустная/пессимистичная
-  if (r < 20) return 'angry';    // 10-20  — злая/жёсткая
-  if (r < 45) return 'sweet';    // 20-45  — милая/заигрывающая
-  return 'normal';               // 45-100 — обычная
+  if (r < 30) return 'sad';      // 0-30   — грустная/пессимистичная (30%)
+  if (r < 40) return 'angry';    // 30-40  — злая/жёсткая (10%)
+  if (r < 75) return 'sweet';    // 40-75  — милая/заигрывающая (35%)
+  return 'normal';               // 75-100 — обычная (25%)
+}
+
+// Возвращает epoch ms ближайшего будущего 03:00 по Кишинёву.
+// Если сейчас уже позже 03:00 сегодняшнего дня (по Кишинёву) — берём 03:00 завтра.
+function getNextMoodResetEpoch(base = new Date()) {
+  const todayReset = chisinauTimeToEpoch('03:00', base);
+  if (base.getTime() < todayReset) {
+    return todayReset;
+  }
+  const tomorrow = new Date(base.getTime() + 86400000);
+  return chisinauTimeToEpoch('03:00', tomorrow);
 }
 
 // Возвращает { nova, moodChanged, mood }.
@@ -349,8 +393,8 @@ function updateAndGetMood(nova) {
   const now = Date.now();
   if (!nova.activeMood || now > nova.activeMood.expiresAt) {
     const type = rollMood();
-    nova.activeMood = { type, expiresAt: now + MOOD_DURATION_MS };
-    console.log('[Nova mood] новое настроение:', type, 'до', new Date(nova.activeMood.expiresAt).toISOString());
+    nova.activeMood = { type, expiresAt: getNextMoodResetEpoch(new Date(now)) };
+    console.log('[Nova mood] новое настроение:', type, '— сброс в 03:00 Кишинёва:', new Date(nova.activeMood.expiresAt).toISOString());
     return { nova, moodChanged: true, mood: type };
   }
   return { nova, moodChanged: false, mood: nova.activeMood.type };
@@ -563,6 +607,21 @@ function buildContext(lifeData, nova) {
     }
   }
 
+  /* --- школьное расписание --- */
+  const todayIsoForSchool = getChisinauIsoWeekday();
+  if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
+    const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
+    if (todaySchedule) {
+      lines.push('Расписание уроков на сегодня:');
+      lines.push(todaySchedule);
+    }
+  }
+  const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
+  const nextSubjects = formatNextDaySubjects(nextSchoolIso);
+  if (nextSubjects) {
+    lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+  }
+
   return lines.join('\n');
 }
 
@@ -583,7 +642,7 @@ async function askGemini(userText, contextText, history) {
     contents,
     generationConfig: {
       temperature: 0.9,
-      maxOutputTokens: 1500,
+      maxOutputTokens: 4096,
     },
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
@@ -726,7 +785,7 @@ function processCommands(rawReply, nova, lifeData) {
   });
 
   // ── Шаг 2: парсим остальные простые команды ──
-  const cleanText = workingText.replace(COMMAND_RE, (match, cmd, valueRaw) => {
+  let cleanText = workingText.replace(COMMAND_RE, (match, cmd, valueRaw) => {
     const value = (valueRaw || '').trim();
     switch (cmd) {
       case 'SET_WATCH': {
@@ -953,6 +1012,11 @@ function processCommands(rawReply, nova, lifeData) {
     return ''; // команда всегда вырезается из текста, видимого пользователю
   });
 
+  // Защита от обрезанного ADD_TASK_JSON (например, из-за лимита токенов модели):
+  // если открывающая конструкция есть, а валидного JSON/закрывающих скобок не нашлось —
+  // ADD_TASK_JSON_RE её не поймал, и сырой фрагмент утёк в cleanText. Вырезаем его целиком.
+  cleanText = cleanText.replace(/\[ADD_TASK_JSON:.*$/gs, '');
+
   return {
     cleanText: cleanText.replace(/\n{3,}/g, '\n\n').trim(),
     updatedNova,
@@ -1070,7 +1134,21 @@ async function processMessageInBackground(chatId, userText) {
     }
 
     // Парсим скрытые команды (мутируем nova и lifeData)
-    const { cleanText, updatedNova, novaChanged, updatedLifeData, lifeChanged } = processCommands(rawReply, nova, lifeData);
+    const commandResult = processCommands(rawReply, nova, lifeData);
+    const { cleanText, updatedNova, updatedLifeData, lifeChanged } = commandResult;
+    let novaChanged = commandResult.novaChanged;
+
+    // Regex-предохранители на случай, если LLM забыла выдать команду
+    if (/(спокойной ночи|я сплю|отбой|иду спать|заткнись я сплю)/i.test(userText)) {
+      updatedNova.nightConfirmed = true;
+      novaChanged = true;
+    }
+    if (/(доброе утро|проснулся|встал|подъем)/i.test(userText)) {
+      updatedNova.morningConfirmed = true;
+      if (!updatedNova.morningFlow) updatedNova.morningFlow = {};
+      if (!updatedNova.morningFlow.confirmedAt) updatedNova.morningFlow.confirmedAt = Date.now();
+      novaChanged = true;
+    }
 
     // Recovery Day: если burnoutScore достиг 3 — уведомляем отдельным сообщением
     if ((nova.burnoutScore || 0) >= 2 && updatedNova.burnoutScore === 0 && updatedNova.dndUntil > Date.now()) {

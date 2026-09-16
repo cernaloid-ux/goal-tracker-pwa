@@ -89,7 +89,6 @@ function initials(name) {
   if(!parts.length) return '?';
   return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
 }
-// Snaps a "HH:MM" string to the nearest 10-minute step index (0..143).
 function timeStrToStep(hhmm) {
   const [h,m]=(hhmm||'00:00').split(':').map(Number);
   const mins=(h*60+m);
@@ -102,6 +101,144 @@ function stepToTimeStr(step) {
   const mins = clamped * SLIDER_STEP_MIN;
   const h=Math.floor(mins/60)%24, m=mins%60;
   return `${pad(h)}:${pad(m)}`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TREE HELPERS (Nova OS v8 — flat goals[] with isProject/parentId)
+═══════════════════════════════════════════════════════════ */
+function getChildren(parentId) {
+  return StateManager.get('goals').filter(g => g.parentId === parentId);
+}
+function getDescendantIds(nodeId, seen = new Set()) {
+  if (seen.has(nodeId)) return []; // protect against cycles
+  seen.add(nodeId);
+  const kids = getChildren(nodeId);
+  return kids.flatMap(k => [k.id, ...getDescendantIds(k.id, seen)]);
+}
+// Recursive progress: counts done/total across LEAF tasks (isProject:false)
+function computeNodeProgress(nodeId, seen = new Set()) {
+  if (seen.has(nodeId)) return { done:0, total:0 };
+  seen.add(nodeId);
+  const kids = getChildren(nodeId);
+  let done = 0, total = 0;
+  kids.forEach(k => {
+    if (k.isProject) { const p = computeNodeProgress(k.id, seen); done += p.done; total += p.total; }
+    else { total += 1; if (k.done) done += 1; }
+  });
+  return { done, total };
+}
+function nodeMatchesCategoryFilter(node, catFilter, seen = new Set()) {
+  if (!catFilter) return true;
+  if (!node.isProject) return node.cat === catFilter;
+  if (seen.has(node.id)) return false;
+  seen.add(node.id);
+  return getChildren(node.id).some(k => nodeMatchesCategoryFilter(k, catFilter, seen));
+}
+// Flat list for <select> with indentation by depth
+function buildParentOptionsFlat(excludeId = null) {
+  const excludedSet = excludeId ? new Set([excludeId, ...getDescendantIds(excludeId)]) : new Set();
+  const out = [];
+  const walk = (parentId, depth) => {
+    StateManager.get('goals').filter(g => g.isProject && g.parentId === parentId).forEach(p => {
+      if (excludedSet.has(p.id)) return;
+      out.push({ id: p.id, label: '—'.repeat(depth) + ' ' + p.title });
+      walk(p.id, depth + 1);
+    });
+  };
+  walk(null, 0);
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LEGACY MIGRATION (macroGoals → flat goals[] with isProject)
+   Called from StateManager.load() and SyncManager._applyServerData()
+═══════════════════════════════════════════════════════════ */
+function migrateLegacyProjectData(rawState) {
+  const macroGoals = rawState.macroGoals;
+  if (!Array.isArray(macroGoals) || !macroGoals.length) {
+    // Still normalize existing goals even if no macroGoals to convert
+    (rawState.goals || []).forEach(g => {
+      if (g.isProject === undefined) g.isProject = false;
+      if (g.parentId === undefined) g.parentId = g.sprintId || g.macroId || null;
+      if (g.recurrence === undefined) g.recurrence = null;
+    });
+    return;
+  }
+  const goals = rawState.goals || [];
+  const existingIds = new Set(goals.map(g => g.id));
+  const defaults = { done:false, cat:'business', scheduledAt:null, duration_min:60, subtasks:[], tags:[], reminders:[], notes:'', location:'', cost:0, travelTime:0, participants:[], color:'', elapsed:0, startTime:null, paused:false };
+
+  macroGoals.forEach(mg => {
+    if (!existingIds.has(mg.id)) {
+      goals.push({ ...defaults, id: mg.id, title: mg.title, isProject:true, parentId:null,
+        deadline: mg.deadline||'', gemsReward: mg.gemsReward||50, createdAt: mg.createdAt||Date.now(),
+        isEvent:false, recurrence:null, elapsed_ms:0 });
+      existingIds.add(mg.id);
+    }
+    (mg.sprints||[]).forEach(sp => {
+      if (!existingIds.has(sp.id)) {
+        goals.push({ ...defaults, id: sp.id, title: sp.title, isProject:true, parentId: mg.id,
+          deadline:'', gemsReward:0, createdAt: sp.createdAt||Date.now(),
+          isEvent:false, recurrence:null, elapsed_ms:0 });
+        existingIds.add(sp.id);
+      }
+    });
+  });
+
+  goals.forEach(g => {
+    if (g.isProject === undefined) g.isProject = false;
+    if (g.parentId === undefined || (g.parentId === null && (g.macroId || g.sprintId))) {
+      g.parentId = g.sprintId || g.macroId || null;
+    }
+    if (g.recurrence === undefined) g.recurrence = null;
+  });
+
+  rawState.goals = goals;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GHOST RECURRENCE HELPER (Nova OS v8)
+   Returns synthetic event objects for recurring events that
+   fall within [rangeStartMs, rangeEndMs). Ghosts are read-only;
+   clicking them opens the master event's detail modal.
+═══════════════════════════════════════════════════════════ */
+function getGhostOccurrences(rangeStartMs, rangeEndMs) {
+  const ghosts = [];
+  const recurringEvents = StateManager.get('goals').filter(
+    g => g.isEvent && g.recurrence && Array.isArray(g.recurrence.days) && g.recurrence.days.length && g.scheduledAt
+  );
+  recurringEvents.forEach(g => {
+    const untilMs = g.recurrence.until || (rangeEndMs + 1);
+    // Walk day-by-day through the range
+    const cur = new Date(rangeStartMs);
+    cur.setHours(0, 0, 0, 0);
+    const masterDate = new Date(g.scheduledAt);
+    const masterDk   = dateKey(g.scheduledAt);
+
+    while (cur.getTime() <= rangeEndMs && cur.getTime() <= untilMs) {
+      // ISO weekday: 1=Mon … 7=Sun
+      const isoDay = (cur.getDay() === 0) ? 7 : cur.getDay();
+      const curDk  = dateKey(cur.getTime());
+
+      if (g.recurrence.days.includes(isoDay) && curDk !== masterDk) {
+        // Build ghost timestamp: same HH:MM as master, but on cur's date
+        const ghostTs = new Date(cur);
+        ghostTs.setHours(masterDate.getHours(), masterDate.getMinutes(), 0, 0);
+        const ghostId = `${g.id}_ghost_${curDk}`;
+        ghosts.push({
+          ...g,
+          id:          ghostId,
+          scheduledAt: ghostTs.getTime(),
+          isGhost:     true,
+          ghostOf:     g.id,
+          done:        false,   // ghosts are never marked done
+          recurrence:  null,    // prevents nested ghost generation
+        });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  });
+  return ghosts;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -168,11 +305,11 @@ window.closeModal = function(id) {
 const StateManager = (() => {
   let state = {
     goals:[], history:[], purchases:[], cart:[], gems:0,
-    streak:{ days:0, lastDate:'', doneToday:false, best:0 }, tags:[], macroGoals:[],
+    streak:{ days:0, lastDate:'', doneToday:false, best:0 }, tags:[],
     pomoConfig:{ work:25, short:5, long:15 }, pomoPhase:'work', pomoCycles:0,
     sleepSettings:{ bedtime:'23:00', waketime:'07:00', eveningPrepMins:30, eveningGratitudeMins:15, morningWaterDelay:5, morningBrushDelay:10, softAlarmEnabled:true, sleepLog:{} },
     routines:[], profileName:'You',
-    tgToken:'', tgChatId:'', webhookUrl:'', currentView:'tasks', taskFilter:'today', taskTagFilter:null,
+    tgToken:'', tgChatId:'', webhookUrl:'', currentView:'tasks', taskFilter:'today', taskTagFilter:null, taskCatFilter:null,
     searchQuery:'', sortMode:'date', calView:'week', timerMode:'countdown',
     activeTaskId:null, editingTaskId:null, editingRoutineId:null, detailTaskId:null,
     storeFilter:'all', storeDraft:{}, expandedMacros:{},
@@ -190,6 +327,7 @@ const StateManager = (() => {
       if (typeof streak.best !== 'number') streak.best = streak.days||0;
       let tags = tryParse('nova-tags', null);
       if (!tags) tags = TAG_DEFAULT_NAMES.map((name,i) => ({ id:'tag_default_'+i, name, color:TAG_PALETTE[i%TAG_PALETTE.length] }));
+      // Read legacy macros for migration (will be cleaned up after migration)
       const macros    = tryParse('nova-macros', []);
       const pomo      = tryParse('nova-pomo', { work:25, short:5, long:15 });
       const sleep     = tryParse('nova-sleep', state.sleepSettings);
@@ -204,9 +342,10 @@ const StateManager = (() => {
         if (!gg.location)     gg.location=''; if (!gg.participants) gg.participants=[];
         if (!gg.cost)         gg.cost=0;      if (!gg.travelTime)   gg.travelTime=0;
         if (!gg.reminders)    gg.reminders=[]; if (!gg.color)        gg.color='';
+        if (gg.isEvent === undefined) gg.isEvent = false;
         if (!gg.scheduledAt)  gg.scheduledAt=null;
         if (!gg.duration_min) gg.duration_min = Math.round((gg.duration||DEFAULT_TIMER_MIN*60)/60);
-        if (!gg.notes)        gg.notes='';
+        if (!gg.notes)        gg.notes='';;
         if (!gg.subtasks)     gg.subtasks=[];
         if (!gg.tags)         gg.tags=[];
         if (!gg.macroId)      gg.macroId=null;
@@ -214,10 +353,20 @@ const StateManager = (() => {
         if (!gg.cat || !CATS[gg.cat]) gg.cat='business';
         if (typeof gg.elapsed !== 'number') gg.elapsed=0;
       });
-      macros.forEach(m => { if (!Array.isArray(m.sprints)) m.sprints=[]; });
+
+      const rawForMigration = { goals: g, macroGoals: macros };
+      migrateLegacyProjectData(rawForMigration);
+
+      if (!localStorage.getItem('nova-migrated-v8') && macros.length) {
+        localStorage.setItem('nova-migrated-v8', '1');
+      }
+      // Clean up legacy macros key after migration
+      if (localStorage.getItem('nova-migrated-v8')) {
+        localStorage.removeItem('nova-macros');
+      }
 
       const draft = {}; STORE_ITEMS.forEach(i => draft[i.id]=1);
-      state = { ...state, goals:g, history:h, purchases:p, gems, streak, tags, macroGoals:macros,
+      state = { ...state, goals:rawForMigration.goals, history:h, purchases:p, gems, streak, tags,
         pomoConfig:pomo, sleepSettings:sleep, routines, profileName,
         tgToken, tgChatId, webhookUrl, storeDraft:draft };
     } catch(e) { console.error('[StateManager load]', e); }
@@ -231,7 +380,7 @@ const StateManager = (() => {
       localStorage.setItem('nova-gems',     String(state.gems));
       localStorage.setItem('nova-streak',   JSON.stringify(state.streak));
       localStorage.setItem('nova-tags',     JSON.stringify(state.tags));
-      localStorage.setItem('nova-macros',   JSON.stringify(state.macroGoals));
+      // nova-macros intentionally NOT written — data lives in nova-goals now
       localStorage.setItem('nova-pomo',     JSON.stringify(state.pomoConfig));
       localStorage.setItem('nova-sleep',    JSON.stringify(state.sleepSettings));
       localStorage.setItem('nova-routines', JSON.stringify(state.routines));
@@ -287,7 +436,6 @@ const SyncManager = (() => {
           gems: s.gems,
           streak: s.streak,
           history: s.history,
-          macroGoals: s.macroGoals,
           tgToken: s.tgToken,
           tgChatId: s.tgChatId,
         }),
@@ -308,12 +456,21 @@ const SyncManager = (() => {
   function _applyServerData(data) {
     if (!data || !data.goals) return;
     const s = StateManager.get();
+    // Run migration on server data in case it came from an older client
+    if (Array.isArray(data.macroGoals) && data.macroGoals.length) {
+      migrateLegacyProjectData(data);
+    } else {
+      (data.goals || []).forEach(g => {
+        if (g.isProject === undefined) g.isProject = false;
+        if (g.parentId === undefined)  g.parentId  = g.sprintId || g.macroId || null;
+        if (g.recurrence === undefined) g.recurrence = null;
+      });
+    }
     StateManager.patch({
       goals:      Array.isArray(data.goals)   ? data.goals   : s.goals,
       history:    Array.isArray(data.history) ? data.history : s.history,
       gems:       typeof data.gems   === 'number' ? data.gems   : s.gems,
       streak:     data.streak ?? s.streak,
-      macroGoals: Array.isArray(data.macroGoals) ? data.macroGoals : s.macroGoals,
     });
     if (data.updatedAt) localStorage.setItem('nova-updatedAt', String(data.updatedAt));
     refreshEverything();
@@ -415,78 +572,77 @@ function switchSub(containerId, prefix, sub) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PROJECTS PANEL
-   Renders macro goals (Projects) as expandable folders on the
-   Tasks view. Each Project groups its linked tasks by Sprint
-   (sub-goal): Project -> Sprint -> Tasks. Tasks with no sprintId
-   fall into "Unsorted". Sprints with zero tasks are still shown
-   so the structure stays visible while it's being built out.
-   Project progress (%) is always derived from the completion
-   state of its linked tasks (done / total across ALL sprints +
-   unsorted), never from the sprints themselves — sprints are a
-   pure grouping layer, not a completion unit.
+   PROJECTS PANEL (v8 — recursive tree via isProject/parentId)
 ═══════════════════════════════════════════════════════════ */
-function _buildProjectTaskRow(g) {
+function _buildLeafTaskRow(g) {
   const cat = catInfo(g);
   return `<label class="flex items-center gap-3 cursor-pointer" data-task-row="${g.id}">
     <input type="checkbox" class="chk" data-action="toggle-task" data-id="${g.id}" ${g.done?'checked':''}>
     <span class="tasklabel flex-1 truncate" style="${g.done?'text-decoration:line-through;opacity:.45;':''}">${esc(g.title)}</span>
     ${g.scheduledAt?`<span class="cal-event-time flex-none">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span>`:''}
     <span class="tag ${isUrgent(g)?'':'tag-grey'} flex-none">${cat.label}</span>
+    <button class="node-icon-btn flex-none" data-action="edit-task" data-id="${g.id}" title="Edit task">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+    </button>
   </label>`;
 }
 
-function _renderSprintGroup(label, tasks) {
-  const done = tasks.filter(t=>t.done).length;
-  return `<div class="task-group-header">
-      <span class="w-1.5 h-1.5 rounded-full flex-none" style="background:#FF3B30"></span>
-      ${esc(label)} <span class="task-group-count">${done}/${tasks.length}</span>
-    </div>
-    <div class="space-y-3">${tasks.slice().sort((a,b)=>{
-      if (a.done!==b.done) return a.done?1:-1;
-      return (a.scheduledAt||Infinity)-(b.scheduledAt||Infinity);
-    }).map(_buildProjectTaskRow).join('')}</div>`;
-}
+function _renderNodeCard(node, depth) {
+  const expanded = !!(StateManager.get('expandedMacros')||{})[node.id];
+  const { done, total } = computeNodeProgress(node.id);
+  const pct = total ? Math.round(done/total*100) : 0;
+  const children = getChildren(node.id);
+  const catFilter = StateManager.get('taskCatFilter');
+  const visibleChildren = children.filter(c => nodeMatchesCategoryFilter(c, catFilter));
 
-// Groups a project's linked tasks strictly by sprintId: Project -> Sprint -> Tasks.
-// Tasks without a sprintId land in "Unsorted". Sprints defined on the macro
-// goal but with no linked tasks yet are still rendered (empty state note),
-// so the sprint structure is visible before any tasks get filed under it.
-function _renderProjectTaskGroups(linkedGoals, mg) {
-  const sprints = mg.sprints || [];
-  let html = '';
+  const childrenHtml = visibleChildren.map(c =>
+    c.isProject ? _renderNodeCard(c, depth+1) : _buildLeafTaskRow(c)
+  ).join('');
 
-  sprints.forEach(sp => {
-    const tasks = linkedGoals.filter(g => g.sprintId === sp.id);
-    if (!tasks.length) {
-      html += `<div class="task-group-header">
-        <span class="w-1.5 h-1.5 rounded-full flex-none" style="background:#FF3B30"></span>
-        ${esc(sp.title)} <span class="task-group-count">0</span>
+  return `
+  <div class="glass glass-hover rounded-2xl p-4 ${depth>0?'tree-node':''}" data-macro-card="${node.id}">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0" data-action="toggle-macro-expand" data-id="${node.id}">
+        <svg class="expand-chevron w-4 h-4 text-white/40 flex-none ${expanded?'open':''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <span class="truncate font-semibold text-sm">${esc(node.title)}</span>
+        <span class="text-white/30 text-[11px] flex-none">${total} task${total===1?'':'s'}</span>
       </div>
-      <p class="text-white/35 text-sm" style="padding-left:2px;">No tasks in this sprint yet.</p>`;
-    } else {
-      html += _renderSprintGroup(sp.title, tasks);
-    }
-  });
-
-  const sprintIds = new Set(sprints.map(sp=>sp.id));
-  const unsorted = linkedGoals.filter(g => !g.sprintId || !sprintIds.has(g.sprintId));
-  if (unsorted.length) html += _renderSprintGroup('Unsorted', unsorted);
-
-  if (!html) {
-    return `<p class="text-white/35 text-sm">No tasks linked yet. Add one and set its Big Goal to "${esc(mg.title)}".</p>`;
-  }
-  return html;
+      <div class="flex items-center gap-2 flex-none">
+        <span class="text-accent font-bold text-sm">${pct}%</span>
+        <div class="node-actions">
+          <button class="node-icon-btn" data-action="add-child-task" data-parent-id="${node.id}" title="Add task">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          </button>
+          <button class="node-icon-btn" data-action="add-child-project" data-parent-id="${node.id}" title="Add sub-folder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+          </button>
+          <button class="node-icon-btn" data-action="edit-macro" data-id="${node.id}" title="Edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="h-1.5 rounded-full bg-white/10 mt-3 overflow-hidden">
+      <div class="h-full accent-grad" style="width:${pct}%"></div>
+    </div>
+    <div class="node-children-wrap ${expanded?'open':''}" data-children-wrap="${node.id}">
+      <div class="node-children-inner">
+        <div class="space-y-2" data-children-list="${node.id}">
+          ${childrenHtml || (expanded ? '<p class="text-white/30 text-xs pl-2 pt-1">Empty — use the icons above to add something</p>' : '')}
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function renderProjectsPanel() {
   const wrap = document.getElementById('projects-container');
   if (!wrap) return;
-  const macros = StateManager.get('macroGoals');
-  const goals = StateManager.get('goals');
-  const expanded = StateManager.get('expandedMacros') || {};
+  const goals    = StateManager.get('goals');
 
-  if (!macros.length) {
+  const roots = goals.filter(g => g.isProject && !g.parentId);
+
+  if (!roots.length) {
     wrap.innerHTML = `<div class="glass rounded-3xl p-6">
       <div class="empty-state" style="padding:24px 0;">
         <div class="empty-icon">🗂️</div>
@@ -497,59 +653,95 @@ function renderProjectsPanel() {
     return;
   }
 
-  wrap.innerHTML = macros.map(mg => {
-    // Project -> Sprint -> Task nesting: linkedGoals is every task whose
-    // macroId points at this project, regardless of sprint. Progress is
-    // strictly done/total across that full set — sprints only affect grouping.
-    const linkedGoals = goals.filter(g=>g.macroId===mg.id);
-    const done = linkedGoals.filter(g=>g.done).length;
-    const total = linkedGoals.length;
-    const pct = total>0 ? Math.round(done/total*100) : 0;
-    const isOpen = !!expanded[mg.id];
-    const body = isOpen ? _renderProjectTaskGroups(linkedGoals, mg) : '';
-    return `<div class="glass glass-hover rounded-3xl p-6" data-macro-card="${mg.id}">
-      <div class="flex items-start justify-between gap-4 mb-5">
-        <div class="flex items-center gap-4 cursor-pointer flex-1 min-w-0" data-action="toggle-macro-expand" data-id="${mg.id}">
-          <svg class="expand-chevron w-5 h-5 text-white/40 flex-none ${isOpen?'open':''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-          <div class="w-14 h-14 rounded-2xl accent-grad flex items-center justify-center flex-none">
-            <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
-          </div>
-          <div class="min-w-0">
-            <h2 class="text-xl font-bold truncate">${esc(mg.title)}</h2>
-            <p class="text-white/40 text-sm">${total} task${total===1?'':'s'}${(mg.sprints||[]).length?' · '+mg.sprints.length+' sprint'+(mg.sprints.length===1?'':'s'):''}${mg.deadline?' · due '+new Date(mg.deadline).toLocaleDateString('en-US'):''}</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-3 flex-none">
-          <span class="text-2xl font-bold text-accent">${pct}%</span>
-          <button class="glass-soft glass-hover rounded-lg" style="width:30px;height:30px;font-size:13px;" data-action="edit-macro" data-id="${mg.id}">✎</button>
-        </div>
-      </div>
-      <div class="h-3 rounded-full bg-white/10 overflow-hidden">
-        <div class="h-full rounded-full accent-grad accent-glow" style="width:${pct}%"></div>
-      </div>
-      ${isOpen ? `<div class="mt-6 glass-soft rounded-2xl p-5">${body}</div>` : ''}
-    </div>`;
-  }).join('');
+  let html = '';
+  roots.forEach(root => {
+    html += _renderNodeCard(root, 0);
+  });
+  wrap.innerHTML = html || `<p class="text-white/35 text-sm p-4">No projects match the current filter.</p>`;
 
-  wrap.querySelectorAll('[data-action="toggle-macro-expand"]').forEach(el=>{
-    el.addEventListener('click', ()=>{
+  // Toggle expand: НЕ вызывать renderProjectsPanel() — только точечный DOM-тоггл,
+  // иначе CSS-transition аккордеона не сработает (элемент "родится" уже в конечном состоянии).
+  wrap.querySelectorAll('[data-action="toggle-macro-expand"]').forEach(el => {
+    el.addEventListener('click', () => {
       const id = el.dataset.id;
       const exp = { ...StateManager.get('expandedMacros') };
       exp[id] = !exp[id];
-      StateManager.set('expandedMacros', exp);
-      renderProjectsPanel();
+      StateManager.set('expandedMacros', exp); // persist only, no forced re-render of this panel
+
+      const cardEl = wrap.querySelector(`[data-macro-card="${id}"]`);
+      cardEl?.querySelector('.expand-chevron')?.classList.toggle('open', exp[id]);
+      cardEl?.querySelector(`[data-children-wrap="${id}"]`)?.classList.toggle('open', exp[id]);
     });
   });
-  wrap.querySelectorAll('[data-action="edit-macro"]').forEach(el=>{
-    el.addEventListener('click', (e)=>{ e.stopPropagation(); MacroController.openModal(el.dataset.id); });
+
+  wrap.querySelectorAll('[data-action="add-child-task"]').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); _openInlineQuickAdd(el.dataset.parentId, 'task'); });
   });
-  wrap.querySelectorAll('[data-action="toggle-task"]').forEach(el=>{
-    el.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      TaskController.complete(el.dataset.id);
-      renderProjectsPanel();
-    });
+  wrap.querySelectorAll('[data-action="add-child-project"]').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); _openInlineQuickAdd(el.dataset.parentId, 'project'); });
   });
+  wrap.querySelectorAll('[data-action="edit-macro"]').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); MacroController.openModal(el.dataset.id); });
+  });
+  wrap.querySelectorAll('[data-action="toggle-task"]').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); TaskController.complete(el.dataset.id); renderProjectsPanel(); });
+  });
+  wrap.querySelectorAll('[data-action="edit-task"]').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); TaskController.openModal(el.dataset.id); });
+  });
+}
+
+function _openInlineQuickAdd(parentId, kind) {
+  // Убрать любой уже открытый quick-add инпут (не более одного одновременно)
+  document.querySelectorAll('.inline-quick-add').forEach(i => i.remove());
+
+  // Если родитель свёрнут — раскрыть его точечно (не через renderProjectsPanel!)
+  const exp = { ...StateManager.get('expandedMacros') };
+  if (!exp[parentId]) {
+    exp[parentId] = true;
+    StateManager.set('expandedMacros', exp);
+    const cardEl = document.querySelector(`[data-macro-card="${parentId}"]`);
+    cardEl?.querySelector('.expand-chevron')?.classList.add('open');
+    cardEl?.querySelector(`[data-children-wrap="${parentId}"]`)?.classList.add('open');
+  }
+
+  const listEl = document.querySelector(`[data-children-list="${parentId}"]`);
+  if (!listEl) return;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-quick-add field';
+  input.placeholder = kind === 'project' ? 'Folder name & press Enter…' : 'Task name & press Enter…';
+  listEl.prepend(input);
+  input.focus();
+
+  let committed = false;
+  const commit = () => {
+    if (committed) return; committed = true;
+    const val = input.value.trim();
+    if (val) {
+      const id = (kind === 'project' ? 'macro_' : 'g_') + Date.now().toString(36) + rnd();
+      const base = {
+        id, title: val, parentId, isProject: kind === 'project',
+        done: false, createdAt: Date.now(), cat: 'business', scheduledAt: null,
+        duration_min: DEFAULT_TIMER_MIN, subtasks: [], tags: [], reminders: [],
+        notes: '', location: '', cost: 0, recurrence: null,
+        elapsed: 0, startTime: null, paused: false,
+        ...(kind === 'project' ? { gemsReward: 0, deadline: null } : { isEvent: false, priority: 'mid' }),
+      };
+      StateManager.patch({ goals: [...StateManager.get('goals'), base] });
+      SyncManager.scheduleSync();
+    }
+    input.remove();
+    renderProjectsPanel(); // полный ре-рендер оправдан: данные реально изменились
+  };
+  const cancel = () => { if (committed) return; committed = true; input.remove(); };
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', () => setTimeout(cancel, 100));
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -575,7 +767,7 @@ function renderCategoryFilters() {
     btn.addEventListener('click', ()=>{
       const cur = StateManager.get('taskCatFilter');
       StateManager.set('taskCatFilter', cur===btn.dataset.cat ? null : btn.dataset.cat);
-      TaskController.render(); renderCategoryFilters();
+      TaskController.render(); renderCategoryFilters(); renderProjectsPanel();
     });
   });
 
@@ -609,7 +801,7 @@ function renderCategoryFilters() {
    TASK CONTROLLER
 ═══════════════════════════════════════════════════════════ */
 const TaskController = {
-  _selectedTags:[], _selectedReminders:[], _selectedColor:COLOR_PALETTE[0], _participants:[], _subtasks:[], _activeCat:'business',
+  _selectedTags:[], _selectedReminders:[], _selectedColor:COLOR_PALETTE[0], _participants:[], _subtasks:[], _activeCat:'business', _selectedType:'task', _selectedRecurrence:null,
 
   init() {
     StateManager.subscribe(() => {
@@ -658,9 +850,6 @@ const TaskController = {
         btn.style.background='rgba(255,59,48,.18)'; btn.style.color='#fff'; btn.classList.add('active');
       });
     });
-    document.getElementById('task-macro-select')?.addEventListener('change', e=>{
-      this._populateSprintSelect(e.target.value, null);
-    });
 
     // Task detail modal buttons
     document.getElementById('btn-td-edit')?.addEventListener('click', ()=>{ closeModal('taskDetailModal'); this.openModal(StateManager.get('detailTaskId')); });
@@ -700,6 +889,7 @@ const TaskController = {
     const tomKey=dateKey(tom.getTime()), weekEnd=new Date(now); weekEnd.setDate(weekEnd.getDate()+7);
 
     let list = goals.filter(g => {
+      if (g.isProject) return false; // projects shown in Projects panel only
       if (taskFilter==='done') return g.done;
       if (g.done) return false;
       if (taskFilter==='all') return true;
@@ -816,22 +1006,46 @@ const TaskController = {
     const st=StateManager.get();
     const g=st.goals.find(x=>x.id===id);
     if(!g) return;
-    if (g.done) {
-      // Allow un-completing from the quick checkbox — reverse the effect cleanly.
-      g.done = false;
-      StateManager.patch({ goals: st.goals });
+
+    // ── ANTI-DUPE SYSTEM ──────────────────────────────────────────────
+    // Запоминаем состояние ДО тоггла. Кристаллы начисляются только на
+    // переходе false→true и списываются только на переходе true→false.
+    // Клик по чекбоксу больше не может начислить/задвоить награду.
+    const wasDone = g.done;
+    g.done = !wasDone;
+
+    if (wasDone) {
+      // Задачу СНЯЛИ с выполнения — реверсим экономику.
+      const earnsGems = catEarnsGems(g.cat);
+      const gemsToRevert = earnsGems ? 1 : 0; // должно совпадать с наградой ниже
+      const gems = Math.max(0, st.gems - gemsToRevert);
+      StateManager.patch({ goals: st.goals, gems });
+      SyncManager.scheduleSync();
+      updateCrystalChips();
+
+      if (gemsToRevert > 0) {
+        showPopup('gem-revert','💎',`-${gemsToRevert} Crystal${gemsToRevert>1?'s':''} (${gems} total)`,`"${g.title.substring(0,28)}" — un-completed`);
+      } else {
+        showPopup('undo','↩️','Task un-completed',`"${g.title.substring(0,28)}"`);
+      }
+
       this.render(); renderProjectsPanel();
+      if(StateManager.get('currentView')==='profile') ProfileRenderer.render();
+      if(StateManager.get('currentView')==='calendar') CalendarController.render();
+      if(StateManager.get('currentView')==='focus') { TimerController.tick(); TimerController.renderSpheres(); }
       return;
     }
+
+    // Задачу ВЫПОЛНИЛИ.
     // elapsed_ms fix: fold in any time accrued while the timer was actively
     // running (g.startTime set) BEFORE snapshotting into history, so a task
     // completed mid-run never records 0m. If the timer was never started at
     // all, elapsed legitimately stays 0 — that's correct, not a bug.
     const elapsedSec = (g.elapsed||0) + (g.startTime ? (Date.now()-g.startTime)/1000 : 0);
-    g.elapsed = elapsedSec; g.startTime=null; g.paused=true; g.done=true;
+    g.elapsed = elapsedSec; g.startTime=null; g.paused=true;
 
     const earnsGems = catEarnsGems(g.cat);
-    const gemsEarned = earnsGems ? 1 : 0;
+    const gemsEarned = earnsGems ? 1 : 0; // РЕБАЛАНС: 1 кристалл за задачу (было 3)
 
     const history=[{ id:'h_'+Date.now().toString(36)+rnd(), goalId:g.id, title:g.title, cat:g.cat, color:catColor(g), completedAt:Date.now(), elapsed_ms:Math.max(0,Math.round(elapsedSec*1000)), gems:gemsEarned, tags:[...(g.tags||[])] }, ...st.history];
     const gems=st.gems+gemsEarned;
@@ -846,7 +1060,7 @@ const TaskController = {
     updateCrystalChips();
 
     if (earnsGems) {
-      showPopup('gem','💎',`+1 Crystal! (${gems} total)`,`"${g.title.substring(0,28)}"`);
+      showPopup('gem','💎',`+${gemsEarned} Crystal${gemsEarned>1?'s':''}! (${gems} total)`,`"${g.title.substring(0,28)}"`);
     } else {
       showPopup('done','✅','Task completed',`"${g.title.substring(0,28)}" — no crystal for this category`);
     }
@@ -863,27 +1077,17 @@ const TaskController = {
     if(StateManager.get('currentView')==='focus') { TimerController.tick(); TimerController.renderSpheres(); FocusHistoryRenderer.render(); }
   },
 
-  // Fills the sprint <select> based on the currently chosen macro goal.
-  // Disabled + reset to "None" when no macro is selected.
-  _populateSprintSelect(macroId, selectedSprintId) {
-    const sel = document.getElementById('task-sprint-select');
-    if (!sel) return;
-    const mg = macroId ? StateManager.get('macroGoals').find(m=>m.id===macroId) : null;
-    const sprints = mg ? (mg.sprints||[]) : [];
-    sel.innerHTML = `<option value="">None</option>` + sprints.map(sp=>`<option value="${sp.id}">${esc(sp.title)}</option>`).join('');
-    sel.disabled = !sprints.length;
-    sel.value = selectedSprintId || '';
-  },
-
-  openModal(id=null) {
+  openModal(id=null, opts={}) {
     StateManager.set('editingTaskId',id);
     const g=id?StateManager.get('goals').find(x=>x.id===id):null;
-    this._selectedColor=g?.color||COLOR_PALETTE[0];
+    this._selectedColor=g?.color||'';
     this._selectedTags=g?[...(g.tags||[])]:[];
     this._selectedReminders=g?[...(g.reminders||[])]:[];
     this._participants=g?[...(g.participants||[])]:[];
     this._subtasks=g?JSON.parse(JSON.stringify(g.subtasks||[])):[];
     this._activeCat=g?.cat||'business';
+    this._selectedType=g?.isEvent ? 'event' : 'task';
+    this._selectedRecurrence=g?.recurrence ? JSON.parse(JSON.stringify(g.recurrence)) : null;
 
     const titleEl = document.getElementById('taskModalTitle');
     if (titleEl) titleEl.textContent = g ? 'Edit Task' : 'New Task';
@@ -894,7 +1098,8 @@ const TaskController = {
     const toInp=document.getElementById('task-time-to-input');
     const budgetInp=document.getElementById('task-budget-input');
     const notesInp=document.getElementById('task-notes-input');
-    const macroSel=document.getElementById('task-macro-select');
+    const parentSel=document.getElementById('task-parent-select');
+    const locationInp=document.getElementById('task-location-input');
 
     if (titleInp) titleInp.value = g?.title || '';
     if (dateInp) {
@@ -911,6 +1116,7 @@ const TaskController = {
     }
     if (budgetInp) budgetInp.value = g?.cost || '';
     if (notesInp) notesInp.value = g?.notes || '';
+    if (locationInp) locationInp.value = g?.location || '';
 
     // Priority buttons
     document.querySelectorAll('#priority-ctrl .seg-btn').forEach(btn=>{
@@ -920,23 +1126,27 @@ const TaskController = {
       btn.classList.toggle('active', active);
     });
 
-    // Macro + Sprint selects
-    if (macroSel) {
-      const macros = StateManager.get('macroGoals');
-      macroSel.innerHTML = `<option value="">None</option>` + macros.map(m=>`<option value="${m.id}">${esc(m.title)}</option>`).join('');
-      macroSel.value = g?.macroId || '';
+    // Parent (Project/Folder) select
+    if (parentSel) {
+      const opts2 = buildParentOptionsFlat(id || null);
+      parentSel.innerHTML = `<option value="">None</option>` + opts2.map(o=>`<option value="${o.id}">${esc(o.label)}</option>`).join('');
+      parentSel.value = g?.parentId || opts.presetParentId || '';
     }
-    this._populateSprintSelect(g?.macroId || '', g?.sprintId || '');
 
+    this._renderTypeRow();
     this._renderCategoryRow();
+    this._renderColorRow();
     this._renderTagRow();
+    this._renderRemindersRow();
     this._renderSubtasks();
+    this._renderRecurrenceUI();
 
     const saveBtn = document.getElementById('btn-task-save');
     if (saveBtn) saveBtn.textContent = g ? 'Save Task' : 'Create Task';
     document.getElementById('btn-delete-task')?.classList.toggle('hidden', !g);
 
     openModal('taskModal');
+    this._syncFieldVisibility();
     setTimeout(()=>titleInp?.focus(),120);
   },
 
@@ -979,6 +1189,117 @@ const TaskController = {
     });
   },
 
+  _renderTypeRow() {
+    const wrap = document.getElementById('type-ctrl');
+    if (!wrap) return;
+    wrap.querySelectorAll('[data-type]').forEach(btn => {
+      const active = this._selectedType === btn.dataset.type;
+      btn.style.background = active ? 'rgba(255,59,48,.18)' : 'rgba(255,255,255,.05)';
+      btn.style.color = active ? '#fff' : 'rgba(255,255,255,.5)';
+      btn.classList.toggle('active', active);
+      btn.onclick = () => { this._selectedType = btn.dataset.type; this._renderTypeRow(); this._syncFieldVisibility(); };
+    });
+  },
+
+  _syncFieldVisibility() {
+    const isEvent = this._selectedType === 'event';
+    document.getElementById('event-time-fields')?.classList.toggle('hidden', !isEvent);
+    document.getElementById('event-recurrence-section')?.classList.toggle('hidden', !isEvent);
+    if (!isEvent) this._selectedRecurrence = null;
+  },
+
+  _renderRecurrenceUI() {
+    const toggleEl = document.getElementById('task-recurrence-toggle');
+    const bodyEl   = document.getElementById('task-recurrence-body');
+    const daysRow  = document.getElementById('task-recurrence-days-row');
+    const untilInp = document.getElementById('task-recurrence-until-input');
+    if (!toggleEl || !bodyEl || !daysRow) return;
+
+    const recOn = !!this._selectedRecurrence;
+    toggleEl.classList.toggle('on', recOn);
+    bodyEl.classList.toggle('hidden', !recOn);
+
+    // Wire toggle button (replaces any prior listener by overwriting onclick)
+    toggleEl.onclick = () => {
+      if (this._selectedRecurrence) {
+        this._selectedRecurrence = null;
+      } else {
+        this._selectedRecurrence = { days:[1,2,3,4,5], until:null };
+      }
+      this._renderRecurrenceUI();
+    };
+
+    if (!recOn || !daysRow) return;
+    const labels = ['M','T','W','T','F','S','S'];
+    daysRow.innerHTML = labels.map((l,i) => {
+      const dayNum = i + 1;
+      const active = this._selectedRecurrence?.days?.includes(dayNum);
+      return `<button type="button" class="w-10 h-10 rounded-xl text-sm font-medium glass-hover" data-rday="${dayNum}" style="${active?'background:linear-gradient(145deg,#FF3B30,#b71f16);color:#fff;':'background:rgba(255,255,255,.05);color:rgba(255,255,255,.6);'}">${l}</button>`;
+    }).join('');
+    daysRow.querySelectorAll('[data-rday]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const d = parseInt(btn.dataset.rday);
+        if (!this._selectedRecurrence) return;
+        if (this._selectedRecurrence.days.includes(d)) {
+          this._selectedRecurrence.days = this._selectedRecurrence.days.filter(x => x !== d);
+        } else {
+          this._selectedRecurrence.days.push(d);
+          this._selectedRecurrence.days.sort();
+        }
+        this._renderRecurrenceUI();
+      });
+    });
+
+    if (untilInp) {
+      untilInp.value = this._selectedRecurrence?.until
+        ? new Date(this._selectedRecurrence.until).toISOString().slice(0,10)
+        : '';
+      untilInp.onchange = (e) => {
+        if (!this._selectedRecurrence) return;
+        this._selectedRecurrence.until = e.target.value
+          ? new Date(e.target.value + 'T00:00:00').getTime()
+          : null;
+      };
+    }
+  },
+
+  _renderColorRow() {
+    const wrap = document.getElementById('task-color-row');
+    if (!wrap) return;
+    // Add a "None / category default" option first
+    const noneActive = !this._selectedColor;
+    const noneBtn = `<button type="button" data-color="" style="width:28px;height:28px;border-radius:999px;background:rgba(255,255,255,.12);border:2px solid ${noneActive?'#fff':'transparent'};box-shadow:${noneActive?'0 0 0 2px rgba(255,255,255,.5)':'none'};transition:border-color .2s,box-shadow .2s;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,.6);" title="Category default">×</button>`;
+    const swatches = COLOR_PALETTE.map(c => {
+      const active = this._selectedColor === c;
+      return `<button type="button" data-color="${c}" style="width:28px;height:28px;border-radius:999px;background:${c};border:2px solid ${active?'#fff':'transparent'};box-shadow:${active?`0 0 0 2px ${c}88`:'none'};transition:border-color .2s,box-shadow .2s;cursor:pointer;" title="${c}"></button>`;
+    }).join('');
+    wrap.innerHTML = noneBtn + swatches;
+    wrap.querySelectorAll('[data-color]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._selectedColor = btn.dataset.color;
+        this._renderColorRow();
+      });
+    });
+  },
+
+  _renderRemindersRow() {
+    const wrap = document.getElementById('task-reminders-row');
+    if (!wrap) return;
+    const labels = { 1:'1 min', 5:'5 min', 15:'15 min', 30:'30 min', 60:'1 hour', 1440:'1 day' };
+    wrap.innerHTML = REMINDER_OPTIONS.map(v => {
+      const active = this._selectedReminders.includes(v);
+      return `<button type="button" class="tag glass-hover" data-reminder="${v}" style="${active?'background:rgba(255,59,48,.22);border-color:rgba(255,59,48,.6);color:#fff;':'background:rgba(255,255,255,.06);color:rgba(255,255,255,.5);'}">${labels[v]||v+' min'}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-reminder]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = parseInt(btn.dataset.reminder);
+        if (this._selectedReminders.includes(v)) this._selectedReminders = this._selectedReminders.filter(x => x !== v);
+        else this._selectedReminders.push(v);
+        this._renderRemindersRow();
+      });
+    });
+  },
+
   save() {
     const titleInp=document.getElementById('task-title-input');
     const title = titleInp?.value.trim();
@@ -988,8 +1309,7 @@ const TaskController = {
     const dateVal = document.getElementById('task-date-input')?.value;
     const startVal = document.getElementById('task-time-from-input')?.value;
     const endVal = document.getElementById('task-time-to-input')?.value;
-    const macroId = document.getElementById('task-macro-select')?.value || null;
-    const sprintId = document.getElementById('task-sprint-select')?.value || null;
+    const parentId = document.getElementById('task-parent-select')?.value || null;
     let scheduledAt=null;
     if(dateVal && startVal) {
       const [dy, dm, dd] = dateVal.split('-').map(Number);
@@ -1006,10 +1326,18 @@ const TaskController = {
     const id=StateManager.get('editingTaskId');
     const notesInp = document.getElementById('task-notes-input');
     const budgetInp = document.getElementById('task-budget-input');
+    const recurrence = (this._selectedType === 'event' && this._selectedRecurrence && this._selectedRecurrence.days?.length)
+      ? { days: [...this._selectedRecurrence.days], until: this._selectedRecurrence.until || null }
+      : null;
     const data={
       title, notes: notesInp?.value.trim()||'',
       priority: prioBtn?.dataset.priority||'mid', cat, scheduledAt, duration_min:durMin,
-      location:'', travelTime:0, macroId: macroId||null, sprintId: macroId ? (sprintId||null) : null,
+      isEvent: this._selectedType === 'event',
+      isProject: false,
+      parentId: parentId || null,
+      recurrence,
+      location: document.getElementById('task-location-input')?.value.trim() || '',
+      travelTime:0,
       cost: parseFloat(budgetInp?.value||'0'),
       tags:[...this._selectedTags], reminders:[...this._selectedReminders], participants:[...this._participants],
       color:this._selectedColor, subtasks:this._subtasks.filter(st=>st.text.trim()).map(st=>({...st,id:st.id||('st'+Date.now()+rnd())})),
@@ -1052,11 +1380,10 @@ const TaskController = {
     const subHtml=(g.subtasks||[]).map(st=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:rgba(255,255,255,.6);padding:4px 0;${st.done?'text-decoration:line-through;opacity:.5;':''}"><span>${st.done?'✓':'○'}</span><span>${esc(st.text)}</span></div>`).join('');
     const elapsed=(g.elapsed||0)+(g.startTime?(Date.now()-g.startTime)/1000:0);
     const totalSec=(g.duration_min||DEFAULT_TIMER_MIN)*60, pct=Math.min(100,Math.round(elapsed/totalSec*100));
-    const macro = g.macroId ? StateManager.get('macroGoals').find(m=>m.id===g.macroId) : null;
-    const sprint = (macro && g.sprintId) ? (macro.sprints||[]).find(sp=>sp.id===g.sprintId) : null;
+    const parent = g.parentId ? StateManager.get('goals').find(x=>x.id===g.parentId) : null;
     body.innerHTML=`
       <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:${color}">${cat.emoji} ${cat.label}${catEarnsGems(g.cat)?' · 💎 earns crystals':''}</div>
-      ${macro?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>🗂️</span><span>${esc(macro.title)}${sprint?' → '+esc(sprint.title):''}</span></div>`:''}
+      ${parent?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>🗂️</span><span>${esc(parent.title)}</span></div>`:''}
       ${g.scheduledAt?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>📅</span><span>${fmtDateTime(g.scheduledAt)}</span></div>`:''}
       ${g.duration_min?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>⏱</span><span>${g.duration_min} min</span></div>`:''}
       ${g.cost?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>💰</span><span>$${g.cost}</span></div>`:''}
@@ -1115,15 +1442,31 @@ function updateCrystalChips() {
 const CalendarController = {
   _calDate: new Date(), _view: 'week', _nowTimer: null, _yearDate: new Date(),
   _dragGoalId: null,
+  // ── Layout constants ──────────────────────────────────────
+  PX_PER_MIN: 1,   // 1440px total height = 24 h × 60 min
+  SNAP_MIN:   10,  // pointer drag/resize snaps to 10-min grid
+  MIN_H:      20,  // minimum card height in pixels
+
+  // ── Undo/Redo ─────────────────────────────────────────────
+  _undoStack: [],
+  _redoStack: [],
+  MAX_UNDO: 50,
 
   init() {
     StateManager.subscribe(()=>{ if(StateManager.get('currentView')==='calendar') this.render(); });
     document.getElementById('cal-prev')?.addEventListener('click', ()=>this.prev());
     document.getElementById('cal-next')?.addEventListener('click', ()=>this.next());
     document.getElementById('cal-today')?.addEventListener('click', ()=>{ this._calDate=new Date(); this._yearDate=new Date(); this.render(); });
+    document.getElementById('btn-undo')?.addEventListener('click', ()=>this.undo());
+    document.getElementById('btn-redo')?.addEventListener('click', ()=>this.redo());
+    document.addEventListener('keydown', (e)=>{
+      if ((e.metaKey||e.ctrlKey) && e.key==='z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
+      if ((e.metaKey||e.ctrlKey) && (e.key==='y' || (e.key==='z'&&e.shiftKey))) { e.preventDefault(); this.redo(); }
+    });
     document.querySelectorAll('#calTabs .subtab').forEach(t => {
       t.addEventListener('click', () => switchSub('calTabs','cal', t.dataset.cal));
     });
+    this._updateUndoRedoButtons();
   },
 
   setView(v) {
@@ -1177,8 +1520,9 @@ const CalendarController = {
     TaskController.renderForDay(dk, label);
   },
 
-  // Moves a task to a new date, keeping its original time-of-day and
-  // duration intact — used by drag & drop across day/week/month cells.
+  // ── Rescheduling helpers ──────────────────────────────────
+
+  // Used by month-grid drop: keep time-of-day, change date only
   _rescheduleGoalToDate(goalId, targetDate) {
     const goals = StateManager.get('goals');
     const g = goals.find(x=>x.id===goalId);
@@ -1195,8 +1539,7 @@ const CalendarController = {
     showToast(`📅 Moved to ${next.toLocaleDateString('en-US',{day:'numeric',month:'short'})}`, 1400);
   },
 
-  // Moves a task to a new date AND a new hour (used by the hourly day/week
-  // grids), preserving the task's duration.
+  // Used by month-grid: change date + hour (legacy)
   _rescheduleGoalToDateTime(goalId, targetDate, hour) {
     const goals = StateManager.get('goals');
     const g = goals.find(x=>x.id===goalId);
@@ -1213,141 +1556,466 @@ const CalendarController = {
     showToast(`📅 Rescheduled to ${fmtDateTime(next.getTime())}`, 1400);
   },
 
-  // Wires native HTML5 drag events on a task chip.
-  _makeDraggable(el, goalId) {
-    el.draggable = true;
-    el.addEventListener('dragstart', (e)=>{
-      this._dragGoalId = goalId;
-      e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', goalId); } catch(_) {}
-      el.style.opacity = '0.4';
-    });
-    el.addEventListener('dragend', ()=>{ el.style.opacity=''; this._dragGoalId=null; });
+  // Used by pointer drag-drop in day/week absolute grids
+  _rescheduleGoalToTimestamp(goalId, newTs, newDurMin=null, _pushToUndo=true) {
+    const goals = StateManager.get('goals');
+    const g = goals.find(x=>x.id===goalId);
+    if (!g) return;
+    const patch = {};
+    if (newTs !== null) patch.scheduledAt = newTs;
+    if (newDurMin !== null) patch.duration_min = Math.max(this.SNAP_MIN, newDurMin);
+    if (!Object.keys(patch).length) return;
+    if (_pushToUndo) {
+      this._pushUndo({
+        goalId,
+        before: { scheduledAt: g.scheduledAt, duration_min: g.duration_min },
+        after:  { scheduledAt: newTs !== null ? newTs : g.scheduledAt, duration_min: newDurMin !== null ? Math.max(this.SNAP_MIN, newDurMin) : g.duration_min },
+      });
+    }
+    const updated = goals.map(x => x.id===goalId ? { ...x, ...patch } : x);
+    StateManager.patch({ goals: updated });
+    SyncManager.scheduleSync();
+    TimerController.scheduleReminders();
+    this.render();
+    if (StateManager.get('currentView')==='tasks') TaskController.render();
   },
 
-  // Wires a drop target that reschedules to a given date (day-level).
-  _makeDropTargetDate(el, dateStr) {
-    el.addEventListener('dragover', (e)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('ring-1','ring-accent'); });
-    el.addEventListener('dragleave', ()=>{ el.classList.remove('ring-1','ring-accent'); });
-    el.addEventListener('drop', (e)=>{
-      e.preventDefault(); el.classList.remove('ring-1','ring-accent');
-      const goalId = this._dragGoalId || e.dataTransfer.getData('text/plain');
-      if (!goalId) return;
-      this._rescheduleGoalToDate(goalId, dateStr);
+  // ── Undo/Redo ─────────────────────────────────────────────
+
+  _pushUndo(action) {
+    this._undoStack.push(action);
+    if (this._undoStack.length > this.MAX_UNDO) this._undoStack.shift();
+    this._redoStack = [];
+    this._updateUndoRedoButtons();
+  },
+
+  _applyGoalPatch(goalId, patch) {
+    const goals = StateManager.get('goals');
+    const updated = goals.map(g => g.id===goalId ? {...g, ...patch} : g);
+    StateManager.patch({ goals: updated });
+    SyncManager.scheduleSync();
+    TimerController.scheduleReminders();
+    this.render();
+    if (StateManager.get('currentView')==='tasks') TaskController.render();
+  },
+
+  undo() {
+    const action = this._undoStack.pop();
+    if (!action) return;
+    this._applyGoalPatch(action.goalId, action.before);
+    this._redoStack.push(action);
+    this._updateUndoRedoButtons();
+    showToast('↩ Undone', 1200);
+  },
+
+  redo() {
+    const action = this._redoStack.pop();
+    if (!action) return;
+    this._applyGoalPatch(action.goalId, action.after);
+    this._undoStack.push(action);
+    this._updateUndoRedoButtons();
+    showToast('↪ Redone', 1200);
+  },
+
+  _updateUndoRedoButtons() {
+    const u = document.getElementById('btn-undo'), r = document.getElementById('btn-redo');
+    if (u) u.disabled = !this._undoStack.length;
+    if (r) r.disabled = !this._redoStack.length;
+  },
+
+  // ── Pointer-based drag & resize ───────────────────────────
+
+  // Attach pointer drag to a card. gridEl must have position:relative and
+  // know its date (via data-date-ms attribute set by caller).
+  _attachPointerDrag(cardEl, goalId, gridEl) {
+    // Touch-action and user-select are set inside beginDrag for touch,
+    // immediately for mouse. We leave them unset here so normal scrolling
+    // is not blocked before a long-press is confirmed.
+
+    cardEl.addEventListener('pointerdown', (e) => {
+      // Ignore clicks on the resize handle
+      if (e.target.classList.contains('cal-resize-handle')) return;
+      // Only primary button / single touch
+      if (e.button && e.button !== 0) return;
+
+      const isTouch = e.pointerType === 'touch';
+      const PX = this.PX_PER_MIN;
+      const SNAP = this.SNAP_MIN;
+      const MOVE_TOLERANCE = 8; // px allowed before we decide it's a scroll
+
+      // Starting offset inside the card (capture at pointerdown)
+      const cardRect = cardEl.getBoundingClientRect();
+      const offsetY  = e.clientY - cardRect.top;
+      const startX   = e.clientX;
+      const startY   = e.clientY;
+
+      const g = StateManager.get('goals').find(x=>x.id===goalId);
+      if (!g || !g.scheduledAt) return;
+
+      // For week view, remember which day columns exist so we can switch horizontally
+      const dayColEls   = gridEl.closest('[id="weekGrid"]')
+        ? gridEl.closest('[id="weekGrid"]').querySelectorAll('[data-col-date-ms]')
+        : gridEl.querySelectorAll('[data-col-date-ms]');
+      const isWeekView  = dayColEls.length > 0;
+
+      let currentTopPx    = parseFloat(cardEl.style.top) || 0;
+      let targetColEl     = gridEl;  // current visual parent column (week view)
+      let targetDateMs    = parseInt(gridEl.dataset.colDateMs || gridEl.dataset.dateMs || this._calDate.getTime());
+      let moved           = false;
+      let longPressTimer  = null;
+      let dragStarted     = false;
+
+      // ── helpers ──────────────────────────────────────────────
+      const getTargetDayColumn = (clientX) => {
+        if (!isWeekView || !dayColEls.length) return null;
+        // Use first/last column rects to determine grid range, then interpolate
+        const firstRect = dayColEls[0].getBoundingClientRect();
+        const lastRect  = dayColEls[dayColEls.length - 1].getBoundingClientRect();
+        const gridLeft  = firstRect.left;
+        const gridRight = lastRect.right;
+        const relX      = Math.max(0, Math.min(gridRight - gridLeft, clientX - gridLeft));
+        const colWidth  = (gridRight - gridLeft) / dayColEls.length;
+        let idx = Math.floor(relX / colWidth);
+        idx = Math.max(0, Math.min(dayColEls.length - 1, idx));
+        return { idx, colEl: dayColEls[idx] };
+      };
+
+      const beginDrag = () => {
+        dragStarted = true;
+        cardEl.style.touchAction = 'none';
+        cardEl.style.userSelect  = 'none';
+        cardEl.classList.add('dragging-active');
+        cardEl.setPointerCapture(e.pointerId);
+        cardEl.style.opacity = '0.75';
+        cardEl.style.zIndex  = '20';
+        cardEl.addEventListener('pointermove', onMove);
+        cardEl.addEventListener('pointerup',   onUp);
+      };
+
+      const cancelPending = () => {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        document.removeEventListener('pointermove', earlyMoveCheck);
+        document.removeEventListener('pointerup',   earlyCancel);
+      };
+
+      // ── early-move / early-cancel (touch only, before drag is confirmed) ─
+      const earlyMoveCheck = (moveE) => {
+        if (dragStarted) return;
+        const dx = Math.abs(moveE.clientX - startX);
+        const dy = Math.abs(moveE.clientY - startY);
+        if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) cancelPending(); // treat as scroll
+      };
+      const earlyCancel = () => { if (!dragStarted) cancelPending(); };
+
+      // ── main drag handlers ────────────────────────────────────
+      const onMove = (ev) => {
+        ev.preventDefault();
+        const gridRect = gridEl.getBoundingClientRect();
+        const rawMin   = (ev.clientY - gridRect.top - offsetY) / PX;
+        const snapped  = Math.max(0, Math.min(23*60+50, Math.round(rawMin / SNAP) * SNAP));
+        currentTopPx   = snapped * PX;
+        cardEl.style.top = currentTopPx + 'px';
+        moved = true;
+
+        // Week view: move card into the correct day column visually
+        if (isWeekView) {
+          const target = getTargetDayColumn(ev.clientX);
+          if (target && target.colEl !== targetColEl) {
+            targetColEl.removeChild(cardEl);
+            target.colEl.appendChild(cardEl);
+            targetColEl  = target.colEl;
+            targetDateMs = parseInt(target.colEl.dataset.colDateMs);
+            // Re-apply positioning after DOM move
+            cardEl.style.top     = currentTopPx + 'px';
+            cardEl.style.opacity = '0.75';
+            cardEl.style.zIndex  = '20';
+          }
+        }
+      };
+
+      const onUp = (ev) => {
+        cardEl.releasePointerCapture(ev.pointerId);
+        cardEl.removeEventListener('pointermove', onMove);
+        cardEl.removeEventListener('pointerup',   onUp);
+        cardEl.classList.remove('dragging-active');
+        cardEl.style.opacity = '';
+        cardEl.style.zIndex  = '';
+
+        if (!moved) {
+          TaskController.openDetail(goalId);
+          return;
+        }
+
+        // Final column determination at drop (in case pointermove was missed)
+        if (isWeekView) {
+          const target = getTargetDayColumn(ev.clientX);
+          if (target) {
+            targetDateMs = parseInt(target.colEl.dataset.colDateMs);
+          }
+        } else {
+          // Day view: use gridEl date
+          targetDateMs = parseInt(gridEl.dataset.dateMs || gridEl.dataset.colDateMs || this._calDate.getTime());
+        }
+
+        const gridRect   = gridEl.getBoundingClientRect();
+        const snappedMin = Math.max(0, Math.min(23*60+50, Math.round((ev.clientY - gridRect.top - offsetY) / PX / SNAP) * SNAP));
+        const h = Math.floor(snappedMin / 60);
+        const m = snappedMin % 60;
+        const newDate = new Date(targetDateMs);
+        newDate.setHours(h, m, 0, 0);
+
+        this._rescheduleGoalToTimestamp(goalId, newDate.getTime());
+        showToast(`📅 Moved to ${pad(h)}:${pad(m)}`, 1200);
+      };
+
+      // ── dispatch: touch → long-press, mouse → immediate ──────
+      if (isTouch) {
+        document.addEventListener('pointermove', earlyMoveCheck);
+        document.addEventListener('pointerup',   earlyCancel);
+        longPressTimer = setTimeout(() => {
+          cancelPending();
+          e.preventDefault(); // block any pending click
+          beginDrag();
+        }, 1000);
+      } else {
+        // Mouse: start immediately, but still prevent default to avoid text selection
+        e.preventDefault();
+        e.stopPropagation();
+        beginDrag();
+      }
     });
   },
 
-  // Wires a drop target that reschedules to a given date + hour (hourly grids).
-  _makeDropTargetDateTime(el, dateStr, hour) {
-    el.addEventListener('dragover', (e)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('ring-1','ring-accent'); });
-    el.addEventListener('dragleave', ()=>{ el.classList.remove('ring-1','ring-accent'); });
-    el.addEventListener('drop', (e)=>{
-      e.preventDefault(); el.classList.remove('ring-1','ring-accent');
-      const goalId = this._dragGoalId || e.dataTransfer.getData('text/plain');
-      if (!goalId) return;
-      this._rescheduleGoalToDateTime(goalId, dateStr, hour);
+  // Attach resize handle — drag it to change duration_min
+  _attachResizeHandle(handle, cardEl, goalId) {
+    handle.style.touchAction = 'none';
+    handle.style.userSelect  = 'none';
+
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+
+      const PX   = this.PX_PER_MIN;
+      const SNAP = this.SNAP_MIN;
+      const MIN  = this.MIN_H;
+      const startY    = e.clientY;
+      const startH    = parseFloat(cardEl.style.height) || MIN;
+
+      // Snapshot before state for undo
+      const g = StateManager.get('goals').find(x=>x.id===goalId);
+      const beforeDur = g ? (g.duration_min || Math.round(startH / PX)) : Math.round(startH / PX);
+
+      const onMove = (ev) => {
+        ev.preventDefault();
+        const deltaMin = (ev.clientY - startY) / PX;
+        const snapped  = Math.max(SNAP, Math.round((startH/PX + deltaMin) / SNAP) * SNAP);
+        cardEl.style.height = Math.max(MIN, snapped * PX) + 'px';
+      };
+
+      const onUp = (ev) => {
+        handle.releasePointerCapture(ev.pointerId);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup',   onUp);
+        const newDurMin = Math.max(SNAP, Math.round(parseFloat(cardEl.style.height) / PX / SNAP) * SNAP);
+        // Push undo before committing
+        const gNow = StateManager.get('goals').find(x=>x.id===goalId);
+        if (gNow && newDurMin !== beforeDur) {
+          this._pushUndo({
+            goalId,
+            before: { scheduledAt: gNow.scheduledAt, duration_min: beforeDur },
+            after:  { scheduledAt: gNow.scheduledAt, duration_min: newDurMin },
+          });
+        }
+        this._rescheduleGoalToTimestamp(goalId, null, newDurMin, false);
+        // null ts = keep scheduledAt, only change duration
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup',   onUp);
     });
   },
+
+  // ── Day grid (absolute) ───────────────────────────────────
 
   _renderDay() {
     if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
     const c = document.getElementById('dayGrid'); if(!c) return;
     this._updateHeaderTitle(this._calDate.toLocaleDateString('en-US',{weekday:'long',day:'numeric',month:'long'}));
-    const dk = dateKey(this._calDate.getTime());
-    const goals = StateManager.get('goals').filter(g=>g.scheduledAt&&dateKey(g.scheduledAt)===dk);
-    goals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
-    const byHour = {};
-    goals.forEach(g=>{ const h=new Date(g.scheduledAt).getHours(); (byHour[h]=byHour[h]||[]).push(g); });
-    let html='';
-    for (let h=0; h<24; h++) {
-      const label = pad(h)+':00';
-      const evs = byHour[h]||[];
-      html += `<div class="flex items-start gap-3 border-t border-white/8 py-1" data-drop-hour="${h}" style="min-height:52px">
-        <span class="text-xs text-white/35 w-12 flex-none pt-1 tabular-nums">${label}</span>
-        <div class="flex-1 space-y-1">${evs.map(g=>{
-          const color=catColor(g); const cat=catInfo(g);
-          return `<div class="glass-soft glass-hover rounded-xl px-3 py-2 border-l-2 flex flex-col gap-1 cursor-pointer ${g.done?'opacity-50':''}" style="border-color:${color};min-height:${Math.max(1,(g.duration_min||30)/60)*44}px" data-task-id="${g.id}">
-            <p class="text-sm font-medium leading-tight" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}</p>
-            <div class="flex items-center gap-2">
-              <span class="cal-event-time">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span>
-              <span class="tag-mini ${isUrgent(g)?'tag':'tag-grey'}">${cat.label}</span>
-            </div>
-          </div>`;
-        }).join('')}</div>
+    const dk   = dateKey(this._calDate.getTime());
+    const PX   = this.PX_PER_MIN;
+    const TOTAL = 24 * 60 * PX;
+
+    // Container
+    c.style.cssText = `position:relative;height:${TOTAL}px;`;
+    c.dataset.dateMs = String(new Date(this._calDate).setHours(0,0,0,0));
+
+    // Hour guide lines
+    let html = '';
+    for (let h = 0; h < 24; h++) {
+      const top = h * 60 * PX;
+      html += `<div style="position:absolute;left:0;right:0;top:${top}px;display:flex;align-items:flex-start;pointer-events:none;">
+        <span style="font-size:11px;color:rgba(255,255,255,.3);width:44px;flex:none;padding-top:2px;font-variant-numeric:tabular-nums;">${pad(h)}:00</span>
+        <div style="flex:1;height:1px;background:rgba(255,255,255,.06);margin-top:8px;"></div>
       </div>`;
     }
     c.innerHTML = html;
-    c.querySelectorAll('[data-task-id]').forEach(el=>{
-      el.addEventListener('click',(e)=>{ e.stopPropagation(); TaskController.openDetail(el.dataset.taskId); });
-      this._makeDraggable(el, el.dataset.taskId);
-    });
-    c.querySelectorAll('[data-drop-hour]').forEach(row=>{
-      this._makeDropTargetDateTime(row, this._calDate, parseInt(row.dataset.dropHour));
+
+    // Task cards (real + ghost recurrences)
+    const dayStart = new Date(this._calDate); dayStart.setHours(0,0,0,0);
+    const dayEnd   = new Date(this._calDate); dayEnd.setHours(23,59,59,999);
+    const realGoals = StateManager.get('goals').filter(g => !g.isProject && g.scheduledAt && dateKey(g.scheduledAt)===dk);
+    const ghosts    = getGhostOccurrences(dayStart.getTime(), dayEnd.getTime()).filter(g => dateKey(g.scheduledAt)===dk);
+    const goals = [...realGoals, ...ghosts];
+    goals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
+
+    goals.forEach(g => {
+      const d = new Date(g.scheduledAt);
+      const topMin  = d.getHours()*60 + d.getMinutes();
+      const durMin  = g.duration_min || DEFAULT_TIMER_MIN;
+      const topPx   = topMin * PX;
+      const heightPx= Math.max(this.MIN_H, durMin * PX);
+      const color   = catColor(g);
+      const cat     = catInfo(g);
+      const twoLine = heightPx >= 36;
+
+      const card = document.createElement('div');
+      card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
+      if (g.isGhost) {
+        card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
+          + `background:${color}11;border-left:3px dashed ${color};border-radius:8px;`
+          + `padding:4px 8px;cursor:pointer;overflow:hidden;box-sizing:border-box;opacity:0.55;`;
+      } else {
+        card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
+          + `background:${color}22;border-left:3px solid ${color};border-radius:8px;`
+          + `padding:4px 8px;cursor:grab;overflow:hidden;box-sizing:border-box;`
+          + (g.done ? 'opacity:.5;' : '');
+      }
+      card.innerHTML = `<p style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${g.isGhost?' 🔁':''}</p>`
+        + (twoLine ? `<span style="font-size:10px;color:rgba(255,255,255,.45);">${fmtTimeRange(g.scheduledAt, durMin)}</span><span class="tag-mini ${isUrgent(g)?'tag':'tag-grey'}" style="margin-left:6px;">${cat.label}</span>` : '')
+        + (!g.isGhost ? `<div class="cal-resize-handle" style="position:absolute;bottom:2px;right:4px;width:16px;height:6px;border-radius:3px;background:rgba(255,255,255,.25);cursor:s-resize;"></div>` : '');
+
+      c.appendChild(card);
+      if (g.isGhost) {
+        card.addEventListener('click', () => TaskController.openDetail(g.ghostOf));
+      } else {
+        this._attachPointerDrag(card, g.id, c);
+        this._attachResizeHandle(card.querySelector('.cal-resize-handle'), card, g.id);
+      }
     });
   },
+
+  // ── Week grid (absolute per-column) ──────────────────────
 
   _renderWeek() {
     if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
     const c = document.getElementById('weekGrid'); if(!c) return;
     let start = new Date(this._calDate); start.setHours(0,0,0,0);
-    start.setDate(start.getDate() - ((start.getDay()+6)%7)); // Monday start
+    start.setDate(start.getDate() - ((start.getDay()+6)%7)); // Monday
     const end = new Date(start.getTime()+6*86400000);
     this._updateHeaderTitle(start.toLocaleDateString('en-US',{day:'numeric',month:'short'})+' – '+end.toLocaleDateString('en-US',{day:'numeric',month:'short'}));
 
     const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     const todayKey = dateKey();
-    const goals = StateManager.get('goals').filter(g=>g.scheduledAt);
-    const byDayHour = {};
+    const realGoals = StateManager.get('goals').filter(g => !g.isProject && g.scheduledAt);
+    const weekEnd   = new Date(start.getTime() + 7*86400000 - 1);
+    const weekGhosts = getGhostOccurrences(start.getTime(), weekEnd.getTime());
+    const allGoals  = [...realGoals, ...weekGhosts];
     const dayDates = [];
+    for (let i=0;i<7;i++) dayDates.push(new Date(start.getTime()+i*86400000));
+
+    const PX    = this.PX_PER_MIN;
+    const TOTAL = 24*60*PX;
+
+    // Header row
+    let head = `<div style="display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;margin-bottom:4px;position:sticky;top:0;background:rgba(44,44,46,.9);backdrop-filter:blur(8px);z-index:10;padding-bottom:4px;">
+      <div></div>`;
     for (let i=0;i<7;i++){
-      const d = new Date(start.getTime()+i*86400000);
-      dayDates.push(d);
+      const d  = dayDates[i];
       const dk = dateKey(d.getTime());
-      goals.filter(g=>dateKey(g.scheduledAt)===dk).forEach(g=>{
-        const h=new Date(g.scheduledAt).getHours();
-        byDayHour[`${i}-${h}`] = byDayHour[`${i}-${h}`] || [];
-        byDayHour[`${i}-${h}`].push(g);
-      });
-    }
-    let head = `<div class="grid gap-2 mb-2" style="grid-template-columns:56px repeat(7,1fr)"><div></div>`;
-    for (let i=0;i<7;i++){
-      const d = dayDates[i];
-      const dk = dateKey(d.getTime());
-      head += `<div class="text-center cursor-pointer" data-day="${dk}"><p class="text-xs text-white/40">${dayNames[i]}</p><p class="font-semibold ${dk===todayKey?'text-accent':''}">${d.getDate()}</p></div>`;
+      head += `<div style="text-align:center;cursor:pointer;" data-day="${dk}"><p style="font-size:10px;color:rgba(255,255,255,.4);">${dayNames[i]}</p><p style="font-weight:600;${dk===todayKey?'color:#FF3B30;':''}">${d.getDate()}</p></div>`;
     }
     head += `</div>`;
-    let body='';
-    for (let h=7; h<22; h++) {
-      const label = pad(h)+':00';
-      let row = `<div class="grid gap-2 border-t border-white/8" style="grid-template-columns:56px repeat(7,1fr);min-height:48px"><span class="text-xs text-white/35 pt-1 tabular-nums">${label}</span>`;
-      for (let d=0; d<7; d++) {
-        const evs = byDayHour[`${d}-${h}`]||[];
-        row += `<div class="pt-1 space-y-1" data-drop-day="${d}" data-drop-hour="${h}">${evs.map(g=>{
-          const color=catColor(g); const cat=catInfo(g);
-          return `<div class="glass-soft glass-hover rounded-lg px-2 py-1 border-l-2 cursor-pointer ${g.done?'opacity-50':''}" style="border-color:${color}" data-task-id="${g.id}">
-            <p class="text-xs font-medium truncate leading-tight" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}</p>
-            <div class="flex items-center gap-1 mt-0.5">
-              <span class="cal-event-time">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span>
-              <span class="tag-mini ${isUrgent(g)?'tag':'tag-grey'}">${cat.label}</span>
-            </div>
-          </div>`;
-        }).join('')}</div>`;
-      }
-      row += `</div>`;
-      body += row;
+
+    // Body: time labels column + 7 absolute day columns
+    const bodyWrapper = document.createElement('div');
+    bodyWrapper.style.cssText = `display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;position:relative;height:${TOTAL}px;`;
+
+    // Time labels
+    const labelCol = document.createElement('div');
+    labelCol.style.cssText = `position:relative;height:${TOTAL}px;`;
+    for (let h=0;h<24;h++){
+      const lbl = document.createElement('div');
+      lbl.style.cssText = `position:absolute;top:${h*60*PX}px;left:0;right:0;font-size:10px;color:rgba(255,255,255,.3);font-variant-numeric:tabular-nums;`;
+      lbl.textContent = pad(h)+':00';
+      labelCol.appendChild(lbl);
     }
-    c.innerHTML = head + body;
+    bodyWrapper.appendChild(labelCol);
+
+    // Day columns
+    for (let i=0;i<7;i++){
+      const d    = dayDates[i];
+      const dk   = dateKey(d.getTime());
+      const col  = document.createElement('div');
+      col.style.cssText = `position:relative;height:${TOTAL}px;border-left:1px solid rgba(255,255,255,.06);`;
+      col.dataset.day = dk;
+      col.dataset.colDateMs = String(d.getTime());
+
+      // Hour guide lines inside column
+      for (let h=0;h<24;h++){
+        const line = document.createElement('div');
+        line.style.cssText = `position:absolute;left:0;right:0;top:${h*60*PX}px;height:1px;background:rgba(255,255,255,.05);pointer-events:none;`;
+        col.appendChild(line);
+      }
+
+      // Cards for this day (real + ghosts)
+      const dayGoals = allGoals.filter(g=>dateKey(g.scheduledAt)===dk);
+      dayGoals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
+      dayGoals.forEach(g => {
+        const dt      = new Date(g.scheduledAt);
+        const topMin  = dt.getHours()*60 + dt.getMinutes();
+        const durMin  = g.duration_min || DEFAULT_TIMER_MIN;
+        const topPx   = topMin * PX;
+        const heightPx= Math.max(this.MIN_H, durMin * PX);
+        const color   = catColor(g);
+        const cat     = catInfo(g);
+        const twoLine = heightPx >= 32;
+
+        const card = document.createElement('div');
+        card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
+        if (g.isGhost) {
+          card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
+            + `background:${color}11;border-left:3px dashed ${color};border-radius:6px;`
+            + `padding:3px 6px;cursor:pointer;overflow:hidden;box-sizing:border-box;opacity:0.55;`;
+        } else {
+          card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
+            + `background:${color}22;border-left:3px solid ${color};border-radius:6px;`
+            + `padding:3px 6px;cursor:grab;overflow:hidden;box-sizing:border-box;`
+            + (g.done ? 'opacity:.5;' : '');
+        }
+        card.innerHTML = `<p style="font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${g.isGhost?' 🔁':''}</p>`
+          + (twoLine ? `<span style="font-size:9px;color:rgba(255,255,255,.4);">${fmtTimeRange(g.scheduledAt, durMin)}</span>` : '')
+          + (!g.isGhost ? `<div class="cal-resize-handle" style="position:absolute;bottom:2px;right:3px;width:12px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);cursor:s-resize;"></div>` : '');
+
+        col.appendChild(card);
+        if (g.isGhost) {
+          card.addEventListener('click', () => TaskController.openDetail(g.ghostOf));
+        } else {
+          this._attachPointerDrag(card, g.id, col);
+          this._attachResizeHandle(card.querySelector('.cal-resize-handle'), card, g.id);
+        }
+      });
+
+      bodyWrapper.appendChild(col);
+    }
+
+    c.innerHTML = head;
+    c.appendChild(bodyWrapper);
+
+    // Day header click → navigate
     c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',()=>this._navigateToDay(el.dataset.day)));
-    c.querySelectorAll('[data-task-id]').forEach(el=>{
-      el.addEventListener('click',e=>{e.stopPropagation(); TaskController.openDetail(el.dataset.taskId);});
-      this._makeDraggable(el, el.dataset.taskId);
-    });
-    c.querySelectorAll('[data-drop-day]').forEach(cell=>{
-      const dIdx = parseInt(cell.dataset.dropDay);
-      const hour = parseInt(cell.dataset.dropHour);
-      this._makeDropTargetDateTime(cell, dayDates[dIdx], hour);
-    });
   },
+
+  // ── Month grid (unchanged logic, keeps HTML5 drop for month cells) ──
 
   _renderMonth() {
     if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
@@ -1355,8 +2023,14 @@ const CalendarController = {
     const y=this._calDate.getFullYear(), m=this._calDate.getMonth();
     this._updateHeaderTitle(this._calDate.toLocaleString('en-US',{month:'long',year:'numeric'}));
     const first=new Date(y,m,1).getDay(), offset=(first===0)?6:first-1, dim=new Date(y,m+1,0).getDate();
-    const goals=StateManager.get('goals'), tasksByDay={};
-    goals.forEach(g=>{ if(!g.scheduledAt) return; const d=new Date(g.scheduledAt); if(d.getFullYear()===y&&d.getMonth()===m){ const day=d.getDate(); (tasksByDay[day]=tasksByDay[day]||[]).push(g); } });
+    const monthStart = new Date(y,m,1).getTime();
+    const monthEnd   = new Date(y,m+1,0,23,59,59,999).getTime();
+    const allGoals = [
+      ...StateManager.get('goals').filter(g => !g.isProject),
+      ...getGhostOccurrences(monthStart, monthEnd),
+    ];
+    const tasksByDay={};
+    allGoals.forEach(g=>{ if(!g.scheduledAt) return; const d=new Date(g.scheduledAt); if(d.getFullYear()===y&&d.getMonth()===m){ const day=d.getDate(); (tasksByDay[day]=tasksByDay[day]||[]).push(g); } });
     Object.values(tasksByDay).forEach(arr=>arr.sort((a,b)=>{
       const p={high:0,mid:1,low:2}; const pa=(p[a.priority]||1), pb=(p[b.priority]||1);
       if(pa!==pb) return pa-pb; return (a.scheduledAt||0)-(b.scheduledAt||0);
@@ -1371,7 +2045,8 @@ const CalendarController = {
       const MAX=4;
       let items = dayTasks.slice(0,MAX).map(g=>{
         const color=catColor(g);
-        return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="background:${color}22;border-left:2px solid ${color};color:rgba(255,255,255,.85)" data-task-id="${g.id}"><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}</span><span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span></div>`;
+        const isGhost = !!g.isGhost;
+        return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="background:${color}${isGhost?'0a':'22'};border-left:2px ${isGhost?'dashed':'solid'} ${color};color:rgba(255,255,255,${isGhost?'.55':'.85'});${isGhost?'opacity:0.6;':''}" data-task-id="${isGhost?g.ghostOf:g.id}"><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${isGhost?' 🔁':''}</span><span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span></div>`;
       }).join('');
       if (dayTasks.length>MAX) items += `<div class="text-[10px] text-accent mt-1">+ ${dayTasks.length-MAX} more</div>`;
       html += `<div class="glass-soft glass-hover rounded-xl p-2 flex flex-col gap-1 min-h-24 cursor-pointer ${isToday?'ring-1 ring-accent':''}" data-day="${dk}">
@@ -1380,11 +2055,22 @@ const CalendarController = {
     c.innerHTML = html;
     c.querySelectorAll('[data-day]').forEach(el=>{
       el.addEventListener('click',()=>this._navigateToDay(el.dataset.day));
-      this._makeDropTargetDate(el, el.dataset.day);
+      this._makeMonthDropTarget(el, el.dataset.day);
     });
     c.querySelectorAll('[data-task-id]').forEach(el=>{
       el.addEventListener('click',e=>{e.stopPropagation(); TaskController.openDetail(el.dataset.taskId);});
-      this._makeDraggable(el, el.dataset.taskId);
+    });
+  },
+
+  // Lightweight HTML5 drop for month-grid cells (date-only rescheduling)
+  _makeMonthDropTarget(el, dateStr) {
+    el.addEventListener('dragover', (e)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('ring-1','ring-accent'); });
+    el.addEventListener('dragleave', ()=>{ el.classList.remove('ring-1','ring-accent'); });
+    el.addEventListener('drop', (e)=>{
+      e.preventDefault(); el.classList.remove('ring-1','ring-accent');
+      const goalId = this._dragGoalId || e.dataTransfer.getData('text/plain');
+      if (!goalId) return;
+      this._rescheduleGoalToDate(goalId, dateStr);
     });
   },
 
@@ -1393,9 +2079,14 @@ const CalendarController = {
     const c = document.getElementById('yearGrid'); if(!c) return;
     const y = this._yearDate.getFullYear();
     this._updateHeaderTitle(String(y));
-    const goals = StateManager.get('goals');
+    const yearStart = new Date(y, 0, 1).getTime();
+    const yearEnd   = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
+    const allGoals  = [
+      ...StateManager.get('goals').filter(g => !g.isProject),
+      ...getGhostOccurrences(yearStart, yearEnd),
+    ];
     const tasksByDate = {};
-    goals.forEach(g=>{ if(!g.scheduledAt) return; const dk=dateKey(g.scheduledAt); (tasksByDate[dk]=tasksByDate[dk]||[]).push(g); });
+    allGoals.forEach(g=>{ if(!g.scheduledAt) return; const dk=dateKey(g.scheduledAt); (tasksByDate[dk]=tasksByDate[dk]||[]).push(g); });
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const today = new Date();
     let html='';
@@ -1974,8 +2665,6 @@ const TimerController = {
 
   renderSpheres() {
     const g = this._goal();
-    const goals = StateManager.get('goals');
-    const macros = StateManager.get('macroGoals');
     const streak = StateManager.get('streak');
 
     // Current goal sphere
@@ -1991,13 +2680,13 @@ const TimerController = {
       const pctLabel = document.getElementById('sphere-current-pct'); if (pctLabel) pctLabel.textContent = '0%';
     }
 
-    // Big goals sphere — % of macro goals whose linked tasks are all done
-    const macrosWithTasks = macros.filter(m => goals.some(gg=>gg.macroId===m.id));
-    const completedMacros = macrosWithTasks.filter(m => {
-      const linked = goals.filter(gg=>gg.macroId===m.id);
-      return linked.length>0 && linked.every(gg=>gg.done);
+    // Big goals sphere — % of root projects that are fully completed (all leaf tasks done)
+    const rootProjects = StateManager.get('goals').filter(g => g.isProject && !g.parentId);
+    const completedMacros = rootProjects.filter(m => {
+      const prog = computeNodeProgress(m.id);
+      return prog.total > 0 && prog.done === prog.total;
     }).length;
-    const totalMacros = macros.length;
+    const totalMacros = rootProjects.length;
     const macroPct = totalMacros ? Math.round(completedMacros/totalMacros*100) : 0;
     const goalsRing = document.getElementById('sphere-goals-ring');
     if (goalsRing) goalsRing.setAttribute('stroke-dashoffset', (SPHERE_C*(1-macroPct/100)).toFixed(2));
@@ -2019,7 +2708,7 @@ const TimerController = {
 
   _renderPickerList() {
     const list=document.getElementById('goal-picker-list'); if(!list) return;
-    const active=StateManager.get('goals').filter(g=>!g.done);
+    const active=StateManager.get('goals').filter(g=>!g.done && !g.isProject);
     if(!active.length){
       list.innerHTML='<div style="text-align:center;padding:20px 0;color:rgba(255,255,255,.35);font-size:13px;">No active tasks — create one first</div>';
       return;
@@ -2216,116 +2905,87 @@ const StoreController = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   MACRO CONTROLLER — Projects, each with an optional list of
-   Sprints (sub-goals). Tasks link to a macro (project) and,
-   optionally, to one of that project's sprints — giving the
-   3-level Project → Sprint → Task structure used by
-   renderProjectsPanel().
+   MACRO CONTROLLER — Projects / Folders (v8)
+   All project data lives in goals[] with isProject:true.
+   No more macroGoals array or Sprint concept.
 ═══════════════════════════════════════════════════════════ */
 const MacroController = {
-  _draftSprints:[],
 
   init() {
-    // Both the sidebar "+ Add Goal" (Profile view) and the Tasks-view
-    // "+ New Project" button open the exact same project-creation modal.
     document.getElementById('btn-add-macro')?.addEventListener('click', ()=>this.openModal());
     document.getElementById('btn-new-macro')?.addEventListener('click', ()=>this.openModal());
     document.getElementById('btn-save-macro')?.addEventListener('click', ()=>this.save());
     document.getElementById('btn-delete-macro')?.addEventListener('click', ()=>this.delete(document.getElementById('macro-edit-id')?.value));
-    document.getElementById('btn-macro-add-sprint')?.addEventListener('click', ()=>this._addDraftSprint());
-    document.getElementById('macro-new-sprint-input')?.addEventListener('keydown', (e)=>{
-      if (e.key==='Enter') { e.preventDefault(); this._addDraftSprint(); }
-    });
   },
 
-  _addDraftSprint() {
-    const inp = document.getElementById('macro-new-sprint-input');
-    const val = inp?.value.trim();
-    if (!val) return;
-    this._draftSprints.push({ id:'sprint_'+Date.now().toString(36)+rnd(), title:val });
-    if (inp) inp.value='';
-    this._renderDraftSprints();
-  },
-
-  _renderDraftSprints() {
-    const list = document.getElementById('macro-sprints-list');
-    if (!list) return;
-    if (!this._draftSprints.length) {
-      list.innerHTML = `<p class="text-white/35 text-xs" style="padding:4px 0;">No sprints yet — tasks will fall under "Unsorted".</p>`;
-      return;
-    }
-    list.innerHTML = this._draftSprints.map((s,i)=>`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <input class="field" type="text" value="${esc(s.title)}" data-i="${i}" data-role="sprint-rename" style="flex:1;">
-        <button type="button" data-i="${i}" data-role="sprint-remove" style="background:rgba(255,255,255,.08);border:none;color:#fff;width:32px;height:32px;border-radius:10px;cursor:pointer;flex:none;">✕</button>
-      </div>
-    `).join('');
-    list.querySelectorAll('[data-role="sprint-rename"]').forEach(inp=>{
-      inp.addEventListener('input', e=>{ this._draftSprints[parseInt(e.target.dataset.i)].title = e.target.value; });
-    });
-    list.querySelectorAll('[data-role="sprint-remove"]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{ this._draftSprints.splice(parseInt(btn.dataset.i),1); this._renderDraftSprints(); });
-    });
-  },
-
-  // Folds an unsubmitted sprint name into the draft before save, same
-  // guard pattern as RoutineManager's action-input flush.
-  _flushPendingSprint() {
-    const inp = document.getElementById('macro-new-sprint-input');
-    const val = inp?.value.trim();
-    if (!val) return;
-    if (!this._draftSprints.some(s=>s.title.toLowerCase()===val.toLowerCase())) {
-      this._draftSprints.push({ id:'sprint_'+Date.now().toString(36)+rnd(), title:val });
-    }
-    if (inp) inp.value = '';
-  },
-
-  openModal(id=null) {
-    const mg=id?StateManager.get('macroGoals').find(x=>x.id===id):null;
-    this._draftSprints = mg ? JSON.parse(JSON.stringify(mg.sprints||[])) : [];
-    document.getElementById('macroModalTitle').textContent = mg?'Edit Project':'New Project';
-    document.getElementById('macro-edit-id').value = mg?.id||'';
-    document.getElementById('macro-title').value = mg?.title||'';
-    document.getElementById('macro-deadline').value = mg?.deadline||'';
-    document.getElementById('macro-gems-reward').value = mg?.gemsReward||50;
-    const newSprintInp = document.getElementById('macro-new-sprint-input');
-    if (newSprintInp) newSprintInp.value = '';
+  openModal(id=null, opts={}) {
+    const mg = id ? StateManager.get('goals').find(x=>x.id===id && x.isProject) : null;
+    document.getElementById('macroModalTitle').textContent = mg ? 'Edit Project' : 'New Project';
+    document.getElementById('macro-edit-id').value = mg?.id || '';
+    document.getElementById('macro-title').value = mg?.title || '';
+    document.getElementById('macro-deadline').value = mg?.deadline || '';
+    document.getElementById('macro-gems-reward').value = mg?.gemsReward ?? 50;
     document.getElementById('btn-delete-macro').classList.toggle('hidden', !mg);
-    this._renderDraftSprints();
+
+    // Populate parent select (exclude self and all descendants to prevent cycles)
+    const parentSel = document.getElementById('macro-parent-select');
+    if (parentSel) {
+      const options = buildParentOptionsFlat(id || null);
+      parentSel.innerHTML = `<option value="">— Root (no parent) —</option>` + options.map(o=>`<option value="${o.id}">${esc(o.label)}</option>`).join('');
+      parentSel.value = mg?.parentId || opts.presetParentId || '';
+    }
+
     openModal('macroModal');
   },
 
   save() {
-    const title=document.getElementById('macro-title')?.value.trim(); if(!title){showToast('Enter a project title'); return;}
-    const id=document.getElementById('macro-edit-id')?.value;
-    const deadline=document.getElementById('macro-deadline')?.value;
-    const gemsReward=parseInt(document.getElementById('macro-gems-reward')?.value||'50');
-    this._flushPendingSprint();
-    const sprintsSnapshot = this._draftSprints.map(s=>({...s}));
-    const prevMacros = StateManager.get('macroGoals');
-    let macros;
+    const title = document.getElementById('macro-title')?.value.trim();
+    if (!title) { showToast('Enter a project title'); return; }
+    const id         = document.getElementById('macro-edit-id')?.value;
+    const deadline   = document.getElementById('macro-deadline')?.value || '';
+    const gemsReward = parseInt(document.getElementById('macro-gems-reward')?.value || '50');
+    const parentId   = document.getElementById('macro-parent-select')?.value || null;
+
+    const prevGoals = StateManager.get('goals');
+    let goals;
     if (id) {
-      macros = prevMacros.map(m => m.id===id ? { ...m, title, deadline, gemsReward, sprints:sprintsSnapshot } : m);
+      goals = prevGoals.map(g => g.id===id ? { ...g, title, deadline, gemsReward, parentId } : g);
     } else {
-      macros = [...prevMacros, { id:'macro_'+Date.now().toString(36)+rnd(), title, deadline, gemsReward, sprints:sprintsSnapshot, createdAt:Date.now() }];
+      const newProject = {
+        id: 'macro_'+Date.now().toString(36)+rnd(), title, deadline, gemsReward, parentId,
+        isProject:true, recurrence:null, done:false, cat:'business', scheduledAt:null,
+        duration_min:60, notes:'', subtasks:[], tags:[], reminders:[], location:'',
+        cost:0, travelTime:0, participants:[], color:'', elapsed:0, startTime:null,
+        paused:false, createdAt:Date.now(), isEvent:false,
+      };
+      goals = [newProject, ...prevGoals];
     }
-    StateManager.set('macroGoals',macros); SyncManager.scheduleSync(); closeModal('macroModal');
+    StateManager.patch({goals});
+    SyncManager.scheduleSync();
+    closeModal('macroModal');
     if (StateManager.get('currentView')==='profile') ProfileRenderer.render();
     if (StateManager.get('currentView')==='tasks') renderProjectsPanel();
     TimerController.renderSpheres();
-    showToast(id?'✅ Project updated':'✅ Project created');
+    showToast(id ? '✅ Project updated' : '✅ Project created');
   },
+
   delete(id) {
     if (!id) return;
-    if (!confirm('Delete this project? Linked tasks will stay but become unlinked.')) return;
-    StateManager.set('macroGoals', StateManager.get('macroGoals').filter(m=>m.id!==id));
-    const goals = StateManager.get('goals').map(g => g.macroId===id ? {...g, macroId:null, sprintId:null} : g);
-    StateManager.set('goals', goals);
+    const descendants = getDescendantIds(id);
+    const total = descendants.length;
+    const msg = total > 0
+      ? `Delete this project and ${total} nested item${total===1?'':'s'}? This cannot be undone.`
+      : 'Delete this project? It has no children.';
+    if (!confirm(msg)) return;
+    const toDelete = new Set([id, ...descendants]);
+    const goals = StateManager.get('goals').filter(g => !toDelete.has(g.id));
+    StateManager.patch({goals});
     SyncManager.scheduleSync();
     closeModal('macroModal');
-    ProfileRenderer.render();
-    if (StateManager.get('currentView')==='tasks') renderProjectsPanel();
-    showToast('🗑 Project deleted');
+    renderProjectsPanel();
+    if (StateManager.get('currentView')==='profile') ProfileRenderer.render();
+    TimerController.renderSpheres();
+    showToast(`🗑 Deleted project and ${total} nested item${total===1?'':'s'}`);
   },
 };
 
@@ -2368,22 +3028,19 @@ const ProfileRenderer = {
   _renderMacroList() {
     const listWrap = document.getElementById('macro-goals-list');
     if (!listWrap) return;
-    const macros = StateManager.get('macroGoals');
-    const goals = StateManager.get('goals');
+    const macros = StateManager.get('goals').filter(g => g.isProject && !g.parentId);
 
     if (!macros.length) {
       listWrap.innerHTML = `<div class="empty-state" style="padding:20px 0;"><div class="empty-icon">🎯</div><div class="empty-title">No goals yet</div><div class="empty-sub">Tap + Add Goal to create one</div></div>`;
       return;
     }
     listWrap.innerHTML = macros.map(mg => {
-      const linked = goals.filter(g=>g.macroId===mg.id);
-      const done = linked.filter(g=>g.done).length;
-      const total = linked.length;
-      const pct = total>0 ? Math.round(done/total*100) : 0;
+      const prog = computeNodeProgress(mg.id);
+      const pct  = prog.total > 0 ? Math.round(prog.done / prog.total * 100) : 0;
       return `<div data-macro-id="${mg.id}" style="cursor:pointer;">
         <div class="flex justify-between text-sm mb-1.5"><span>${esc(mg.title)}</span><span class="text-accent font-semibold">${pct}%</span></div>
         <div class="h-2.5 rounded-full bg-white/10 overflow-hidden"><div class="h-full accent-grad rounded-full" style="width:${pct}%"></div></div>
-        <p class="text-white/35 text-xs mt-1">${total?`${done}/${total} tasks`:'No linked tasks'}${mg.deadline?' · due '+new Date(mg.deadline).toLocaleDateString('en-US'):''} · 💎 ${mg.gemsReward||50}</p>
+        <p class="text-white/35 text-xs mt-1">${prog.total?`${prog.done}/${prog.total} tasks`:'No tasks'}${mg.deadline?' · due '+new Date(mg.deadline).toLocaleDateString('en-US'):''} · 💎 ${mg.gemsReward||50}</p>
       </div>`;
     }).join('');
     listWrap.querySelectorAll('[data-macro-id]').forEach(el=>{
@@ -2484,29 +3141,33 @@ function resetData() {
 }
 function loadDemoData() {
   const now=Date.now(), day=86400000;
+  // Demo projects (isProject:true goals)
+  const demoProjects=[
+    {id:'macro_demo',  title:'🚀 Launch SaaS project', isProject:true, parentId:null, deadline:new Date(now+day*60).toISOString().slice(0,10), gemsReward:100, cat:'business', done:false, scheduledAt:null, duration_min:60, subtasks:[], tags:[], reminders:[], notes:'', location:'', cost:0, travelTime:0, participants:[], color:'', elapsed:0, startTime:null, paused:false, createdAt:now-day*10, isEvent:false, recurrence:null, elapsed_ms:0},
+    {id:'sprint_demo_1', title:'Sprint 1 — MVP', isProject:true, parentId:'macro_demo', deadline:'', gemsReward:0, cat:'business', done:false, scheduledAt:null, duration_min:60, subtasks:[], tags:[], reminders:[], notes:'', location:'', cost:0, travelTime:0, participants:[], color:'', elapsed:0, startTime:null, paused:false, createdAt:now-day*9, isEvent:false, recurrence:null, elapsed_ms:0},
+    {id:'sprint_demo_2', title:'Sprint 2 — Templates', isProject:true, parentId:'macro_demo', deadline:'', gemsReward:0, cat:'business', done:false, scheduledAt:null, duration_min:60, subtasks:[], tags:[], reminders:[], notes:'', location:'', cost:0, travelTime:0, participants:[], color:'', elapsed:0, startTime:null, paused:false, createdAt:now-day*8, isEvent:false, recurrence:null, elapsed_ms:0},
+    {id:'macro_demo_2', title:'🏃 Run a half marathon', isProject:true, parentId:null, deadline:new Date(now+day*90).toISOString().slice(0,10), gemsReward:80, cat:'health', done:false, scheduledAt:null, duration_min:60, subtasks:[], tags:[], reminders:[], notes:'', location:'', cost:0, travelTime:0, participants:[], color:'', elapsed:0, startTime:null, paused:false, createdAt:now-day*8, isEvent:false, recurrence:null, elapsed_ms:0},
+  ];
   const demoGoals=[
-    {id:'demo_1',title:'Read "Atomic Habits"',cat:'study',priority:'high',color:'#5E5CE6',scheduledAt:now-3600000,duration_min:60,tags:[],subtasks:[{id:'st1',text:'Chapters 1-5',done:true},{id:'st2',text:'Notes',done:false}],notes:'Key insights on habits',done:false,elapsed:0,createdAt:now-day*3,macroId:null,sprintId:null},
-    {id:'demo_2',title:'Strength workout',cat:'health',priority:'high',color:'#FF9500',scheduledAt:now+7200000,duration_min:45,tags:[],subtasks:[],notes:'Bench, squats, deadlift',done:false,elapsed:0,createdAt:now-day,macroId:'macro_demo_2',sprintId:null},
-    {id:'demo_3',title:'Ship landing MVP',cat:'business',priority:'mid',color:'#FF3B30',scheduledAt:now+day,duration_min:120,tags:[],subtasks:[{id:'st3',text:'Design',done:true},{id:'st4',text:'Build',done:true},{id:'st5',text:'Deploy',done:false}],notes:'',done:false,elapsed:3600,createdAt:now-day*5,macroId:'macro_demo',sprintId:'sprint_demo_1'},
-    {id:'demo_4',title:'10-minute meditation',cat:'life',priority:'low',color:'#34C759',scheduledAt:now+1800000,duration_min:10,tags:[],subtasks:[],notes:'Breathe, don\'t think',done:false,elapsed:0,createdAt:now,macroId:null,sprintId:null},
-    {id:'demo_5',title:'Draft planning template',cat:'business',priority:'mid',color:'#F72585',scheduledAt:now+day*2,duration_min:90,tags:[],subtasks:[],notes:'',done:false,elapsed:0,createdAt:now-day*2,macroId:'macro_demo',sprintId:'sprint_demo_2'},
+    {id:'demo_1',title:'Read "Atomic Habits"',cat:'study',priority:'high',color:'#5E5CE6',scheduledAt:now-3600000,duration_min:60,tags:[],subtasks:[{id:'st1',text:'Chapters 1-5',done:true},{id:'st2',text:'Notes',done:false}],notes:'Key insights on habits',done:false,elapsed:0,createdAt:now-day*3,isProject:false,parentId:null,isEvent:false,recurrence:null,elapsed_ms:0},
+    {id:'demo_2',title:'Strength workout',cat:'health',priority:'high',color:'#FF9500',scheduledAt:now+7200000,duration_min:45,tags:[],subtasks:[],notes:'Bench, squats, deadlift',done:false,elapsed:0,createdAt:now-day,isProject:false,parentId:'macro_demo_2',isEvent:false,recurrence:null,elapsed_ms:0},
+    {id:'demo_3',title:'Ship landing MVP',cat:'business',priority:'mid',color:'#FF3B30',scheduledAt:now+day,duration_min:120,tags:[],subtasks:[{id:'st3',text:'Design',done:true},{id:'st4',text:'Build',done:true},{id:'st5',text:'Deploy',done:false}],notes:'',done:false,elapsed:3600,createdAt:now-day*5,isProject:false,parentId:'sprint_demo_1',isEvent:false,recurrence:null,elapsed_ms:3600000},
+    {id:'demo_4',title:'10-minute meditation',cat:'life',priority:'low',color:'#34C759',scheduledAt:now+1800000,duration_min:10,tags:[],subtasks:[],notes:"Breathe, don't think",done:false,elapsed:0,createdAt:now,isProject:false,parentId:null,isEvent:false,recurrence:null,elapsed_ms:0},
+    {id:'demo_5',title:'Draft planning template',cat:'business',priority:'mid',color:'#F72585',scheduledAt:now+day*2,duration_min:90,tags:[],subtasks:[],notes:'',done:false,elapsed:0,createdAt:now-day*2,isProject:false,parentId:'sprint_demo_2',isEvent:false,recurrence:null,elapsed_ms:0},
   ];
   const demoHistory=[
-    {id:'dh1',goalId:'demo_old_1',title:'Morning 5k run',cat:'health',color:'#FF9500',completedAt:now-3600000,elapsed_ms:1800000,gems:1},
-    {id:'dh2',goalId:'demo_old_2',title:'Team standup call',cat:'business',color:'#FF3B30',completedAt:now-86400000,elapsed_ms:3600000,gems:1},
+    {id:'dh1',goalId:'demo_old_1',title:'Morning 5k run',cat:'health',color:'#FF9500',completedAt:now-3600000,elapsed_ms:1800000,gems:3},
+    {id:'dh2',goalId:'demo_old_2',title:'Team standup call',cat:'business',color:'#FF3B30',completedAt:now-86400000,elapsed_ms:3600000,gems:3},
     {id:'dh3',goalId:'demo_old_3',title:'Study Vercel KV API',cat:'study',color:'#5E5CE6',completedAt:now-172800000,elapsed_ms:5400000,gems:0},
     {id:'dh4',goalId:'demo_old_4',title:'Sketch wireframe',cat:'creative',color:'#F72585',completedAt:now-259200000,elapsed_ms:2700000,gems:0},
     {id:'dh5',goalId:'demo_old_5',title:'Family dinner',cat:'life',color:'#34C759',completedAt:now-345600000,elapsed_ms:7200000,gems:0},
   ];
   const st=StateManager.get();
-  const goals=[...demoGoals,...st.goals.filter(g=>!g.id.startsWith('demo_'))];
+  const demoIds = new Set([...demoProjects, ...demoGoals].map(g=>g.id));
+  const goals=[...demoProjects,...demoGoals,...st.goals.filter(g=>!demoIds.has(g.id))];
   const history=[...demoHistory,...st.history.filter(h=>!h.id.startsWith('dh'))];
-  const macroGoals=[
-    {id:'macro_demo',title:'🚀 Launch SaaS project',deadline:new Date(now+day*60).toISOString().slice(0,10),gemsReward:100,createdAt:now-day*10,sprints:[{id:'sprint_demo_1',title:'Sprint 1 — MVP'},{id:'sprint_demo_2',title:'Sprint 2 — Templates'}]},
-    {id:'macro_demo_2',title:'🏃 Run a half marathon',deadline:new Date(now+day*90).toISOString().slice(0,10),gemsReward:80,createdAt:now-day*8,sprints:[]},
-    ...st.macroGoals.filter(m=>!m.id.startsWith('macro_demo')),
-  ];
-  StateManager.patch({goals,history,gems:Math.max(st.gems,27),streak:{days:5,lastDate:dateKey(),doneToday:true,best:Math.max(st.streak.best||0,5)},macroGoals});
+  StateManager.patch({goals,history,gems:Math.max(st.gems,27),streak:{days:5,lastDate:dateKey(),doneToday:true,best:Math.max(st.streak.best||0,5)}});
+  localStorage.setItem('nova-migrated-v8', '1');
   SyncManager.scheduleSync();
   closeModal('modal-settings');
   refreshEverything();
