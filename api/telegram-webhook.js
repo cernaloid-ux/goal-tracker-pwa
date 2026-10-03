@@ -23,10 +23,10 @@
       чтобы Gemini 3.6 Flash не выводил в чат английские самопроверки правил.
    ══════════════════════════════════════════════════════════════ */
 
-import { kv } from '@vercel/kv';
-import { waitUntil } from '@vercel/functions';
+const { kv } = require('@vercel/kv');
+const { waitUntil } = require('@vercel/functions');
 
-export const maxDuration = 60; // Vercel: увеличить лимит до 60 сек (Hobby plan)
+const maxDuration = 60; // Vercel: лимит 60 сек
 
 /* ─────────────────────────────────────────────────────────────
    ENV
@@ -93,7 +93,7 @@ function formatNextDaySubjects(dayIso) {
 // что он проигнорировал сообщение/напоминание. Раньше было 60 минут — сократили до 15.
 // Используется отдельной cron-функцией (например api/check-ignore.js), которая
 // сравнивает Date.now() - nova.lastMessageTime с этим порогом.
-export const IGNORE_THRESHOLD_MS = 15 * 60 * 1000;
+const IGNORE_THRESHOLD_MS = 15 * 60 * 1000;
 
 // Ночной режим: с 02:00 до 05:00 по Кишинёву Gemini не вызывается вообще.
 const NIGHT_MODE_START_HOUR = 2;
@@ -170,12 +170,12 @@ normal (обычная): твой стандартный бро-коуч тон,
 </celebration_rule>
 
 <context>
-Сегодняшняя дата: ${todayKeyChisinau()}.
+Сегодняшняя дата: __TODAY__.
 </context>`;
 
 
 /* ─────────────────────────────────────────────────────────────
-   ПЕРЕХВАТ СИСТЕМНЫХ ФРАЗof (ЗАДАЧА 2 «Nova 2.0»)
+   ПЕРЕХВАТ СИСТЕМНЫХ ФРАЗ (ЗАДАЧА 2 «Nova 2.0»)
    Короткие системные строки (например, из внешних автоматизаций)
    перехватываются и проксируются через Gemini, чтобы Nova сама
    написала живое русское пуш-уведомление вместо сухого английского текста.
@@ -240,6 +240,7 @@ const COMMAND_SYNTAX_HINT = `<commands_syntax>
 [SET_SCHEDULE: HH:MM | HH:MM] - расписание сна: первое время - ОТБОЙ сегодня, второе - ПОДЪЁМ завтра
 [MORNING_CONFIRMED]           - Лёша подтвердил, что проснулся (написал "Доброе утро")
 [NIGHT_CONFIRMED]             - Лёша подтвердил отбой (написал "Спокойной ночи")
+[SKIP_SCHOOL_TODAY]           - Лёша сегодня не идёт в школу (болеет, каникулы, выходной). Выдавай при формулировках "в школу не иду", "сегодня без школы", "заболел школы не будет", "прогуливаю", "не пойду на учёбу" и любых схожих.
 </simple_commands>
 
 <schedule_commands>
@@ -264,14 +265,17 @@ const COMMAND_SYNTAX_HINT = `<commands_syntax>
   timeTo        - "HH:MM" опционально, ВРЕМЯ ОКОНЧАНИЯ события (кишинёвское). Указывай только если Лёша явно назвал промежуток ("с 11:00 до 20:00", "с обеда до вечера в конкретных часах"). Если названо только время начала - timeTo не пиши.
   travelTime    - минуты в пути, если нужно куда-то добираться
   duration_min  - длительность в минутах
+  isEvent       - boolean. true для любой задачи с конкретным временем или промежутком, false только для дел на весь день БЕЗ конкретного времени.
   reminders     - СТРОГО МАССИВ ЧИСЕЛ, например [15]. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО ПИСАТЬ СЮДА ТЕКСТ!
 
 Правила:
+**CRITICAL: Если Лёша указывает ЛЮБОЙ временной промежуток («с 15:00 до 18:00», «в 18:00 на 2 часа», «с 11 до 20»), ты ОБЯЗАНА выставить \`isEvent: true\` и корректно вычислить \`duration_min\` (минуты между началом и концом). Задачи с \`isEvent: false\` допустимы ТОЛЬКО для дел на весь день БЕЗ конкретного времени.**
 1. ВРЕМЯ СВЯТОЕ: если Босс не назвал точное время начала - НЕ создавай задачу, сначала переспроси "Во сколько начинаем?".
 2. Если задач несколько - выведи все команды [ADD_TASK_JSON: ...] подряд, каждую на новой строке, полностью до закрывающей \`}]\`. Лучше 5 полных команд, чем 6 команд с одной оборванной.
 3. Если Лёша просит удалить/перенести задачу по спорту/марафону без объяснения причины - сначала спроси "почему" словами, без команды. Команду выводи только вторым сообщением, после ответа.
 4. Никогда не пиши "добавлю" без реальной команды - это будет ложью Боссу.
-5. ТЕСТЫ И КОНТРОЛЬНЫЕ: Если Лёша просит напомнить про тест/контрольную, ты ОБЯЗАНА поставить напоминание на длительный срок для подготовки (например, за день [1440] или за два дня [2880]). Для обычного ДЗ ставь стандартные напоминания (например, за пару часов [120]). При ответе в чат делай акцент: «Напомню тебе подготовиться к тесту заранее».
+5. Примеры isEvent: «с 15:00 до 18:00» → scheduledAt:"15:00", timeTo:"18:00", duration_min:180, isEvent:true; «в 18:00 на 2 часа» → scheduledAt:"18:00", duration_min:120, isEvent:true.
+6. ТЕСТЫ И КОНТРОЛЬНЫЕ: Если Лёша просит напомнить про тест/контрольную, ты ОБЯЗАНА поставить напоминание на длительный срок для подготовки (например, за день [1440] или за два дня [2880]). Для обычного ДЗ ставь стандартные напоминания (например, за пару часов [120]). При ответе в чат делай акцент: «Напомню тебе подготовиться к тесту заранее».
 </add_task_command>
 </commands_syntax>
 
@@ -417,9 +421,10 @@ function ensureLifeData(raw) {
     if (!Array.isArray(raw.goals)) raw.goals = [];
     if (!Array.isArray(raw.history)) raw.history = [];
     if (raw.activeBoss === undefined) raw.activeBoss = null; // Главный Босс Дня
+    if (raw.skipSchoolToday === undefined) raw.skipSchoolToday = null; // флаг пропуска школы
     return raw;
   }
-  return { goals: [], history: [], gems: 0, streak: { days: 0, lastDate: '', doneToday: false }, macroGoals: [], activeBoss: null };
+  return { goals: [], history: [], gems: 0, streak: { days: 0, lastDate: '', doneToday: false }, macroGoals: [], activeBoss: null, skipSchoolToday: null };
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -629,7 +634,7 @@ function buildContext(lifeData, nova) {
    ЗАПРОС К GEMINI
 ───────────────────────────────────────────────────────────── */
 async function askGemini(userText, contextText, history) {
-  const systemInstruction = `${NOVA_BASE_PROMPT}\n\n<current_context>\n${contextText}\n</current_context>\n\n<commands>\n${COMMAND_SYNTAX_HINT}\n</commands>`;
+  const systemInstruction = `${NOVA_BASE_PROMPT.replace('__TODAY__', todayKeyChisinau())}\n\n<marathon_plan>\n${MARATHON_PLAN}\n</marathon_plan>\n\n<current_context>\n${contextText}\n</current_context>\n\n<commands>\n${COMMAND_SYNTAX_HINT}\n</commands>`;
 
   const contents = [];
   history.forEach(h => {
@@ -752,6 +757,16 @@ function processCommands(rawReply, nova, lifeData) {
         scheduledEndAt = chisinauTimeToEpoch(String(parsed.timeTo), dayBaseForTask);
       }
 
+      // Страховка: если timeTo раньше scheduledAt (переход через полночь) — +24ч
+      if (scheduledEndAt && scheduledAt && scheduledEndAt <= scheduledAt) {
+        scheduledEndAt += 86400000;
+      }
+      const hasRange = Boolean(scheduledAt && scheduledEndAt && scheduledEndAt > scheduledAt);
+      let duration = Number.isFinite(Number(parsed.duration_min)) && Number(parsed.duration_min) > 0
+        ? Number(parsed.duration_min) : null;
+      if (hasRange) duration = Math.round((scheduledEndAt - scheduledAt) / 60000);
+      const isEvent = Boolean(parsed.isEvent) || hasRange || Boolean(scheduledAt && duration && parsed.duration_min);
+
       const newTask = {
         id:           'nova_' + Date.now(),
         title:        String(parsed.title || 'Новая задача').slice(0, 500),
@@ -761,14 +776,23 @@ function processCommands(rawReply, nova, lifeData) {
         tags:         Array.isArray(parsed.tags) ? parsed.tags.slice(0, 10).map(String) : [],
         scheduledAt,
         scheduledEndAt,          // время окончания события (из timeTo)
-        duration_min: Number.isFinite(Number(parsed.duration_min)) ? Math.max(0, Number(parsed.duration_min)) : 25,
+        isEvent,                 // true если у задачи есть конкретное время
+        isProject:    false,
+        parentId:     null,
+        recurrence:   null,
+        duration_min: duration ?? 60,
         travelTime:   Number.isFinite(Number(parsed.travelTime))   ? Math.max(0, Number(parsed.travelTime))   : 0,
         location:     String(parsed.location || '').slice(0, 200),
         cost:         Number.isFinite(Number(parsed.cost)) ? Number(parsed.cost) : 0,
         reminders:    Array.isArray(parsed.reminders) ? parsed.reminders.slice(0, 5).map(Number) : [],
         done:         false,
+        elapsed:      0,
+        startTime:    null,
+        paused:       false,
+        subtasks:     [],
         createdAt:    Date.now(),
       };
+      console.log('[Nova] ADD_TASK_JSON isEvent=' + isEvent + ' duration_min=' + newTask.duration_min, newTask.id, newTask.title);
 
       updatedLifeData.goals.push(newTask);
       lifeChanged = true;
@@ -1005,6 +1029,12 @@ function processCommands(rawReply, nova, lifeData) {
         console.log('[Nova] NIGHT_CONFIRMED');
         break;
       }
+      case 'SKIP_SCHOOL_TODAY': {
+        updatedLifeData.skipSchoolToday = todayKeyChisinau();
+        lifeChanged = true;
+        console.log('[Nova] SKIP_SCHOOL_TODAY set for', updatedLifeData.skipSchoolToday);
+        break;
+      }
       default:
         // неизвестная команда — просто вырезаем из текста
         break;
@@ -1094,6 +1124,10 @@ async function sendMultiPartMessage(chatId, fullText) {
   }
 
   for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      await sendTypingAction(chatId);
+      await delay(randomDelayMs(MULTI_MSG_DELAY_MIN_MS, MULTI_MSG_DELAY_MAX_MS));
+    }
     await sendTelegramMessage(chatId, parts[i]);
   }
 }
@@ -1135,8 +1169,9 @@ async function processMessageInBackground(chatId, userText) {
 
     // Парсим скрытые команды (мутируем nova и lifeData)
     const commandResult = processCommands(rawReply, nova, lifeData);
-    const { cleanText, updatedNova, updatedLifeData, lifeChanged } = commandResult;
+    const { cleanText, updatedNova, updatedLifeData } = commandResult;
     let novaChanged = commandResult.novaChanged;
+    let lifeChanged = commandResult.lifeChanged;
 
     // Regex-предохранители на случай, если LLM забыла выдать команду
     if (/(спокойной ночи|я сплю|отбой|иду спать|заткнись я сплю)/i.test(userText)) {
@@ -1148,6 +1183,10 @@ async function processMessageInBackground(chatId, userText) {
       if (!updatedNova.morningFlow) updatedNova.morningFlow = {};
       if (!updatedNova.morningFlow.confirmedAt) updatedNova.morningFlow.confirmedAt = Date.now();
       novaChanged = true;
+    }
+    if (/(в школу не иду|не иду в школу|сегодня без школы|прогуливаю|заболел.*школ)/i.test(userText)) {
+      updatedLifeData.skipSchoolToday = todayKeyChisinau();
+      lifeChanged = true;
     }
 
     // Recovery Day: если burnoutScore достиг 3 — уведомляем отдельным сообщением
@@ -1187,7 +1226,7 @@ async function processMessageInBackground(chatId, userText) {
 /* ─────────────────────────────────────────────────────────────
    ГЛАВНЫЙ ХЕНДЛЕР
 ───────────────────────────────────────────────────────────── */
-export default async function handler(req, res) {
+async function handler(req, res) {
   // Telegram шлёт только POST. На GET (проверка живости) отвечаем 200.
   if (req.method !== 'POST') {
     return res.status(200).json({ ok: true, service: 'nova-webhook' });
@@ -1305,3 +1344,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 }
+
+module.exports = handler;
+module.exports.config = { maxDuration };
+module.exports.IGNORE_THRESHOLD_MS = IGNORE_THRESHOLD_MS;

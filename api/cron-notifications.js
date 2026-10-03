@@ -9,10 +9,10 @@
      в фоновых cron-пушах (morning/night/sport-check/pulse/random-ping).
    ══════════════════════════════════════════════════════════════ */
 
-import { kv } from '@vercel/kv';
-import { waitUntil } from '@vercel/functions';
+const { kv } = require('@vercel/kv');
+const { waitUntil } = require('@vercel/functions');
 
-export const maxDuration = 60; // Vercel: увеличить лимит до 60 сек (Hobby plan)
+const maxDuration = 60; // Vercel: лимит 60 сек
 
 /* ─────────────────────────────────────────────────────────────
    ENV
@@ -400,7 +400,7 @@ async function loadState() {
     kv.get(NOVA_KV_KEY),
   ]);
   return {
-    lifeData: (lifeDataRaw && typeof lifeDataRaw === 'object') ? lifeDataRaw : { goals: [], history: [], gems: 0, streak: { days: 0 } },
+    lifeData: (lifeDataRaw && typeof lifeDataRaw === 'object') ? lifeDataRaw : { goals: [], history: [], gems: 0, streak: { days: 0 }, skipSchoolToday: null },
     nova: normalizeNovaState(novaDataRaw),
   };
 }
@@ -734,6 +734,14 @@ function getSportDays(nova) {
    ОБРАБОТЧИКИ ПО ТИПАМ (type=...)
 ───────────────────────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────────────────────
+   SKIP SCHOOL TODAY — проверка, пропускает ли Лёша школу сегодня.
+   Флаг самоочищается: сравнение по строке текущей даты Кишинёва.
+───────────────────────────────────────────────────────────── */
+function isSchoolSkippedToday(lifeData) {
+  return lifeData?.skipSchoolToday === todayKeyChisinau();
+}
+
 async function handleMorning() {
   const { lifeData, nova } = await loadState();
   // Mood Engine: обновляем/подтверждаем настроение перед генерацией
@@ -764,17 +772,21 @@ async function handleMorning() {
 
   /* --- школьное расписание --- */
   const todayIsoForSchool = getChisinauIsoWeekday();
-  if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
-    const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
-    if (todaySchedule) {
-      lines.push('Расписание уроков на сегодня:');
-      lines.push(todaySchedule);
+  if (isSchoolSkippedToday(lifeData)) {
+    lines.push('Сегодня Лёша не идёт в школу (отмечено). Школу в утреннем пуше не упоминать.');
+  } else {
+    if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
+      const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
+      if (todaySchedule) {
+        lines.push('Расписание уроков на сегодня:');
+        lines.push(todaySchedule);
+      }
     }
-  }
-  const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
-  const nextSubjects = formatNextDaySubjects(nextSchoolIso);
-  if (nextSubjects) {
-    lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+    const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
+    const nextSubjects = formatNextDaySubjects(nextSchoolIso);
+    if (nextSubjects) {
+      lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+    }
   }
 
   const prompt = sunday
@@ -809,17 +821,21 @@ async function handleNight() {
 
   /* --- школьное расписание --- */
   const todayIsoForSchool = getChisinauIsoWeekday();
-  if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
-    const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
-    if (todaySchedule) {
-      lines.push('Расписание уроков на сегодня:');
-      lines.push(todaySchedule);
+  if (isSchoolSkippedToday(lifeData)) {
+    lines.push('Сегодня Лёша не идёт в школу (отмечено). Школу в вечернем пуше не упоминать.');
+  } else {
+    if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
+      const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
+      if (todaySchedule) {
+        lines.push('Расписание уроков на сегодня:');
+        lines.push(todaySchedule);
+      }
     }
-  }
-  const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
-  const nextSubjects = formatNextDaySubjects(nextSchoolIso);
-  if (nextSubjects) {
-    lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+    const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
+    const nextSubjects = formatNextDaySubjects(nextSchoolIso);
+    if (nextSubjects) {
+      lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+    }
   }
 
   const bossStatus = boss
@@ -918,7 +934,8 @@ async function handlePulse() {
   {
     const minStart = minutesUntilTimeToday('15:20', now);
     const minEnd   = minutesUntilTimeToday('15:25', now);
-    if (minStart <= 0 && minEnd >= 0 && !df.plan1520Sent) {
+    const todayIsoFor1520 = getChisinauIsoWeekday(now);
+    if (minStart <= 0 && minEnd >= 0 && !df.plan1520Sent && todayIsoFor1520 >= 1 && todayIsoFor1520 <= 5 && !isSchoolSkippedToday(lifeData)) {
       await sendTelegramMessage(TG_CHAT_ID, SCHEDULE_PHRASES.planCheck);
       df.plan1520Sent = true;
       novaFlowChanged = true;
@@ -1011,7 +1028,7 @@ async function handlePulse() {
     const minStart = minutesUntilTimeToday('07:10', now);
     const minEnd   = minutesUntilTimeToday('07:15', now);
     const todayIsoForMorning = getChisinauIsoWeekday(now);
-    if (minStart <= 0 && minEnd >= 0 && !df.morningScheduleSent && todayIsoForMorning >= 1 && todayIsoForMorning <= 5) {
+    if (minStart <= 0 && minEnd >= 0 && !df.morningScheduleSent && todayIsoForMorning >= 1 && todayIsoForMorning <= 5 && !isSchoolSkippedToday(lifeData)) {
       const subjects = (SCHOOL_SCHEDULE[todayIsoForMorning] || []).map(l => l.s).join(', ');
       if (subjects) {
         await sendTelegramMessage(TG_CHAT_ID, `Доброе утро! Твои уроки на сегодня: ${subjects}`);
@@ -1027,7 +1044,7 @@ async function handlePulse() {
   {
     const minStart = minutesUntilTimeToday('20:00', now);
     const minEnd   = minutesUntilTimeToday('20:05', now);
-    if (minStart <= 0 && minEnd >= 0 && !df.homeworkCheckSent) {
+    if (minStart <= 0 && minEnd >= 0 && !df.homeworkCheckSent && !isSchoolSkippedToday(lifeData)) {
       const todayIsoForHw = getChisinauIsoWeekday(now);
       const nextSchoolIsoForHw = getNextSchoolDayIsoWeekday(todayIsoForHw);
       const nextSubjectsForHw = (SCHOOL_SCHEDULE[nextSchoolIsoForHw] || []).map(l => l.s).join(', ');
@@ -1043,12 +1060,13 @@ async function handlePulse() {
   }
 
   // ══════════════════════════════════════════════════════
-  // 16:00 — smart trigger: проверка вечерних планов (БЕЗ ИЗМЕНЕНИЙ)
+  // 16:00 — smart trigger: проверка вечерних планов (только будни)
   // ══════════════════════════════════════════════════════
   {
     const minStart = minutesUntilTimeToday('16:00', now);
     const minEnd   = minutesUntilTimeToday('16:05', now);
-    if (minStart <= 0 && minEnd >= 0) {
+    const todayIsoFor16 = getChisinauIsoWeekday(now);
+    if (minStart <= 0 && minEnd >= 0 && todayIsoFor16 >= 1 && todayIsoFor16 <= 5 && !isSchoolSkippedToday(lifeData)) {
       const key = `school-done:${today}`;
       if (!alreadyNotified(nova, key)) {
         const eveningTasks = goals.filter(g =>
@@ -1219,7 +1237,7 @@ function markNotified(nova, key) {
 /* ─────────────────────────────────────────────────────────────
    ГЛАВНЫЙ ХЕНДЛЕР
 ───────────────────────────────────────────────────────────── */
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ ok: false, error: 'method not allowed' });
   }
@@ -1300,3 +1318,6 @@ export default async function handler(req, res) {
       });
   }
 }
+
+module.exports = handler;
+module.exports.config = { maxDuration };

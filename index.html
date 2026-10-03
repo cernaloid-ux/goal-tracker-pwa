@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nova OS — Productivity</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -181,6 +181,50 @@
        Nothing here changes the desktop (≥768px) appearance.
     ═══════════════════════════════════════════════════════════ */
     @media (max-width: 767px) {
+      /* ── MOBILE CRASH FIX: все тяжёлые GPU-эффекты отключены ── */
+      /* fixed-фон пережёвывает GPU на iOS — переключаем на scroll */
+      body { background-attachment: scroll; }
+
+      /* Непрозрачные фоны вместо backdrop-filter (главная причина OOM на iPhone) */
+      .glass {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(44,44,46,.92) !important;
+      }
+      .glass-soft {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(60,60,66,.85) !important;
+      }
+      .modal-backdrop {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(0,0,0,0.72) !important;
+      }
+      #sidebar {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(28,28,30,.97) !important;
+      }
+
+      /* Анимации вида вызывают перерисовки — убираем */
+      .view, .subview {
+        animation: none !important;
+        padding-bottom: 1.5rem;
+      }
+
+      /* transform при hover — не нужен и дорог на touch-устройствах */
+      .glass-hover { transition: background .15s ease, border-color .15s ease; }
+      .glass-hover:hover { transform: none !important; }
+
+      /* lite mode — полное отключение для режима recovery */
+      .lite * {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        animation: none !important;
+        transition: none !important;
+      }
+
       #sidebar {
         width: 100% !important;
         display: grid !important;
@@ -190,10 +234,10 @@
         padding-left: 6px;
         padding-right: 6px;
         padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+        border-top: 1px solid rgba(255,255,255,.08);
+        z-index: 9000 !important;
       }
-      #sidebar #navList {
-        display: contents;
-      }
+      #sidebar #navList { display: contents; }
       #sidebar #navList > button,
       #sidebar > #btn-open-settings {
         width: 100%;
@@ -201,24 +245,31 @@
         flex: none;
       }
       #sidebar .hidden.md\:flex,
-      #sidebar #collapseBtn {
-        display: none !important;
-      }
+      #sidebar #collapseBtn { display: none !important; }
       main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important; }
-      .view, .subview { padding-bottom: 1.5rem; }
-      .glass {
-        backdrop-filter: blur(14px) saturate(130%);
-        -webkit-backdrop-filter: blur(14px) saturate(130%);
+
+      /* 2.1 — Запрет обрезки текста через truncate на мобильных */
+      .tasklabel, .truncate, #td-title, #taskModalTitle, #routineModalTitle, #macroModalTitle {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        word-break: break-word !important;
+        overflow-wrap: anywhere;
       }
-      .glass-soft {
-        backdrop-filter: blur(10px) saturate(120%);
-        -webkit-backdrop-filter: blur(10px) saturate(120%);
-      }
-      .glass-hover:hover {
-        transform: none;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 24px 48px -24px rgba(0,0,0,0.7);
-      }
-      .modal-backdrop { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+      /* flex-родители получают min-width:0 чтобы текст мог переноситься */
+      #task-list [data-task-row] > div,
+      .glass-soft [style*="flex:1"] { min-width: 0; }
+      /* 2.2 — Мелкий шрифт времени в ячейках календаря + перенос навигации */
+      .cal-event-time { font-size: 9px; }
+      #calendar-header-title { font-size: 16px; }
+      #view-calendar header .flex.items-center.gap-3 { flex-wrap: wrap; row-gap: 8px; }
+    }
+    /* lite-mode класс работает глобально (не только на мобильных) */
+    html.lite * {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      animation: none !important;
+      transition: none !important;
     }
   </style>
 </head>
@@ -446,20 +497,21 @@
             </div>
           </div>
           <div class="glass rounded-xl p-1 flex gap-1 max-w-full overflow-x-auto" id="calTabs">
-            <button data-cal="day" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Day</button>
-            <button data-cal="week" class="subtab active glass-soft rounded-lg px-4 py-1.5 text-sm border border-transparent whitespace-nowrap">Week</button>
+            <button data-cal="day" class="subtab active glass-soft rounded-lg px-4 py-1.5 text-sm border border-transparent whitespace-nowrap">Day</button>
+            <button data-cal="week" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Week</button>
             <button data-cal="month" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Month</button>
             <button data-cal="year" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Year</button>
           </div>
         </header>
 
         <!-- CAL: DAY -->
-        <div id="cal-day" class="subview hidden glass rounded-3xl p-4 md:p-5 flex-1 overflow-y-auto">
+        <div id="cal-day" class="subview glass rounded-3xl p-4 md:p-5 flex-1 overflow-y-auto">
+          <div id="dayAllDayStrip" class="flex flex-wrap gap-2 pb-3 mb-2" style="border-bottom:1px solid rgba(255,255,255,.08);min-height:0;"></div>
           <div class="relative pb-16 md:pb-0" id="dayGrid"></div>
         </div>
 
         <!-- CAL: WEEK — horizontal scroll on mobile so the 7-day grid never gets crushed -->
-        <div id="cal-week" class="subview glass rounded-3xl p-4 md:p-5 flex-1 overflow-hidden flex flex-col">
+        <div id="cal-week" class="subview hidden glass rounded-3xl p-4 md:p-5 flex-1 overflow-hidden flex flex-col">
           <div class="flex-1 overflow-y-auto overflow-x-auto">
             <div id="weekGrid" class="relative min-w-[640px] md:min-w-0 pb-16 md:pb-0"></div>
           </div>
@@ -619,6 +671,9 @@
             <button type="button" class="seg-btn glass-hover" data-priority="mid" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">🟡 Mid</button>
             <button type="button" class="seg-btn glass-hover" data-priority="low" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">⚪ Low</button>
           </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Focus duration (min)</label>
+          <input id="task-duration-input" type="number" min="5" step="5" class="field" placeholder="60">
         </div>
         <div><label class="text-sm text-white/50 mb-1.5 block">Notes</label><textarea id="task-notes-input" rows="3" class="field" style="resize:none;" placeholder="Additional details…"></textarea></div>
         <div><label class="text-sm text-white/50 mb-1.5 block">Subtasks</label><div id="subtask-input-list"></div><button type="button" id="btn-add-subtask" class="glass-soft glass-hover rounded-lg text-xs" style="padding:6px 12px;color:rgba(255,255,255,.6);">+ Add subtask</button></div>
@@ -787,6 +842,16 @@
         <div><label class="text-sm text-white/50 mb-1.5 block">Telegram Chat ID</label><input id="settings-tg-chat" class="field" placeholder="e.g. -1001234567890"></div>
         <div><label class="text-sm text-white/50 mb-1.5 block">Server IP / Webhook URL</label><input id="settings-webhook" class="field" placeholder="https://nlp.mynova.dev/webhook"><p class="text-[11px] text-white/35 mt-1.5">Used for backend NLP sync of parsed tasks.</p></div>
 
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Calendar</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+            <div>
+              <p class="text-sm font-medium">Dim recurring events</p>
+              <p class="text-xs text-white/40" style="margin-top:2px;">Ghost events appear faded and dashed</p>
+            </div>
+            <div id="settings-dim-recurring" class="toggle" style="flex:none;"></div>
+          </div>
+        </div>
         <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
           <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Tags</p>
           <div id="tags-manager" style="margin-bottom:10px;"></div>
@@ -833,10 +898,23 @@
     </div>
   </div>
 
+
+  <!-- ============ GHOST EDIT CHOICE MODAL ============ -->
+  <div id="ghostEditChoiceModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="ghostEditChoiceModal"></div>
+    <div class="modal-card glass rounded-3xl p-5 w-full max-w-sm relative">
+      <h3 class="text-lg font-bold mb-4">Edit recurring event</h3>
+      <div class="flex flex-col gap-2">
+        <button id="btn-ghost-edit-this" class="glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Edit only this event</button>
+        <button id="btn-ghost-edit-following" class="glass-hover accent-grad rounded-xl py-3 text-sm font-semibold">Edit all following</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ TOAST / ALARM CONTAINERS ============ -->
-  <div id="toast-stack" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:340px;"></div>
-  <div id="alarm-stack" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
-  <div id="done-flash" style="position:fixed;inset:0;background:radial-gradient(circle at center,rgba(255,59,48,.25),transparent 60%);opacity:0;pointer-events:none;z-index:9998;transition:opacity .3s;"></div>
+  <div id="toast-stack" style="position:fixed;top:20px;right:20px;z-index:20000;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:340px;"></div>
+  <div id="alarm-stack" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:20000;display:flex;flex-direction:column;gap:8px;"></div>
+  <div id="done-flash" style="position:fixed;inset:0;background:radial-gradient(circle at center,rgba(255,59,48,.25),transparent 60%);opacity:0;pointer-events:none;z-index:19999;transition:opacity .3s;"></div>
 
   <!-- ============ SCRIPT ============ -->
   <script src="app.js"></script>

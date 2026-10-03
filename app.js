@@ -6,6 +6,19 @@
    ProfileRenderer · VoiceInput · NLP · Demo · Vercel KV 2-Way Sync
    ══════════════════════════════════════════════════════════════ */
 
+// ── SAFE BOOT GUARD ───────────────────────────────────────────────────────
+// Если прошлый запуск упал до DOMContentLoaded или в течение первых 4 сек
+// (nova-boot не удалился), включаем lite-режим: никаких тяжёлых эффектов,
+// никакой загрузки из облака. Пользователь видит рабочее UI без рисков OOM.
+(function() {
+  if (localStorage.getItem('nova-boot')) {
+    document.documentElement.classList.add('lite');
+    console.warn('[Nova OS] Safe/lite mode activated (previous crash detected)');
+  } else {
+    localStorage.setItem('nova-boot', String(Date.now()));
+  }
+})();
+
 'use strict';
 
 /* ═══════════════════════════════════════════════════════════
@@ -65,6 +78,16 @@ function pad(n, d=2) { return String(Math.floor(Math.abs(n))).padStart(d,'0'); }
 function rnd() { return Math.random().toString(36).slice(2,7); }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function dateKey(ts) { const d=new Date(ts||Date.now()); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+// Safari-safe date parser. Replaces new Date('YYYY-MM-DD') which Safari treats as UTC midnight
+// causing off-by-one-day bugs. Converts dashes to slashes so Safari uses local time.
+function parseDateSafe(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return new Date(v);
+  if (typeof v === 'number') return new Date(v);
+  const s = String(v).trim().replace(/-/g, '/').replace('T', ' ').replace(/\.\d+Z?$/, '');
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 function fmtD(s) { const dy=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60); if(dy>0) return `${dy}d ${pad(h)}h`; if(h>0) return `${h}h ${pad(m)}m`; if(m>0) return `${m}m ${pad(sec)}s`; return `${sec}s`; }
 function fmtRel(ts) { const d=Date.now()-ts,m=Math.floor(d/60000),h=Math.floor(m/60),dy=Math.floor(h/24); if(dy>0) return `${dy}d ago`; if(h>0) return `${h}h ago`; if(m>0) return `${m}m ago`; return 'just now'; }
 function fmtTime(ts) { if(!ts) return ''; const d=new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
@@ -129,7 +152,8 @@ function computeNodeProgress(nodeId, seen = new Set()) {
 }
 function nodeMatchesCategoryFilter(node, catFilter, seen = new Set()) {
   if (!catFilter) return true;
-  if (!node.isProject) return node.cat === catFilter;
+  // A13: 'creative' is displayed as 'life' — treat them as equivalent when filtering
+  if (!node.isProject) return (node.cat === catFilter) || (catFilter === 'life' && node.cat === 'creative');
   if (seen.has(node.id)) return false;
   seen.add(node.id);
   return getChildren(node.id).some(k => nodeMatchesCategoryFilter(k, catFilter, seen));
@@ -147,6 +171,26 @@ function buildParentOptionsFlat(excludeId = null) {
   };
   walk(null, 0);
   return out;
+}
+// A12: pay / revoke project gemsReward when leaf completion changes its ancestor project status.
+// Returns the gem delta (positive = pay bonus, negative = revoke).
+// Uses in-place mutation on goals[] objects; caller must patch state after calling this.
+function settleProjectRewards(leaf) {
+  let delta = 0, pid = leaf.parentId, guard = 0;
+  const goals = StateManager.get('goals');
+  while (pid && guard++ < 20) {
+    const p = goals.find(x=>x.id===pid); if (!p) break;
+    const { done, total } = computeNodeProgress(p.id);
+    const complete = total > 0 && done === total, reward = p.gemsReward || 0;
+    if (complete && !p.rewardPaid) {
+      p.rewardPaid = true; delta += reward;
+      if (reward) showPopup('boss','🏆',`Project complete: ${p.title}`,`+${reward} crystals`);
+    } else if (!complete && p.rewardPaid) {
+      p.rewardPaid = false; delta -= reward;
+    }
+    pid = p.parentId;
+  }
+  return delta;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -221,6 +265,11 @@ function getGhostOccurrences(rangeStartMs, rangeEndMs) {
       const curDk  = dateKey(cur.getTime());
 
       if (g.recurrence.days.includes(isoDay) && curDk !== masterDk) {
+        // Skip dates that have been split into individual exceptions
+        if (Array.isArray(g.recurrence.exceptions) && g.recurrence.exceptions.includes(curDk)) {
+          cur.setDate(cur.getDate() + 1);
+          continue;
+        }
         // Build ghost timestamp: same HH:MM as master, but on cur's date
         const ghostTs = new Date(cur);
         ghostTs.setHours(masterDate.getHours(), masterDate.getMinutes(), 0, 0);
@@ -249,7 +298,7 @@ function showToast(msg, duration=3000) {
   if (!stack) return;
   const t = document.createElement('div');
   t.className = 'toast-card'; t.textContent = msg;
-  t.style.cssText = 'background:rgba(60,60,66,.85);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px 16px;color:#fff;font-size:13px;font-weight:500;box-shadow:0 12px 28px -8px rgba(0,0,0,.6);opacity:0;transform:translateX(20px);transition:opacity .3s,transform .3s;pointer-events:auto;';
+  t.style.cssText = 'background:rgba(44,44,46,.96);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px 16px;color:#fff;font-size:13px;font-weight:500;box-shadow:0 12px 28px -8px rgba(0,0,0,.6);opacity:0;transform:translateX(20px);transition:opacity .3s,transform .3s;pointer-events:auto;';
   stack.appendChild(t);
   requestAnimationFrame(()=>{ t.style.opacity='1'; t.style.transform='translateX(0)'; });
   setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(20px)'; setTimeout(() => t.remove(), 400); }, duration);
@@ -263,7 +312,7 @@ function flushPopup() {
   const stack = document.getElementById('toast-stack');
   if (!stack) { setTimeout(flushPopup,3600); return; }
   const card = document.createElement('div');
-  card.style.cssText = 'display:flex;align-items:center;gap:12px;background:rgba(60,60,66,.9);backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);border:1px solid rgba(255,59,48,.3);border-radius:16px;padding:12px 16px;color:#fff;box-shadow:0 0 0 1px rgba(255,59,48,.15),0 16px 34px -10px rgba(255,59,48,.35);opacity:0;transform:translateX(20px) scale(.96);transition:opacity .3s,transform .3s;pointer-events:auto;';
+  card.style.cssText = 'display:flex;align-items:center;gap:12px;background:rgba(44,44,46,.97);border:1px solid rgba(255,59,48,.3);border-radius:16px;padding:12px 16px;color:#fff;box-shadow:0 0 0 1px rgba(255,59,48,.15),0 16px 34px -10px rgba(255,59,48,.35);opacity:0;transform:translateX(20px) scale(.96);transition:opacity .3s,transform .3s;pointer-events:auto;';
   card.innerHTML = `<div style="font-size:22px;flex:none;">${icon}</div><div><div style="font-size:13px;font-weight:700;">${esc(title)}</div><div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:1px;">${esc(sub)}</div></div>`;
   stack.appendChild(card);
   requestAnimationFrame(()=>{ card.style.opacity='1'; card.style.transform='translateX(0) scale(1)'; });
@@ -274,7 +323,7 @@ function flushPopup() {
 // openModal() call bumps that modal's inline z-index above all others and
 // closes any *other* currently-open modal first, so at most one modal is
 // ever interactive at a time and it is always on top.
-let _modalZCounter = 1000;
+let _modalZCounter = 10000;
 window.openModal = function(id) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -310,9 +359,10 @@ const StateManager = (() => {
     sleepSettings:{ bedtime:'23:00', waketime:'07:00', eveningPrepMins:30, eveningGratitudeMins:15, morningWaterDelay:5, morningBrushDelay:10, softAlarmEnabled:true, sleepLog:{} },
     routines:[], profileName:'You',
     tgToken:'', tgChatId:'', webhookUrl:'', currentView:'tasks', taskFilter:'today', taskTagFilter:null, taskCatFilter:null,
-    searchQuery:'', sortMode:'date', calView:'week', timerMode:'countdown',
+    searchQuery:'', sortMode:'date', calView:'day', timerMode:'countdown',
     activeTaskId:null, editingTaskId:null, editingRoutineId:null, detailTaskId:null,
     storeFilter:'all', storeDraft:{}, expandedMacros:{},
+    dimRecurring: false,
   };
   const listeners = [];
 
@@ -345,7 +395,7 @@ const StateManager = (() => {
         if (gg.isEvent === undefined) gg.isEvent = false;
         if (!gg.scheduledAt)  gg.scheduledAt=null;
         if (!gg.duration_min) gg.duration_min = Math.round((gg.duration||DEFAULT_TIMER_MIN*60)/60);
-        if (!gg.notes)        gg.notes='';;
+        if (!gg.notes)        gg.notes='';
         if (!gg.subtasks)     gg.subtasks=[];
         if (!gg.tags)         gg.tags=[];
         if (!gg.macroId)      gg.macroId=null;
@@ -366,16 +416,31 @@ const StateManager = (() => {
       }
 
       const draft = {}; STORE_ITEMS.forEach(i => draft[i.id]=1);
+      const dimRecurring = localStorage.getItem('nova-dim-recurring') === '1';
+      const activeTaskId = localStorage.getItem('nova-active-task') || null;
+      // A2: on first run with new sync system, let server win so all devices start in sync
+      if (!localStorage.getItem('nova-sync-v2')) {
+        localStorage.setItem('nova-updatedAt', '0');
+        localStorage.setItem('nova-sync-v2', '1');
+      }
       state = { ...state, goals:rawForMigration.goals, history:h, purchases:p, gems, streak, tags,
         pomoConfig:pomo, sleepSettings:sleep, routines, profileName,
-        tgToken, tgChatId, webhookUrl, storeDraft:draft };
-    } catch(e) { console.error('[StateManager load]', e); }
+        tgToken, tgChatId, webhookUrl, storeDraft:draft, dimRecurring, activeTaskId };
+    } catch(e) {
+      console.error('[StateManager load]', e);
+      // Guarantee critical arrays are always arrays even if parse failed
+      if (!Array.isArray(state.goals))   state.goals   = [];
+      if (!Array.isArray(state.history)) state.history = [];
+      if (!Array.isArray(state.tags))    state.tags    = [];
+    }
   }
 
   function save() {
     try {
       localStorage.setItem('nova-goals',    JSON.stringify(state.goals));
-      localStorage.setItem('nova-history',  JSON.stringify(state.history));
+      // Cap history at 500 entries — prevents localStorage bloat and slow mobile renders
+      const historyToSave = state.history.length > 500 ? state.history.slice(0, 500) : state.history;
+      localStorage.setItem('nova-history',  JSON.stringify(historyToSave));
       localStorage.setItem('nova-purchases',JSON.stringify(state.purchases));
       localStorage.setItem('nova-gems',     String(state.gems));
       localStorage.setItem('nova-streak',   JSON.stringify(state.streak));
@@ -389,17 +454,68 @@ const StateManager = (() => {
       localStorage.setItem('nova-tg-chat',  state.tgChatId||'');
       localStorage.setItem('nova-webhook',  state.webhookUrl||'');
       localStorage.setItem('nova-updatedAt', String(Date.now()));
+      localStorage.setItem('nova-dim-recurring', state.dimRecurring ? '1' : '0');
     } catch(e) { console.error('[StateManager save]', e); }
+  }
+
+  // ── Centralized Undo/Redo (in-memory only, not persisted) ──
+  const _undoStack = [], _redoStack = [];
+  const MAX_SNAP = 50;
+  let _restoring = false;
+  function _snap() {
+    return JSON.parse(JSON.stringify({ goals: state.goals, history: state.history, gems: state.gems, streak: state.streak }));
+  }
+  function _applySnap(s) {
+    _restoring = true;
+    Object.assign(state, s);
+    save();
+    _restoring = false;
+    try { SyncManager.scheduleSync(); } catch(_) {}
+    try { TimerController.scheduleReminders(); } catch(_) {}
+    try { refreshEverything(); } catch(_) {}
+    if (typeof _updateUndoRedoBtns === 'function') _updateUndoRedoBtns();
   }
 
   return {
     get: (key) => key===undefined ? {...state} : state[key],
-    set: (key,val) => { state[key]=val; save(); listeners.forEach(fn=>fn(key,val)); },
+    set: (key,val) => {
+      state[key]=val;
+      // A2: don't bump updatedAt / re-save 12 keys for view-state-only changes
+      const UI_ONLY = new Set(['currentView','taskFilter','taskTagFilter','taskCatFilter','taskUrgentOnly','searchQuery','sortMode','calView','timerMode','editingTaskId','editingRoutineId','detailTaskId','storeFilter','storeDraft','expandedMacros','cart']);
+      if (key==='activeTaskId') localStorage.setItem('nova-active-task', val||'');
+      else if (!UI_ONLY.has(key)) save();
+      listeners.forEach(fn=>fn(key,val));
+    },
     patch: (obj) => { Object.assign(state,obj); save(); listeners.forEach(fn=>fn()); },
     subscribe: (fn) => { listeners.push(fn); return ()=>{ const i=listeners.indexOf(fn); if(i>-1) listeners.splice(i,1); }; },
     load, save,
+    // Undo/redo API
+    pushUndoSnapshot() {
+      if (_restoring) return;
+      _undoStack.push(_snap());
+      if (_undoStack.length > MAX_SNAP) _undoStack.shift();
+      _redoStack.length = 0;
+      if (typeof _updateUndoRedoBtns === 'function') _updateUndoRedoBtns();
+    },
+    undo() {
+      const s = _undoStack.pop();
+      if (!s) return false;
+      _redoStack.push(_snap());
+      _applySnap(s);
+      return true;
+    },
+    redo() {
+      const s = _redoStack.pop();
+      if (!s) return false;
+      _undoStack.push(_snap());
+      _applySnap(s);
+      return true;
+    },
+    canUndo() { return _undoStack.length > 0; },
+    canRedo() { return _redoStack.length > 0; },
   };
 })();
+
 
 /* ═══════════════════════════════════════════════════════════
    SYNC MANAGER (Vercel KV 2-Way)
@@ -408,14 +524,15 @@ const SyncManager = (() => {
   const KV = '/api/sync';
   let kvTimer=null;
 
+  function getSyncKey() { return localStorage.getItem('nova-sync-key') || ''; }
+
   function getUid() {
     const host = window.location.hostname;
-    if (host === 'cernavation.vercel.app' || host === 'localhost') {
-      localStorage.setItem('nova-uid', 'master_admin_id');
+    if ((host === 'cernavation.vercel.app' || host === 'localhost') && getSyncKey()) {
       return 'master_admin_id';
     }
     let uid = localStorage.getItem('nova-uid');
-    if (!uid) { uid = 'guest_' + Date.now().toString(36) + rnd(); localStorage.setItem('nova-uid', uid); }
+    if (!uid || uid === 'master_admin_id') { uid = 'guest_' + Date.now().toString(36) + rnd(); localStorage.setItem('nova-uid', uid); }
     return uid;
   }
   function setBadge(cls,text) {
@@ -428,16 +545,19 @@ const SyncManager = (() => {
       const s = StateManager.get();
       const localUpdatedAt = parseInt(localStorage.getItem('nova-updatedAt') || '0') || Date.now();
       const res = await fetch(KV, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-nova-key': getSyncKey() },
         body: JSON.stringify({
           userId: getUid(),
           updatedAt: localUpdatedAt,
           goals: s.goals,
           gems: s.gems,
           streak: s.streak,
-          history: s.history,
-          tgToken: s.tgToken,
-          tgChatId: s.tgChatId,
+          history: s.history.length > 500 ? s.history.slice(0, 500) : s.history,
+          purchases: s.purchases,
+          tags: s.tags,
+          routines: s.routines,
+          sleepSettings: s.sleepSettings,
         }),
       });
       if (res.ok) {
@@ -466,29 +586,47 @@ const SyncManager = (() => {
         if (g.recurrence === undefined) g.recurrence = null;
       });
     }
-    StateManager.patch({
+    const patch = {
       goals:      Array.isArray(data.goals)   ? data.goals   : s.goals,
       history:    Array.isArray(data.history) ? data.history : s.history,
       gems:       typeof data.gems   === 'number' ? data.gems   : s.gems,
       streak:     data.streak ?? s.streak,
-    });
+    };
+    if (Array.isArray(data.purchases))   patch.purchases   = data.purchases;
+    if (Array.isArray(data.tags))        patch.tags        = data.tags;
+    if (Array.isArray(data.routines))    patch.routines    = data.routines;
+    if (data.sleepSettings && typeof data.sleepSettings === 'object') patch.sleepSettings = data.sleepSettings;
+    // Single deferred render — StateManager.patch() notifies listeners synchronously;
+    // refreshEverything() is the authoritative full repaint, deferred so DOM isn't
+    // hammered twice in the same frame.
+    StateManager.patch(patch);
     if (data.updatedAt) localStorage.setItem('nova-updatedAt', String(data.updatedAt));
-    refreshEverything();
+    setTimeout(() => {
+      try { TimerController.scheduleReminders(); } catch(_) {}
+      try { refreshEverything(); } catch(_) {}
+    }, 0);
   }
 
-  async function loadFromCloud() {
+  async function loadFromCloud(opts = {}) {
     try {
-      const res = await fetch(`${KV}?userId=${getUid()}`);
+      const res = await fetch(`${KV}?userId=${getUid()}`, { headers: { 'x-nova-key': getSyncKey() } });
       if (!res.ok) return;
       const data = await res.json();
       if (!data || !data.goals) return;
+      // Skip if server data is not newer than local
+      const localTs = parseInt(localStorage.getItem('nova-updatedAt') || '0') || 0;
+      if (data.updatedAt && data.updatedAt <= localTs) {
+        if (data.updatedAt < localTs) { clearTimeout(kvTimer); kvTimer = setTimeout(doSync, 300); }
+        return;
+      }
+      if (opts.silent && document.querySelector('.modal:not(.hidden)')) return;
       _applyServerData(data);
-      showToast('☁️ Cloud data loaded');
+      if (!opts.silent) showToast('☁️ Cloud data loaded');
     } catch (e) { console.warn('[KV load]', e); }
   }
   return {
     scheduleSync:()=>{ clearTimeout(kvTimer); kvTimer=setTimeout(doSync,1500); },
-    loadFromCloud, getUid,
+    loadFromCloud, getUid, getSyncKey,
   };
 })();
 
@@ -507,6 +645,13 @@ function syncProfileNameEverywhere() {
   if (avatarEl) avatarEl.textContent = initials(name);
   const nameInp = document.getElementById('settings-profile-name');
   if (nameInp && document.activeElement !== nameInp) nameInp.value = name;
+}
+
+// Called by StateManager after every undo/redo snapshot push to sync button disabled state
+function _updateUndoRedoBtns() {
+  const u = document.getElementById('btn-undo'), r = document.getElementById('btn-redo');
+  if (u) u.disabled = !StateManager.canUndo();
+  if (r) r.disabled = !StateManager.canRedo();
 }
 
 function refreshEverything() {
@@ -754,9 +899,10 @@ function renderCategoryFilters() {
   const goals = StateManager.get('goals');
   const activeCat = StateManager.get('taskCatFilter');
 
+  const catKey = g => g.cat === 'creative' ? 'life' : g.cat;
   catWrap.innerHTML = CAT_ORDER.map(key=>{
     const c = CATS[key];
-    const count = goals.filter(g=>!g.done && g.cat===key).length;
+    const count = goals.filter(g=>!g.done && catKey(g)===key).length;
     const active = activeCat===key;
     return `<button class="w-full glass-soft glass-hover rounded-xl px-4 py-2.5 text-left text-sm flex items-center gap-3 justify-between" data-action="filter-cat" data-cat="${key}" style="${active?`border-color:${c.color}88;color:#fff;`:''}">
       <span class="flex items-center gap-3"><span class="w-2.5 h-2.5 rounded-full" style="background:${c.color}"></span>${c.label}</span>
@@ -841,7 +987,7 @@ const TaskController = {
     document.getElementById('task-title-input')?.addEventListener('input', e=>{
       const hint=document.getElementById('nlp-hint');
       if(!hint) return;
-      if(e.target.value.length>5){ const p=NLP.parse(e.target.value); if(p.scheduledAt){hint.textContent=`📅 ${fmtDateTime(p.scheduledAt)}`; hint.classList.remove('hidden');}else hint.classList.add('hidden'); }
+      if(e.target.value.length>5){ const p=NLP.parse(e.target.value, {dryRun:true}); if(p.scheduledAt){hint.textContent=`📅 ${fmtDateTime(p.scheduledAt)}`; hint.classList.remove('hidden');}else hint.classList.add('hidden'); }
       else hint.classList.add('hidden');
     });
     document.querySelectorAll('#priority-ctrl .seg-btn').forEach(btn=>{
@@ -901,16 +1047,16 @@ const TaskController = {
       return true;
     });
     if (taskTagFilter) list = list.filter(g=>g.tags?.includes(taskTagFilter));
-    if (catFilter) list = list.filter(g=>g.cat===catFilter);
+    if (catFilter) list = list.filter(g=>g.cat===catFilter || (catFilter==='life' && g.cat==='creative'));
     if (urgentOnly) list = list.filter(g=>isUrgent(g));
     if (searchQuery) { const q=searchQuery.toLowerCase(); list=list.filter(g=>g.title.toLowerCase().includes(q)||g.notes?.toLowerCase().includes(q)); }
 
     list.sort((a,b) => {
-      if (sortMode==='priority') { const p={high:0,mid:1,low:2}; return (p[a.priority]||1)-(p[b.priority]||1); }
+      if (sortMode==='priority') { const p={high:0,mid:1,low:2}; return (p[a.priority]??1)-(p[b.priority]??1); }
       if (sortMode==='cat') return (a.cat||'').localeCompare(b.cat||'');
       const aT=a.scheduledAt||Infinity, bT=b.scheduledAt||Infinity;
       if(aT!==bT) return aT-bT;
-      const p={high:0,mid:1,low:2}; return (p[a.priority]||1)-(p[b.priority]||1);
+      const p={high:0,mid:1,low:2}; return (p[a.priority]??1)-(p[b.priority]??1);
     });
 
     const sub = document.getElementById('tasks-view-subtitle');
@@ -936,7 +1082,7 @@ const TaskController = {
     list.sort((a,b) => {
       const aT=a.scheduledAt||Infinity, bT=b.scheduledAt||Infinity;
       if(aT!==bT) return aT-bT;
-      const p={high:0,mid:1,low:2}; return (p[a.priority]||1)-(p[b.priority]||1);
+      const p={high:0,mid:1,low:2}; return (p[a.priority]??1)-(p[b.priority]??1);
     });
     const sub = document.getElementById('tasks-view-subtitle');
     if (sub) {
@@ -1003,6 +1149,7 @@ const TaskController = {
   },
 
   complete(id) {
+    StateManager.pushUndoSnapshot(); // snapshot BEFORE any mutation (goals are mutated in-place below)
     const st=StateManager.get();
     const g=st.goals.find(x=>x.id===id);
     if(!g) return;
@@ -1016,15 +1163,18 @@ const TaskController = {
 
     if (wasDone) {
       // Задачу СНЯЛИ с выполнения — реверсим экономику.
-      const earnsGems = catEarnsGems(g.cat);
-      const gemsToRevert = earnsGems ? 1 : 0; // должно совпадать с наградой ниже
-      const gems = Math.max(0, st.gems - gemsToRevert);
-      StateManager.patch({ goals: st.goals, gems });
+      const hIdx = st.history.findIndex(h => h.goalId === g.id);
+      const revert = hIdx > -1 ? (st.history[hIdx].gems || 0) : (catEarnsGems(g.cat) ? 1 : 0);
+      const history = hIdx > -1 ? st.history.filter((_, i) => i !== hIdx) : st.history;
+      // A12: revoke project bonus if project is no longer fully complete
+      const bonus = settleProjectRewards(g);
+      const gems = Math.max(0, st.gems - revert + bonus);
+      StateManager.patch({ goals: st.goals, history, gems });
       SyncManager.scheduleSync();
       updateCrystalChips();
 
-      if (gemsToRevert > 0) {
-        showPopup('gem-revert','💎',`-${gemsToRevert} Crystal${gemsToRevert>1?'s':''} (${gems} total)`,`"${g.title.substring(0,28)}" — un-completed`);
+      if (revert > 0) {
+        showPopup('gem-revert','💎',`-${revert} Crystal${revert>1?'s':''} (${gems} total)`,`"${g.title.substring(0,28)}" — un-completed`);
       } else {
         showPopup('undo','↩️','Task un-completed',`"${g.title.substring(0,28)}"`);
       }
@@ -1048,7 +1198,9 @@ const TaskController = {
     const gemsEarned = earnsGems ? 1 : 0; // РЕБАЛАНС: 1 кристалл за задачу (было 3)
 
     const history=[{ id:'h_'+Date.now().toString(36)+rnd(), goalId:g.id, title:g.title, cat:g.cat, color:catColor(g), completedAt:Date.now(), elapsed_ms:Math.max(0,Math.round(elapsedSec*1000)), gems:gemsEarned, tags:[...(g.tags||[])] }, ...st.history];
-    const gems=st.gems+gemsEarned;
+    // A12: settle any parent-project reward bonuses (pays gemsReward when all leaves done)
+    const bonus = settleProjectRewards(g);
+    const gems=st.gems+gemsEarned+bonus;
 
     let streak={...st.streak}; const today=dateKey();
     if(streak.lastDate===today) { streak.doneToday=true; }
@@ -1117,6 +1269,18 @@ const TaskController = {
     if (budgetInp) budgetInp.value = g?.cost || '';
     if (notesInp) notesInp.value = g?.notes || '';
     if (locationInp) locationInp.value = g?.location || '';
+
+    // Focus duration (min) — filled for tasks; overridden by time-to if event provides range
+    const durationInp = document.getElementById('task-duration-input');
+    if (durationInp) durationInp.value = g?.duration_min || DEFAULT_TIMER_MIN;
+
+    // Presets from click-to-create (e.g. clicking on calendar grid slot)
+    if (!id && opts.presetType) this._selectedType = opts.presetType;
+    if (!id && opts.presetScheduledAt) {
+      const pd = new Date(opts.presetScheduledAt);
+      if (dateInp) dateInp.value = `${pd.getFullYear()}-${pad(pd.getMonth()+1)}-${pad(pd.getDate())}`;
+      if (fromInp) fromInp.value = `${pad(pd.getHours())}:${pad(pd.getMinutes())}`;
+    }
 
     // Priority buttons
     document.querySelectorAll('#priority-ctrl .seg-btn').forEach(btn=>{
@@ -1224,7 +1388,7 @@ const TaskController = {
       if (this._selectedRecurrence) {
         this._selectedRecurrence = null;
       } else {
-        this._selectedRecurrence = { days:[1,2,3,4,5], until:null };
+      this._selectedRecurrence = { days:[1,2,3,4,5], until:null, exceptions:[] };
       }
       this._renderRecurrenceUI();
     };
@@ -1252,7 +1416,7 @@ const TaskController = {
 
     if (untilInp) {
       untilInp.value = this._selectedRecurrence?.until
-        ? new Date(this._selectedRecurrence.until).toISOString().slice(0,10)
+        ? parseDateSafe(this._selectedRecurrence.until).toISOString().slice(0,10)
         : '';
       untilInp.onchange = (e) => {
         if (!this._selectedRecurrence) return;
@@ -1316,7 +1480,10 @@ const TaskController = {
       const [th, tm]     = startVal.split(':').map(Number);
       scheduledAt = new Date(dy, dm - 1, dd, th, tm, 0, 0).getTime();
     }
-    let durMin=DEFAULT_TIMER_MIN;
+    // Duration: read from explicit input first, then override with event time range if provided
+    const durationInpEl = document.getElementById('task-duration-input');
+    const durationInpVal = parseInt(durationInpEl?.value || '', 10);
+    let durMin = Number.isFinite(durationInpVal) && durationInpVal > 0 ? durationInpVal : DEFAULT_TIMER_MIN;
     if(startVal && endVal){
       const [sh, sm] = startVal.split(':').map(Number);
       const [eh, em] = endVal.split(':').map(Number);
@@ -1327,7 +1494,7 @@ const TaskController = {
     const notesInp = document.getElementById('task-notes-input');
     const budgetInp = document.getElementById('task-budget-input');
     const recurrence = (this._selectedType === 'event' && this._selectedRecurrence && this._selectedRecurrence.days?.length)
-      ? { days: [...this._selectedRecurrence.days], until: this._selectedRecurrence.until || null }
+      ? { days: [...this._selectedRecurrence.days], until: this._selectedRecurrence.until || null, exceptions: this._selectedRecurrence.exceptions || [] }
       : null;
     const data={
       title, notes: notesInp?.value.trim()||'',
@@ -1440,8 +1607,9 @@ function updateCrystalChips() {
    CALENDAR CONTROLLER (with drag & drop rescheduling)
 ═══════════════════════════════════════════════════════════ */
 const CalendarController = {
-  _calDate: new Date(), _view: 'week', _nowTimer: null, _yearDate: new Date(),
+  _calDate: new Date(), _view: 'day', _nowTimer: null, _yearDate: new Date(),
   _dragGoalId: null,
+  _pendingGhost: null,   // 3.5 — ghost being edited in choice dialog
   // ── Layout constants ──────────────────────────────────────
   PX_PER_MIN: 1,   // 1440px total height = 24 h × 60 min
   SNAP_MIN:   10,  // pointer drag/resize snaps to 10-min grid
@@ -1460,13 +1628,34 @@ const CalendarController = {
     document.getElementById('btn-undo')?.addEventListener('click', ()=>this.undo());
     document.getElementById('btn-redo')?.addEventListener('click', ()=>this.redo());
     document.addEventListener('keydown', (e)=>{
+      // Don't capture in text inputs
+      const tag = document.activeElement?.tagName;
+      if (tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||document.activeElement?.isContentEditable) return;
       if ((e.metaKey||e.ctrlKey) && e.key==='z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
       if ((e.metaKey||e.ctrlKey) && (e.key==='y' || (e.key==='z'&&e.shiftKey))) { e.preventDefault(); this.redo(); }
     });
     document.querySelectorAll('#calTabs .subtab').forEach(t => {
       t.addEventListener('click', () => switchSub('calTabs','cal', t.dataset.cal));
     });
+    // 3.5 — Ghost edit choice dialog buttons
+    document.getElementById('btn-ghost-edit-this')?.addEventListener('click', () => {
+      closeModal('ghostEditChoiceModal');
+      if (!this._pendingGhost) return;
+      this._splitGhostIntoException(this._pendingGhost, { openEditor: true });
+      this._pendingGhost = null;
+    });
+    document.getElementById('btn-ghost-edit-following')?.addEventListener('click', () => {
+      closeModal('ghostEditChoiceModal');
+      if (!this._pendingGhost) return;
+      // Edit all following — just open the master event editor
+      TaskController.openModal(this._pendingGhost.ghostOf);
+      this._pendingGhost = null;
+    });
     this._updateUndoRedoButtons();
+    // 1.4 — Start in Day on mobile, Week on desktop
+    const startView = window.innerWidth < 768 ? 'day' : 'week';
+    this._view = startView;
+    switchSub('calTabs', 'cal', startView);
   },
 
   setView(v) {
@@ -1500,10 +1689,12 @@ const CalendarController = {
   },
 
   render() {
-    if (this._view==='day')   this._renderDay();
-    else if (this._view==='week')  this._renderWeek();
-    else if (this._view==='month') this._renderMonth();
-    else if (this._view==='year')  this._renderYear();
+    try {
+      if (this._view==='day')   this._renderDay();
+      else if (this._view==='week')  this._renderWeek();
+      else if (this._view==='month') this._renderMonth();
+      else if (this._view==='year')  this._renderYear();
+    } catch(e) { console.error('[CalendarController.render]', e); showToast('⚠️ Ошибка отображения'); }
   },
 
   _navigateToDay(dk) {
@@ -1528,7 +1719,8 @@ const CalendarController = {
     const g = goals.find(x=>x.id===goalId);
     if (!g || !g.scheduledAt) return;
     const old = new Date(g.scheduledAt);
-    const next = new Date(targetDate);
+    const next = parseDateSafe(targetDate);
+    if (!next) return; // safety guard for invalid date strings
     next.setHours(old.getHours(), old.getMinutes(), 0, 0);
     const updated = goals.map(x => x.id===goalId ? { ...x, scheduledAt: next.getTime() } : x);
     StateManager.patch({ goals: updated });
@@ -1566,11 +1758,7 @@ const CalendarController = {
     if (newDurMin !== null) patch.duration_min = Math.max(this.SNAP_MIN, newDurMin);
     if (!Object.keys(patch).length) return;
     if (_pushToUndo) {
-      this._pushUndo({
-        goalId,
-        before: { scheduledAt: g.scheduledAt, duration_min: g.duration_min },
-        after:  { scheduledAt: newTs !== null ? newTs : g.scheduledAt, duration_min: newDurMin !== null ? Math.max(this.SNAP_MIN, newDurMin) : g.duration_min },
-      });
+      StateManager.pushUndoSnapshot(); // centralized snapshot — covers goals+history+gems+streak
     }
     const updated = goals.map(x => x.id===goalId ? { ...x, ...patch } : x);
     StateManager.patch({ goals: updated });
@@ -1580,15 +1768,9 @@ const CalendarController = {
     if (StateManager.get('currentView')==='tasks') TaskController.render();
   },
 
-  // ── Undo/Redo ─────────────────────────────────────────────
+  // ── Undo/Redo — delegates to centralized StateManager ─────
 
-  _pushUndo(action) {
-    this._undoStack.push(action);
-    if (this._undoStack.length > this.MAX_UNDO) this._undoStack.shift();
-    this._redoStack = [];
-    this._updateUndoRedoButtons();
-  },
-
+  _pushUndo() { /* no-op: superseded by StateManager.pushUndoSnapshot() */ },
   _applyGoalPatch(goalId, patch) {
     const goals = StateManager.get('goals');
     const updated = goals.map(g => g.id===goalId ? {...g, ...patch} : g);
@@ -1600,34 +1782,22 @@ const CalendarController = {
   },
 
   undo() {
-    const action = this._undoStack.pop();
-    if (!action) return;
-    this._applyGoalPatch(action.goalId, action.before);
-    this._redoStack.push(action);
-    this._updateUndoRedoButtons();
-    showToast('↩ Undone', 1200);
+    if (StateManager.undo()) showToast('↩ Undone', 1200);
   },
 
   redo() {
-    const action = this._redoStack.pop();
-    if (!action) return;
-    this._applyGoalPatch(action.goalId, action.after);
-    this._undoStack.push(action);
-    this._updateUndoRedoButtons();
-    showToast('↪ Redone', 1200);
+    if (StateManager.redo()) showToast('↪ Redone', 1200);
   },
 
   _updateUndoRedoButtons() {
-    const u = document.getElementById('btn-undo'), r = document.getElementById('btn-redo');
-    if (u) u.disabled = !this._undoStack.length;
-    if (r) r.disabled = !this._redoStack.length;
+    _updateUndoRedoBtns();
   },
 
   // ── Pointer-based drag & resize ───────────────────────────
 
   // Attach pointer drag to a card. gridEl must have position:relative and
   // know its date (via data-date-ms attribute set by caller).
-  _attachPointerDrag(cardEl, goalId, gridEl) {
+  _attachPointerDrag(cardEl, goalId, gridEl, handleEl=null, ghostObj=null) {
     // Touch-action and user-select are set inside beginDrag for touch,
     // immediately for mouse. We leave them unset here so normal scrolling
     // is not blocked before a long-press is confirmed.
@@ -1639,6 +1809,9 @@ const CalendarController = {
       if (e.button && e.button !== 0) return;
 
       const isTouch = e.pointerType === 'touch';
+      // If pointerdown is on the drag-handle element, start drag immediately
+      const isHandle = handleEl && (e.target === handleEl || handleEl.contains(e.target));
+      const LONG_PRESS_MS = 400;  // БАГ 3.4: снижено с 1000ms → 400ms; мышь теперь тоже ждёт задержки
       const PX = this.PX_PER_MIN;
       const SNAP = this.SNAP_MIN;
       const MOVE_TOLERANCE = 8; // px allowed before we decide it's a scroll
@@ -1649,7 +1822,7 @@ const CalendarController = {
       const startX   = e.clientX;
       const startY   = e.clientY;
 
-      const g = StateManager.get('goals').find(x=>x.id===goalId);
+      const g = ghostObj || StateManager.get('goals').find(x=>x.id===goalId);
       if (!g || !g.scheduledAt) return;
 
       // For week view, remember which day columns exist so we can switch horizontally
@@ -1698,7 +1871,7 @@ const CalendarController = {
         document.removeEventListener('pointerup',   earlyCancel);
       };
 
-      // ── early-move / early-cancel (touch only, before drag is confirmed) ─
+      // ── early-move / early-cancel (before drag is confirmed) ─
       const earlyMoveCheck = (moveE) => {
         if (dragStarted) return;
         const dx = Math.abs(moveE.clientX - startX);
@@ -1742,7 +1915,8 @@ const CalendarController = {
         cardEl.style.zIndex  = '';
 
         if (!moved) {
-          TaskController.openDetail(goalId);
+          if (ghostObj) this._openGhostEditChoice(ghostObj);
+          else TaskController.openDetail(goalId);
           return;
         }
 
@@ -1764,24 +1938,29 @@ const CalendarController = {
         const newDate = new Date(targetDateMs);
         newDate.setHours(h, m, 0, 0);
 
-        this._rescheduleGoalToTimestamp(goalId, newDate.getTime());
-        showToast(`📅 Moved to ${pad(h)}:${pad(m)}`, 1200);
+        if (ghostObj) {
+          this._splitGhostIntoException(ghostObj, { newTs: newDate.getTime(), openEditor: false });
+        } else {
+          this._rescheduleGoalToTimestamp(goalId, newDate.getTime());
+          showToast(`📅 Moved to ${pad(h)}:${pad(m)}`, 1200);
+        }
       };
 
-      // ── dispatch: touch → long-press, mouse → immediate ──────
-      if (isTouch) {
+      // ── dispatch: handle element → immediate, otherwise long-press for both touch and mouse ──
+      if (isHandle) {
+        // Drag handle: start immediately without waiting
+        e.preventDefault();
+        e.stopPropagation();
+        beginDrag();
+      } else {
+        // Long-press for both touch and mouse (400ms) — short tap always opens detail
         document.addEventListener('pointermove', earlyMoveCheck);
         document.addEventListener('pointerup',   earlyCancel);
         longPressTimer = setTimeout(() => {
           cancelPending();
-          e.preventDefault(); // block any pending click
+          e.preventDefault();
           beginDrag();
-        }, 1000);
-      } else {
-        // Mouse: start immediately, but still prevent default to avoid text selection
-        e.preventDefault();
-        e.stopPropagation();
-        beginDrag();
+        }, LONG_PRESS_MS);
       }
     });
   },
@@ -1818,14 +1997,10 @@ const CalendarController = {
         handle.removeEventListener('pointermove', onMove);
         handle.removeEventListener('pointerup',   onUp);
         const newDurMin = Math.max(SNAP, Math.round(parseFloat(cardEl.style.height) / PX / SNAP) * SNAP);
-        // Push undo before committing
+        // Snapshot before committing resize (reschedule called with false to avoid double snapshot)
         const gNow = StateManager.get('goals').find(x=>x.id===goalId);
         if (gNow && newDurMin !== beforeDur) {
-          this._pushUndo({
-            goalId,
-            before: { scheduledAt: gNow.scheduledAt, duration_min: beforeDur },
-            after:  { scheduledAt: gNow.scheduledAt, duration_min: newDurMin },
-          });
+          StateManager.pushUndoSnapshot();
         }
         this._rescheduleGoalToTimestamp(goalId, null, newDurMin, false);
         // null ts = keep scheduledAt, only change duration
@@ -1837,229 +2012,368 @@ const CalendarController = {
 
   // ── Day grid (absolute) ───────────────────────────────────
 
-  _renderDay() {
-    if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
-    const c = document.getElementById('dayGrid'); if(!c) return;
-    this._updateHeaderTitle(this._calDate.toLocaleDateString('en-US',{weekday:'long',day:'numeric',month:'long'}));
-    const dk   = dateKey(this._calDate.getTime());
-    const PX   = this.PX_PER_MIN;
-    const TOTAL = 24 * 60 * PX;
-
-    // Container
-    c.style.cssText = `position:relative;height:${TOTAL}px;`;
-    c.dataset.dateMs = String(new Date(this._calDate).setHours(0,0,0,0));
-
-    // Hour guide lines
-    let html = '';
-    for (let h = 0; h < 24; h++) {
-      const top = h * 60 * PX;
-      html += `<div style="position:absolute;left:0;right:0;top:${top}px;display:flex;align-items:flex-start;pointer-events:none;">
-        <span style="font-size:11px;color:rgba(255,255,255,.3);width:44px;flex:none;padding-top:2px;font-variant-numeric:tabular-nums;">${pad(h)}:00</span>
-        <div style="flex:1;height:1px;background:rgba(255,255,255,.06);margin-top:8px;"></div>
-      </div>`;
-    }
-    c.innerHTML = html;
-
-    // Task cards (real + ghost recurrences)
-    const dayStart = new Date(this._calDate); dayStart.setHours(0,0,0,0);
-    const dayEnd   = new Date(this._calDate); dayEnd.setHours(23,59,59,999);
-    const realGoals = StateManager.get('goals').filter(g => !g.isProject && g.scheduledAt && dateKey(g.scheduledAt)===dk);
-    const ghosts    = getGhostOccurrences(dayStart.getTime(), dayEnd.getTime()).filter(g => dateKey(g.scheduledAt)===dk);
-    const goals = [...realGoals, ...ghosts];
-    goals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
-
-    goals.forEach(g => {
-      const d = new Date(g.scheduledAt);
-      const topMin  = d.getHours()*60 + d.getMinutes();
-      const durMin  = g.duration_min || DEFAULT_TIMER_MIN;
-      const topPx   = topMin * PX;
-      const heightPx= Math.max(this.MIN_H, durMin * PX);
-      const color   = catColor(g);
-      const cat     = catInfo(g);
-      const twoLine = heightPx >= 36;
-
-      const card = document.createElement('div');
-      card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
-      if (g.isGhost) {
-        card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
-          + `background:${color}11;border-left:3px dashed ${color};border-radius:8px;`
-          + `padding:4px 8px;cursor:pointer;overflow:hidden;box-sizing:border-box;opacity:0.55;`;
-      } else {
-        card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
-          + `background:${color}22;border-left:3px solid ${color};border-radius:8px;`
-          + `padding:4px 8px;cursor:grab;overflow:hidden;box-sizing:border-box;`
-          + (g.done ? 'opacity:.5;' : '');
-      }
-      card.innerHTML = `<p style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${g.isGhost?' 🔁':''}</p>`
-        + (twoLine ? `<span style="font-size:10px;color:rgba(255,255,255,.45);">${fmtTimeRange(g.scheduledAt, durMin)}</span><span class="tag-mini ${isUrgent(g)?'tag':'tag-grey'}" style="margin-left:6px;">${cat.label}</span>` : '')
-        + (!g.isGhost ? `<div class="cal-resize-handle" style="position:absolute;bottom:2px;right:4px;width:16px;height:6px;border-radius:3px;background:rgba(255,255,255,.25);cursor:s-resize;"></div>` : '');
-
-      c.appendChild(card);
-      if (g.isGhost) {
-        card.addEventListener('click', () => TaskController.openDetail(g.ghostOf));
-      } else {
-        this._attachPointerDrag(card, g.id, c);
-        this._attachResizeHandle(card.querySelector('.cal-resize-handle'), card, g.id);
-      }
-    });
+  // 2.1 — Ghost style helper: respects dimRecurring setting
+  _ghostStyle(color, radius='8px', pad='4px 8px') {
+    const dim = StateManager.get('dimRecurring');
+    return dim
+      ? `background:${color}11;border-left:3px dashed ${color};border-radius:${radius};padding:${pad};opacity:.55;cursor:pointer;overflow:hidden;box-sizing:border-box;`
+      : `background:${color}22;border-left:3px solid ${color};border-radius:${radius};padding:${pad};opacity:1;cursor:grab;overflow:hidden;box-sizing:border-box;`;
   },
 
-  // ── Week grid (absolute per-column) ──────────────────────
+  // 3.5 — Ghost edit choice dialog
+  _openGhostEditChoice(ghostObj) {
+    this._pendingGhost = ghostObj;
+    openModal('ghostEditChoiceModal');
+  },
 
-  _renderWeek() {
-    if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
-    const c = document.getElementById('weekGrid'); if(!c) return;
-    let start = new Date(this._calDate); start.setHours(0,0,0,0);
-    start.setDate(start.getDate() - ((start.getDay()+6)%7)); // Monday
-    const end = new Date(start.getTime()+6*86400000);
-    this._updateHeaderTitle(start.toLocaleDateString('en-US',{day:'numeric',month:'short'})+' – '+end.toLocaleDateString('en-US',{day:'numeric',month:'short'}));
-
-    const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    const todayKey = dateKey();
-    const realGoals = StateManager.get('goals').filter(g => !g.isProject && g.scheduledAt);
-    const weekEnd   = new Date(start.getTime() + 7*86400000 - 1);
-    const weekGhosts = getGhostOccurrences(start.getTime(), weekEnd.getTime());
-    const allGoals  = [...realGoals, ...weekGhosts];
-    const dayDates = [];
-    for (let i=0;i<7;i++) dayDates.push(new Date(start.getTime()+i*86400000));
-
-    const PX    = this.PX_PER_MIN;
-    const TOTAL = 24*60*PX;
-
-    // Header row
-    let head = `<div style="display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;margin-bottom:4px;position:sticky;top:0;background:rgba(44,44,46,.9);backdrop-filter:blur(8px);z-index:10;padding-bottom:4px;">
-      <div></div>`;
-    for (let i=0;i<7;i++){
-      const d  = dayDates[i];
-      const dk = dateKey(d.getTime());
-      head += `<div style="text-align:center;cursor:pointer;" data-day="${dk}"><p style="font-size:10px;color:rgba(255,255,255,.4);">${dayNames[i]}</p><p style="font-weight:600;${dk===todayKey?'color:#FF3B30;':''}">${d.getDate()}</p></div>`;
+  // 3.5/2.3 — Split a ghost occurrence into an independent clone + exception in master.
+  // opts.newTs     — override scheduledAt for the clone (used by drag & drop)
+  // opts.openEditor — open task editor for the clone after creation
+  _splitGhostIntoException(ghostObj, opts = {}) {
+    StateManager.pushUndoSnapshot(); // snapshot BEFORE mutation
+    const goals = StateManager.get('goals');
+    const master = goals.find(x => x.id === ghostObj.ghostOf);
+    if (!master) return;
+    const exDate = dateKey(ghostObj.scheduledAt);
+    const exceptions = [...new Set([...(master.recurrence?.exceptions || []), exDate])];
+    const updated = goals.map(g => g.id === master.id
+      ? { ...g, recurrence: { ...g.recurrence, exceptions } }
+      : g
+    );
+    // Create independent clone (strips ghost metadata, clears recurrence)
+    const { isGhost, ghostOf, ...rest } = ghostObj;
+    const clone = {
+      ...rest,
+      id: 'g_' + Date.now().toString(36) + rnd(),
+      recurrence: null,
+      isEvent: true,
+      scheduledAt: opts.newTs ?? ghostObj.scheduledAt,
+      done: false, elapsed: 0, startTime: null, paused: false,
+    };
+    StateManager.patch({ goals: [...updated, clone] });
+    SyncManager.scheduleSync();
+    TimerController.scheduleReminders();
+    this.render();
+    if (opts.openEditor) {
+      TaskController.openModal(clone.id);
+    } else {
+      showToast('📌 Moved as separate event');
     }
-    head += `</div>`;
+  },
 
-    // Body: time labels column + 7 absolute day columns
-    const bodyWrapper = document.createElement('div');
-    bodyWrapper.style.cssText = `display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;position:relative;height:${TOTAL}px;`;
+  _renderDay() {
+    try {
+      if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
+      const c = document.getElementById('dayGrid'); if(!c) return;
+      this._updateHeaderTitle(this._calDate.toLocaleDateString('en-US',{weekday:'long',day:'numeric',month:'long'}));
+      const dk   = dateKey(this._calDate.getTime());
+      const PX   = this.PX_PER_MIN;
+      const TOTAL = 24 * 60 * PX;
 
-    // Time labels
-    const labelCol = document.createElement('div');
-    labelCol.style.cssText = `position:relative;height:${TOTAL}px;`;
-    for (let h=0;h<24;h++){
-      const lbl = document.createElement('div');
-      lbl.style.cssText = `position:absolute;top:${h*60*PX}px;left:0;right:0;font-size:10px;color:rgba(255,255,255,.3);font-variant-numeric:tabular-nums;`;
-      lbl.textContent = pad(h)+':00';
-      labelCol.appendChild(lbl);
-    }
-    bodyWrapper.appendChild(labelCol);
+      // Container
+      c.style.cssText = `position:relative;height:${TOTAL}px;`;
+      c.dataset.dateMs = String(new Date(this._calDate).setHours(0,0,0,0));
 
-    // Day columns
-    for (let i=0;i<7;i++){
-      const d    = dayDates[i];
-      const dk   = dateKey(d.getTime());
-      const col  = document.createElement('div');
-      col.style.cssText = `position:relative;height:${TOTAL}px;border-left:1px solid rgba(255,255,255,.06);`;
-      col.dataset.day = dk;
-      col.dataset.colDateMs = String(d.getTime());
-
-      // Hour guide lines inside column
-      for (let h=0;h<24;h++){
-        const line = document.createElement('div');
-        line.style.cssText = `position:absolute;left:0;right:0;top:${h*60*PX}px;height:1px;background:rgba(255,255,255,.05);pointer-events:none;`;
-        col.appendChild(line);
+      // 3.2 — All-day tasks strip (isEvent:false items with today's date)
+      const dayAllDayStrip = document.getElementById('dayAllDayStrip');
+      if (dayAllDayStrip) {
+        const taskItems = StateManager.get('goals').filter(g => !g.isProject && !g.isEvent && g.scheduledAt && dateKey(g.scheduledAt)===dk);
+        dayAllDayStrip.innerHTML = taskItems.length
+          ? taskItems.map(g => {
+              const color = catColor(g);
+              return `<div data-task-id="${g.id}" data-allday="1" class="glass-soft glass-hover rounded-xl px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer" style="background:${color}22;border-left:3px solid ${color};${g.done?'opacity:.5;text-decoration:line-through;':''}">`
+                + `<span style="width:6px;height:6px;border-radius:50%;background:${color};flex:none;"></span>`
+                + `${esc(g.title)}</div>`;
+            }).join('')
+          : '';
+        dayAllDayStrip.querySelectorAll('[data-task-id]').forEach(el => {
+          el.addEventListener('click', e => { e.stopPropagation(); TaskController.openDetail(el.dataset.taskId); });
+        });
       }
 
-      // Cards for this day (real + ghosts)
-      const dayGoals = allGoals.filter(g=>dateKey(g.scheduledAt)===dk);
-      dayGoals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
-      dayGoals.forEach(g => {
-        const dt      = new Date(g.scheduledAt);
-        const topMin  = dt.getHours()*60 + dt.getMinutes();
+      // Hour guide lines
+      let html = '';
+      for (let h = 0; h < 24; h++) {
+        const top = h * 60 * PX;
+        html += `<div style="position:absolute;left:0;right:0;top:${top}px;display:flex;align-items:flex-start;pointer-events:none;">
+          <span style="font-size:11px;color:rgba(255,255,255,.3);width:44px;flex:none;padding-top:2px;font-variant-numeric:tabular-nums;">${pad(h)}:00</span>
+          <div style="flex:1;height:1px;background:rgba(255,255,255,.06);margin-top:8px;"></div>
+        </div>`;
+      }
+      c.innerHTML = html;
+
+      // 3.3 — Click-to-create on empty grid area
+      c.addEventListener('click', (e) => {
+        if (e.target !== c && e.target.closest('[data-task-id]')) return;
+        const rect = c.getBoundingClientRect();
+        const rawMin = (e.clientY - rect.top) / PX;
+        const snapped = Math.max(0, Math.min(23*60+50, Math.round(rawMin / this.SNAP_MIN) * this.SNAP_MIN));
+        const h = Math.floor(snapped / 60), m = snapped % 60;
+        const dayMs = parseInt(c.dataset.dateMs || this._calDate.getTime());
+        const presetTs = new Date(dayMs);
+        presetTs.setHours(h, m, 0, 0);
+        TaskController.openModal(null, { presetScheduledAt: presetTs.getTime(), presetType: 'event' });
+      });
+
+      // Task cards — only isEvent:true items + ghost recurrences go in the time grid
+      const dayStart = new Date(this._calDate); dayStart.setHours(0,0,0,0);
+      const dayEnd   = new Date(this._calDate); dayEnd.setHours(23,59,59,999);
+      const realEvents = StateManager.get('goals').filter(g => !g.isProject && g.isEvent && g.scheduledAt && dateKey(g.scheduledAt)===dk);
+      const ghosts    = getGhostOccurrences(dayStart.getTime(), dayEnd.getTime()).filter(g => dateKey(g.scheduledAt)===dk);
+      const goals = [...realEvents, ...ghosts];
+      goals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
+
+      goals.forEach(g => {
+        const d = new Date(g.scheduledAt);
+        const topMin  = d.getHours()*60 + d.getMinutes();
         const durMin  = g.duration_min || DEFAULT_TIMER_MIN;
         const topPx   = topMin * PX;
         const heightPx= Math.max(this.MIN_H, durMin * PX);
         const color   = catColor(g);
         const cat     = catInfo(g);
-        const twoLine = heightPx >= 32;
+        const twoLine = heightPx >= 36;
 
         const card = document.createElement('div');
         card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
         if (g.isGhost) {
-          card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
-            + `background:${color}11;border-left:3px dashed ${color};border-radius:6px;`
-            + `padding:3px 6px;cursor:pointer;overflow:hidden;box-sizing:border-box;opacity:0.55;`;
+          card.dataset.ghost = '1';
+          card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
+            + this._ghostStyle(color, '8px', '4px 8px');
         } else {
-          card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
-            + `background:${color}22;border-left:3px solid ${color};border-radius:6px;`
-            + `padding:3px 6px;cursor:grab;overflow:hidden;box-sizing:border-box;`
+          card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
+            + `background:${color}22;border-left:3px solid ${color};border-radius:8px;`
+            + `padding:4px 8px;cursor:grab;overflow:hidden;box-sizing:border-box;`
             + (g.done ? 'opacity:.5;' : '');
         }
-        card.innerHTML = `<p style="font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${g.isGhost?' 🔁':''}</p>`
-          + (twoLine ? `<span style="font-size:9px;color:rgba(255,255,255,.4);">${fmtTimeRange(g.scheduledAt, durMin)}</span>` : '')
-          + (!g.isGhost ? `<div class="cal-resize-handle" style="position:absolute;bottom:2px;right:3px;width:12px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);cursor:s-resize;"></div>` : '');
+        // Drag handle for both real events and ghosts
+        const dragHandleHtml = `<div class="cal-drag-handle" style="position:absolute;top:4px;right:20px;font-size:10px;opacity:0.4;cursor:grab;user-select:none;touch-action:none;">⠿</div>`;
+        card.innerHTML = `<p style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${g.isGhost?' 🔁':''}</p>`
+          + (twoLine ? `<span style="font-size:10px;color:rgba(255,255,255,.45);">${fmtTimeRange(g.scheduledAt, durMin)}</span><span class="tag-mini ${isUrgent(g)?'tag':'tag-grey'}" style="margin-left:6px;">${cat.label}</span>` : '')
+          + dragHandleHtml
+          + (!g.isGhost ? `<div class="cal-resize-handle" style="position:absolute;bottom:2px;right:4px;width:16px;height:6px;border-radius:3px;background:rgba(255,255,255,.25);cursor:s-resize;"></div>` : '');
 
-        col.appendChild(card);
+        c.appendChild(card);
+        const dragHandle = card.querySelector('.cal-drag-handle');
         if (g.isGhost) {
-          card.addEventListener('click', () => TaskController.openDetail(g.ghostOf));
+          // Ghost drag: creates exception+clone on drop; tap opens choice dialog
+          this._attachPointerDrag(card, g.ghostOf, c, dragHandle, g);
         } else {
-          this._attachPointerDrag(card, g.id, col);
+          this._attachPointerDrag(card, g.id, c, dragHandle);
           this._attachResizeHandle(card.querySelector('.cal-resize-handle'), card, g.id);
         }
       });
-
-      bodyWrapper.appendChild(col);
-    }
-
-    c.innerHTML = head;
-    c.appendChild(bodyWrapper);
-
-    // Day header click → navigate
-    c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',()=>this._navigateToDay(el.dataset.day)));
+    } catch(e) { console.error('[_renderDay]', e); }
   },
+  _renderWeek() {
+    try {
+      if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
+      const c = document.getElementById('weekGrid'); if(!c) return;
+      let start = new Date(this._calDate); start.setHours(0,0,0,0);
+      start.setDate(start.getDate() - ((start.getDay()+6)%7)); // Monday
+      const end = new Date(start.getTime()+6*86400000);
+      this._updateHeaderTitle(start.toLocaleDateString('en-US',{day:'numeric',month:'short'})+' – '+end.toLocaleDateString('en-US',{day:'numeric',month:'short'}));
 
-  // ── Month grid (unchanged logic, keeps HTML5 drop for month cells) ──
+      const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const todayKey = dateKey();
+      const realGoals = StateManager.get('goals').filter(g => !g.isProject && g.scheduledAt);
+      const weekEnd   = new Date(start.getTime() + 7*86400000 - 1);
+      const weekGhosts = getGhostOccurrences(start.getTime(), weekEnd.getTime());
+      // 3.2 — Separate task items (not isEvent) from event items for all-day strip
+      const allEventGoals = [
+        ...realGoals.filter(g => g.isEvent),
+        ...weekGhosts,
+      ];
+      const allTaskGoals = realGoals.filter(g => !g.isEvent);
+      const dayDates = [];
+      for (let i=0;i<7;i++) dayDates.push(new Date(start.getTime()+i*86400000));
 
+      const PX    = this.PX_PER_MIN;
+      const TOTAL = 24*60*PX;
+
+      // Header row
+      let head = `<div style="display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;margin-bottom:4px;position:sticky;top:0;background:rgba(28,28,30,.98);z-index:10;padding-bottom:4px;">
+        <div></div>`;
+      for (let i=0;i<7;i++){
+        const d  = dayDates[i];
+        const dk = dateKey(d.getTime());
+        head += `<div style="text-align:center;cursor:pointer;" data-day="${dk}"><p style="font-size:10px;color:rgba(255,255,255,.4);">${dayNames[i]}</p><p style="font-weight:600;border-radius:6px;${dk===todayKey?'color:#FF3B30;background:rgba(255,59,48,.12);padding:2px 4px;':''}">${d.getDate()}</p></div>`;  // 3.1 today
+      }
+      head += `</div>`;
+
+      // 3.2 — All-day task strip row (above body)
+      let allDayRow = `<div style="display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;margin-bottom:4px;"><div></div>`;
+      for (let i=0;i<7;i++){
+        const dk = dateKey(dayDates[i].getTime());
+        const dayTasks = allTaskGoals.filter(g => dateKey(g.scheduledAt)===dk);
+        allDayRow += `<div style="display:flex;flex-direction:column;gap:2px;min-height:20px;">`;
+        dayTasks.forEach(g => {
+          const color = catColor(g);
+          allDayRow += `<div data-task-id="${g.id}" data-allday="1" class="glass-soft rounded-md px-1.5 py-0.5 text-[9px] font-medium flex items-center gap-1 cursor-pointer overflow-hidden" style="background:${color}22;border-left:2px solid ${color};${g.done?'opacity:.5;text-decoration:line-through;':''}"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(g.title)}</span></div>`;
+        });
+        allDayRow += `</div>`;
+      }
+      allDayRow += `</div>`;
+
+      // Body: time labels column + 7 absolute day columns
+      const bodyWrapper = document.createElement('div');
+      bodyWrapper.style.cssText = `display:grid;grid-template-columns:44px repeat(7,1fr);gap:4px;position:relative;height:${TOTAL}px;`;
+
+      // Time labels
+      const labelCol = document.createElement('div');
+      labelCol.style.cssText = `position:relative;height:${TOTAL}px;`;
+      for (let h=0;h<24;h++){
+        const lbl = document.createElement('div');
+        lbl.style.cssText = `position:absolute;top:${h*60*PX}px;left:0;right:0;font-size:10px;color:rgba(255,255,255,.3);font-variant-numeric:tabular-nums;`;
+        lbl.textContent = pad(h)+':00';
+        labelCol.appendChild(lbl);
+      }
+      bodyWrapper.appendChild(labelCol);
+
+      // Day columns
+      for (let i=0;i<7;i++){
+        const d    = dayDates[i];
+        const dk   = dateKey(d.getTime());
+        const col  = document.createElement('div');
+        col.style.cssText = `position:relative;height:${TOTAL}px;border-left:1px solid rgba(255,255,255,.06);${dk===todayKey?'background:rgba(255,59,48,.06);':''}`;  // 3.1 today highlight
+        col.dataset.day = dk;
+        col.dataset.colDateMs = String(d.getTime());
+
+        // Hour guide lines inside column
+        for (let h=0;h<24;h++){
+          const line = document.createElement('div');
+          line.style.cssText = `position:absolute;left:0;right:0;top:${h*60*PX}px;height:1px;background:rgba(255,255,255,.05);pointer-events:none;`;
+          col.appendChild(line);
+        }
+
+        // 3.3 — Click-to-create on column background
+        col.addEventListener('click', (e) => {
+          if (e.target !== col && e.target.closest('[data-task-id]')) return;
+          const colRect = col.getBoundingClientRect();
+          const rawMin = (e.clientY - colRect.top) / PX;
+          const snapped = Math.max(0, Math.min(23*60+50, Math.round(rawMin / this.SNAP_MIN) * this.SNAP_MIN));
+          const h2 = Math.floor(snapped / 60), m2 = snapped % 60;
+          const presetTs = new Date(d.getTime());
+          presetTs.setHours(h2, m2, 0, 0);
+          TaskController.openModal(null, { presetScheduledAt: presetTs.getTime(), presetType: 'event' });
+        });
+
+        // Cards for this day (isEvent real + ghosts only in time grid)
+        const dayGoals = allEventGoals.filter(g=>dateKey(g.scheduledAt)===dk);
+        dayGoals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
+        dayGoals.forEach(g => {
+          const dt      = new Date(g.scheduledAt);
+          const topMin  = dt.getHours()*60 + dt.getMinutes();
+          const durMin  = g.duration_min || DEFAULT_TIMER_MIN;
+          const topPx   = topMin * PX;
+          const heightPx= Math.max(this.MIN_H, durMin * PX);
+          const color   = catColor(g);
+          const cat     = catInfo(g);
+          const twoLine = heightPx >= 32;
+
+          const card = document.createElement('div');
+          card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
+          if (g.isGhost) {
+            card.dataset.ghost = '1';
+            card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
+              + this._ghostStyle(color, '6px', '3px 6px');
+          } else {
+            card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
+              + `background:${color}22;border-left:3px solid ${color};border-radius:6px;`
+              + `padding:3px 6px;cursor:grab;overflow:hidden;box-sizing:border-box;`
+              + (g.done ? 'opacity:.5;' : '');
+          }
+          // Drag handle for both real events and ghosts
+          const dragHandleHtml = `<div class="cal-drag-handle" style="position:absolute;top:2px;right:14px;font-size:9px;opacity:0.4;cursor:grab;user-select:none;touch-action:none;">⠿</div>`;
+          card.innerHTML = `<p style="font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${g.isGhost?' 🔁':''}</p>`
+            + (twoLine ? `<span style="font-size:9px;color:rgba(255,255,255,.4);">${fmtTimeRange(g.scheduledAt, durMin)}</span>` : '')
+            + dragHandleHtml
+            + (!g.isGhost ? `<div class="cal-resize-handle" style="position:absolute;bottom:2px;right:3px;width:12px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);cursor:s-resize;"></div>` : '');
+
+          col.appendChild(card);
+          const dragHandle = card.querySelector('.cal-drag-handle');
+          if (g.isGhost) {
+            // Ghost drag: creates exception+clone on drop; tap opens choice dialog
+            this._attachPointerDrag(card, g.ghostOf, col, dragHandle, g);
+          } else {
+            this._attachPointerDrag(card, g.id, col, dragHandle);
+            this._attachResizeHandle(card.querySelector('.cal-resize-handle'), card, g.id);
+          }
+        });
+
+        bodyWrapper.appendChild(col);
+      }
+
+      c.innerHTML = head + allDayRow;
+      c.appendChild(bodyWrapper);
+
+      // Day header click → navigate
+      c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',()=>this._navigateToDay(el.dataset.day)));
+      // All-day task chip click → open detail
+      // All-day chips (not ghost time-grid cards) handled here; ghost cards handled via _attachPointerDrag
+      c.querySelectorAll('[data-allday="1"]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();TaskController.openDetail(el.dataset.taskId);}));
+    } catch(e) { console.error('[_renderWeek]', e); }
+  },
   _renderMonth() {
-    if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
-    const c = document.getElementById('monthGrid'); if(!c) return;
-    const y=this._calDate.getFullYear(), m=this._calDate.getMonth();
-    this._updateHeaderTitle(this._calDate.toLocaleString('en-US',{month:'long',year:'numeric'}));
-    const first=new Date(y,m,1).getDay(), offset=(first===0)?6:first-1, dim=new Date(y,m+1,0).getDate();
-    const monthStart = new Date(y,m,1).getTime();
-    const monthEnd   = new Date(y,m+1,0,23,59,59,999).getTime();
-    const allGoals = [
-      ...StateManager.get('goals').filter(g => !g.isProject),
-      ...getGhostOccurrences(monthStart, monthEnd),
-    ];
-    const tasksByDay={};
-    allGoals.forEach(g=>{ if(!g.scheduledAt) return; const d=new Date(g.scheduledAt); if(d.getFullYear()===y&&d.getMonth()===m){ const day=d.getDate(); (tasksByDay[day]=tasksByDay[day]||[]).push(g); } });
-    Object.values(tasksByDay).forEach(arr=>arr.sort((a,b)=>{
-      const p={high:0,mid:1,low:2}; const pa=(p[a.priority]||1), pb=(p[b.priority]||1);
-      if(pa!==pb) return pa-pb; return (a.scheduledAt||0)-(b.scheduledAt||0);
-    }));
-    const today=new Date();
-    let html='';
-    for (let i=0;i<offset;i++) html += `<div class="glass-soft rounded-xl opacity-30"></div>`;
-    for (let d=1; d<=dim; d++) {
-      const dk = `${y}-${pad(m+1)}-${pad(d)}`;
-      const isToday = d===today.getDate() && m===today.getMonth() && y===today.getFullYear();
-      const dayTasks = tasksByDay[d]||[];
-      const MAX=4;
-      let items = dayTasks.slice(0,MAX).map(g=>{
-        const color=catColor(g);
-        const isGhost = !!g.isGhost;
-        return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="background:${color}${isGhost?'0a':'22'};border-left:2px ${isGhost?'dashed':'solid'} ${color};color:rgba(255,255,255,${isGhost?'.55':'.85'});${isGhost?'opacity:0.6;':''}" data-task-id="${isGhost?g.ghostOf:g.id}"><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${isGhost?' 🔁':''}</span><span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span></div>`;
-      }).join('');
-      if (dayTasks.length>MAX) items += `<div class="text-[10px] text-accent mt-1">+ ${dayTasks.length-MAX} more</div>`;
-      html += `<div class="glass-soft glass-hover rounded-xl p-2 flex flex-col gap-1 min-h-24 cursor-pointer ${isToday?'ring-1 ring-accent':''}" data-day="${dk}">
-        <span class="text-xs font-semibold ${isToday?'text-accent':'text-white/60'}">${d}</span>${items}</div>`;
-    }
-    c.innerHTML = html;
-    c.querySelectorAll('[data-day]').forEach(el=>{
-      el.addEventListener('click',()=>this._navigateToDay(el.dataset.day));
-      this._makeMonthDropTarget(el, el.dataset.day);
-    });
-    c.querySelectorAll('[data-task-id]').forEach(el=>{
-      el.addEventListener('click',e=>{e.stopPropagation(); TaskController.openDetail(el.dataset.taskId);});
-    });
+    try {
+      if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
+      const c = document.getElementById('monthGrid'); if(!c) return;
+      const y=this._calDate.getFullYear(), m=this._calDate.getMonth();
+      this._updateHeaderTitle(this._calDate.toLocaleString('en-US',{month:'long',year:'numeric'}));
+      const first=new Date(y,m,1).getDay(), offset=(first===0)?6:first-1, dim=new Date(y,m+1,0).getDate();
+      const monthStart = new Date(y,m,1).getTime();
+      const monthEnd   = new Date(y,m+1,0,23,59,59,999).getTime();
+      const allGoals = [
+        ...StateManager.get('goals').filter(g => !g.isProject),
+        ...getGhostOccurrences(monthStart, monthEnd),
+      ];
+      const tasksByDay={};
+      allGoals.forEach(g=>{ if(!g.scheduledAt) return; const d=new Date(g.scheduledAt); if(d.getFullYear()===y&&d.getMonth()===m){ const day=d.getDate(); (tasksByDay[day]=tasksByDay[day]||[]).push(g); } });
+      Object.values(tasksByDay).forEach(arr=>arr.sort((a,b)=>{
+        const p={high:0,mid:1,low:2}; const pa=(p[a.priority]??1), pb=(p[b.priority]??1);
+        if(pa!==pb) return pa-pb; return (a.scheduledAt||0)-(b.scheduledAt||0);
+      }));
+      const today=new Date();
+      let html='';
+      for (let i=0;i<offset;i++) html += `<div class="glass-soft rounded-xl opacity-30"></div>`;
+      for (let d=1; d<=dim; d++) {
+        const dk = `${y}-${pad(m+1)}-${pad(d)}`;
+        const isToday = d===today.getDate() && m===today.getMonth() && y===today.getFullYear();
+        const dayTasks = tasksByDay[d]||[];
+        const MAX=4;
+        let items = dayTasks.slice(0,MAX).map(g=>{
+          const color=catColor(g);
+          const isGhost = !!g.isGhost;
+          const ghostStyle = isGhost ? this._ghostStyle(color, '4px', '0') : '';
+          const baseStyle = isGhost ? ghostStyle : `background:${color}22;`;
+          const chipAttr = isGhost ? `data-ghost-date="${dateKey(g.scheduledAt)}"` : `data-task-id="${g.id}"`;
+          return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="${baseStyle}border-left:2px ${isGhost?'dashed':'solid'} ${color};color:rgba(255,255,255,${isGhost?'.55':'.85'});" ${chipAttr}><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${isGhost?' 🔁':''}</span><span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span></div>`;
+        }).join('');
+        if (dayTasks.length>MAX) items += `<div class="text-[10px] text-accent mt-1">+ ${dayTasks.length-MAX} more</div>`;
+        html += `<div class="glass-soft glass-hover rounded-xl p-2 flex flex-col gap-1 min-h-24 cursor-pointer ${isToday?'ring-1 ring-accent':''}" data-day="${dk}">
+          <span class="text-xs font-semibold ${isToday?'text-accent':'text-white/60'}">${d}</span>${items}</div>`;
+      }
+      c.innerHTML = html;
+      c.querySelectorAll('[data-day]').forEach(el=>{
+        el.addEventListener('click',()=>this._navigateToDay(el.dataset.day));
+        this._makeMonthDropTarget(el, el.dataset.day);
+      });
+      c.querySelectorAll('[data-task-id]').forEach(el=>{
+        el.addEventListener('click',e=>{e.stopPropagation(); TaskController.openDetail(el.dataset.taskId);});
+      });
+      // Ghost chips in month view — find the ghost object and open choice dialog
+      c.querySelectorAll('[data-ghost-date]').forEach(el=>{
+        el.addEventListener('click', e=>{
+          e.stopPropagation();
+          const cellDk = el.closest('[data-day]')?.dataset.day;
+          if (!cellDk) return;
+          const [cy,cm,cd] = cellDk.split('-').map(Number);
+          const dayStart = new Date(cy,cm-1,cd).getTime();
+          const dayEnd   = new Date(cy,cm-1,cd,23,59,59,999).getTime();
+          const ghost = getGhostOccurrences(dayStart, dayEnd).find(gh => dateKey(gh.scheduledAt) === el.dataset.ghostDate);
+          if (ghost) this._openGhostEditChoice(ghost);
+        });
+      });
+    } catch(e) { console.error('[_renderMonth]', e); }
   },
 
   // Lightweight HTML5 drop for month-grid cells (date-only rescheduling)
@@ -2073,43 +2387,44 @@ const CalendarController = {
       this._rescheduleGoalToDate(goalId, dateStr);
     });
   },
-
   _renderYear() {
-    if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
-    const c = document.getElementById('yearGrid'); if(!c) return;
-    const y = this._yearDate.getFullYear();
-    this._updateHeaderTitle(String(y));
-    const yearStart = new Date(y, 0, 1).getTime();
-    const yearEnd   = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
-    const allGoals  = [
+    try {
+      if(this._nowTimer){clearInterval(this._nowTimer); this._nowTimer=null;}
+      const c = document.getElementById('yearGrid'); if(!c) return;
+      const y = this._yearDate.getFullYear();
+      this._updateHeaderTitle(String(y));
+      const yearStart = new Date(y, 0, 1).getTime();
+      const yearEnd   = new Date(y, 11, 31, 23, 59, 59, 999).getTime();
+      const allGoals  = [
       ...StateManager.get('goals').filter(g => !g.isProject),
       ...getGhostOccurrences(yearStart, yearEnd),
-    ];
-    const tasksByDate = {};
-    allGoals.forEach(g=>{ if(!g.scheduledAt) return; const dk=dateKey(g.scheduledAt); (tasksByDate[dk]=tasksByDate[dk]||[]).push(g); });
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const today = new Date();
-    let html='';
-    months.forEach((mName, mi) => {
+      ];
+      const tasksByDate = {};
+      allGoals.forEach(g=>{ if(!g.scheduledAt) return; const dk=dateKey(g.scheduledAt); (tasksByDate[dk]=tasksByDate[dk]||[]).push(g); });
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const today = new Date();
+      let html='';
+      months.forEach((mName, mi) => {
       const dim = new Date(y, mi+1, 0).getDate();
       let dots='';
       for (let d=1; d<=dim; d++) {
-        const dk = `${y}-${pad(mi+1)}-${pad(d)}`;
-        const has = tasksByDate[dk] && tasksByDate[dk].length>0;
-        const isToday = d===today.getDate() && mi===today.getMonth() && y===today.getFullYear();
-        const color = has ? catColor(tasksByDate[dk][0]) : null;
-        dots += `<div class="heat cursor-pointer" data-day="${dk}" style="background:${isToday?'#FF3B30':(has?color:'rgba(255,255,255,0.08)')}"></div>`;
+      const dk = `${y}-${pad(mi+1)}-${pad(d)}`;
+      const has = tasksByDate[dk] && tasksByDate[dk].length>0;
+      const isToday = d===today.getDate() && mi===today.getMonth() && y===today.getFullYear();
+      const color = has ? catColor(tasksByDate[dk][0]) : null;
+      dots += `<div class="heat cursor-pointer" data-day="${dk}" style="background:${isToday?'#FF3B30':(has?color:'rgba(255,255,255,0.08)')}"></div>`;
       }
       html += `<div class="glass glass-hover rounded-2xl p-4" data-month="${mi}">
-        <p class="font-semibold mb-3 cursor-pointer ${mi===today.getMonth()&&y===today.getFullYear()?'text-accent':''}">${mName}</p>
-        <div class="grid grid-cols-7 gap-1.5">${dots}</div>
+      <p class="font-semibold mb-3 cursor-pointer ${mi===today.getMonth()&&y===today.getFullYear()?'text-accent':''}">${mName}</p>
+      <div class="grid grid-cols-7 gap-1.5">${dots}</div>
       </div>`;
-    });
-    c.innerHTML = html;
-    c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation(); this._navigateToDay(el.dataset.day);}));
-    c.querySelectorAll('[data-month] > p').forEach((el,mi)=>{
+      });
+      c.innerHTML = html;
+      c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation(); this._navigateToDay(el.dataset.day);}));
+      c.querySelectorAll('[data-month] > p').forEach((el,mi)=>{
       el.addEventListener('click', ()=>{ this._calDate = new Date(y, mi, 1); this.setView('month'); switchSub('calTabs','cal','month'); });
-    });
+      });
+    } catch(e) { console.error('[_renderYear]', e); }
   },
 };
 
@@ -2726,7 +3041,7 @@ const TimerController = {
     this.playAlarm(goal.id);
     const stack=document.getElementById('alarm-stack'); if(!stack||document.getElementById('alarm-card-'+goal.id)) return;
     const card=document.createElement('div'); card.id='alarm-card-'+goal.id;
-    card.style.cssText='display:flex;align-items:center;gap:12px;background:rgba(255,59,48,.16);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);border:1px solid rgba(255,59,48,.5);border-radius:16px;padding:12px 16px;color:#fff;box-shadow:0 0 22px rgba(255,59,48,.4);';
+    card.style.cssText='display:flex;align-items:center;gap:12px;background:rgba(80,10,10,.95);border:1px solid rgba(255,59,48,.5);border-radius:16px;padding:12px 16px;color:#fff;box-shadow:0 0 22px rgba(255,59,48,.4);';
     card.innerHTML=`<div style="font-size:22px;">⏰</div><div><div style="font-size:13px;font-weight:700;">${esc(msg)}</div><div style="font-size:11px;color:rgba(255,255,255,.6);">"${esc(goal.title.substring(0,40))}"</div></div><button style="background:rgba(255,255,255,.08);border:none;color:#fff;width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:12px;flex:none;">✕</button>`;
     card.querySelector('button')?.addEventListener('click',()=>this.stopAlarm(goal.id));
     stack.appendChild(card);
@@ -2820,7 +3135,7 @@ const StoreController = {
         <p class="text-white/40 text-sm flex-1">${esc(item.desc)}</p>
         <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:10px 0;font-size:13px;">
           <button class="glass-soft glass-hover rounded-lg" data-action="qty" data-delta="-1" style="width:28px;height:28px;">−</button>
-          <span>${qty} ${item.unit} · ${item.baseTime*qty}${item.unit==='min'?'m':''}</span>
+          <span>${item.unit==='min' ? item.baseTime*qty+' min' : qty+' '+item.unit}</span>
           <button class="glass-soft glass-hover rounded-lg" data-action="qty" data-delta="1" style="width:28px;height:28px;">+</button>
         </div>
         <button class="mt-1 glass-soft ${ok?'glass-hover':''} rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2" data-action="add-to-cart" ${ok?'':'disabled'}>
@@ -2995,7 +3310,10 @@ const MacroController = {
 const ProfileRenderer = {
   render() {
     const st=StateManager.get();
-    const lv=getLevel(st.gems);
+    // A10: level is based on lifetime earned gems (current balance + all history awards),
+    // so spending crystals in the shop never lowers the player's level.
+    const lifetime = Math.max(st.gems, st.history.reduce((s,h)=>s+(h.gems||0),0));
+    const lv=getLevel(lifetime);
 
     syncProfileNameEverywhere();
     const levelEl = document.getElementById('profile-level'); if (levelEl) levelEl.textContent = `${lv.emoji} ${lv.label}`;
@@ -3007,15 +3325,18 @@ const ProfileRenderer = {
     if (bar) {
       if (next) {
         const span = next.min - lv.min;
-        const into = st.gems - lv.min;
+        const into = lifetime - lv.min;
         bar.style.width = Math.max(4,Math.min(100, Math.round(into/span*100)))+'%';
       } else bar.style.width = '100%';
     }
 
-    const totalCreated = document.getElementById('stat-total-created'); if (totalCreated) totalCreated.textContent = st.goals.length;
-    const doneCount = st.goals.filter(g=>g.done).length, totalGoals = st.goals.length || 1;
-    const progressEl = document.getElementById('stat-progress'); if (progressEl) progressEl.textContent = Math.round(doneCount/totalGoals*100)+'%';
-    const successRate = st.goals.length ? Math.round((doneCount/st.goals.length)*100) : 0;
+    // A10: exclude project folders from task stats
+    const taskGoals = st.goals.filter(g=>!g.isProject);
+    const doneCount = taskGoals.filter(g=>g.done).length;
+    const totalCreated = document.getElementById('stat-total-created'); if (totalCreated) totalCreated.textContent = taskGoals.length;
+    const progressEl = document.getElementById('stat-progress'); if (progressEl) progressEl.textContent = taskGoals.length ? Math.round(doneCount/taskGoals.length*100)+'%' : '0%';
+    const overdue = taskGoals.filter(g=>!g.done && g.scheduledAt && g.scheduledAt < Date.now()).length;
+    const successRate = (doneCount+overdue) > 0 ? Math.round(doneCount/(doneCount+overdue)*100) : 0;
     const successEl = document.getElementById('stat-success-rate'); if (successEl) successEl.textContent = successRate+'%';
     const streakEl = document.getElementById('stat-streak');
     if (streakEl) streakEl.innerHTML = `🔥 ${st.streak.days}`;
@@ -3040,7 +3361,7 @@ const ProfileRenderer = {
       return `<div data-macro-id="${mg.id}" style="cursor:pointer;">
         <div class="flex justify-between text-sm mb-1.5"><span>${esc(mg.title)}</span><span class="text-accent font-semibold">${pct}%</span></div>
         <div class="h-2.5 rounded-full bg-white/10 overflow-hidden"><div class="h-full accent-grad rounded-full" style="width:${pct}%"></div></div>
-        <p class="text-white/35 text-xs mt-1">${prog.total?`${prog.done}/${prog.total} tasks`:'No tasks'}${mg.deadline?' · due '+new Date(mg.deadline).toLocaleDateString('en-US'):''} · 💎 ${mg.gemsReward||50}</p>
+        <p class="text-white/35 text-xs mt-1">${prog.total?`${prog.done}/${prog.total} tasks`:'No tasks'}${mg.deadline && parseDateSafe(mg.deadline) ? ' · due '+parseDateSafe(mg.deadline).toLocaleDateString('en-US') : ''} · 💎 ${mg.gemsReward||50}</p>
       </div>`;
     }).join('');
     listWrap.querySelectorAll('[data-macro-id]').forEach(el=>{
@@ -3093,6 +3414,9 @@ function renderSettingsPanel() {
       });
     });
   }
+  // 2.1 — Sync dim-recurring toggle to current state
+  const dimToggle = document.getElementById('settings-dim-recurring');
+  if (dimToggle) dimToggle.classList.toggle('on', !!StateManager.get('dimRecurring'));
 }
 
 function initSettingsHandlers() {
@@ -3101,16 +3425,19 @@ function initSettingsHandlers() {
   // re-syncs every on-screen copy of the name via syncProfileNameEverywhere().
   document.getElementById('btn-save-settings')?.addEventListener('click', ()=>{
     const nameVal = document.getElementById('settings-profile-name')?.value.trim();
+    const dimRecurring = !!document.getElementById('settings-dim-recurring')?.classList.contains('on');
     StateManager.patch({
       profileName: nameVal || 'You',
       tgToken: document.getElementById('settings-tg-token')?.value.trim()||'',
       tgChatId: document.getElementById('settings-tg-chat')?.value.trim()||'',
       webhookUrl: document.getElementById('settings-webhook')?.value.trim()||'',
+      dimRecurring,
     });
     SyncManager.scheduleSync();
     closeModal('modal-settings');
     syncProfileNameEverywhere();
     if (StateManager.get('currentView')==='profile') ProfileRenderer.render();
+    if (StateManager.get('currentView')==='calendar') CalendarController.render();
     showToast('✅ Settings saved');
   });
   document.getElementById('btn-add-tag')?.addEventListener('click', ()=>{
@@ -3122,21 +3449,65 @@ function initSettingsHandlers() {
     renderSettingsPanel(); renderTagFilterRow();
   });
   document.getElementById('btn-export-data')?.addEventListener('click', exportData);
+  document.getElementById('btn-import-data')?.addEventListener('click', ()=>{
+    const inp = document.getElementById('import-file-input');
+    if (inp) inp.click();
+  });
+  document.getElementById('import-file-input')?.addEventListener('change', (e)=>{
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const raw = JSON.parse(ev.target.result);
+        if (!Array.isArray(raw.goals)) { showToast('⚠️ Invalid backup: goals not found'); return; }
+        StateManager.pushUndoSnapshot();
+        const imported = { goals:raw.goals, history:raw.history||[], purchases:raw.purchases||[], gems:raw.gems||0,
+          streak:raw.streak||{days:0,lastDate:'',doneToday:false,best:0}, tags:raw.tags||[],
+          routines:raw.routines||[], sleepSettings:raw.sleepSettings||StateManager.get('sleepSettings'),
+          profileName:raw.profileName||StateManager.get('profileName') };
+        const rawForMigration = { goals: imported.goals, macroGoals: [] };
+        migrateLegacyProjectData(rawForMigration);
+        imported.goals = rawForMigration.goals;
+        StateManager.patch(imported);
+        SyncManager.scheduleSync();
+        refreshEverything();
+        showToast('📥 Data imported!');
+      } catch(err) { showToast('⚠️ Failed to parse backup file'); console.error('[Import]', err); }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reset so same file can be re-imported
+  });
   document.getElementById('btn-reset-data')?.addEventListener('click', resetData);
   document.getElementById('btn-load-demo')?.addEventListener('click', loadDemoData);
+  document.getElementById('settings-dim-recurring')?.addEventListener('click', (e)=>{
+    e.currentTarget.classList.toggle('on');
+  });
 }
 
 function exportData() {
-  const data={...StateManager.get(),exportedAt:Date.now()};
+  const { tgToken, tgChatId, webhookUrl, ...safe } = StateManager.get();
+  const data = { ...safe, exportedAt: Date.now() };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   a.href=url; a.download=`nova-os-backup-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(url); showToast('💾 Data exported');
 }
-function resetData() {
+async function resetData() {
   if(!confirm('Delete ALL data? This cannot be undone!')) return;
-  ['nova-goals','nova-history','nova-gems','nova-streak','nova-purchases','nova-macros','nova-tags','nova-pomo','nova-sleep','nova-uid','nova-theme','nova-routines','nova-tg-token','nova-tg-chat','nova-webhook','nova-profile-name',
-   'lifeos-goals','lifeos-history','lifeos-gems','lifeos-streak2','lifeos-purchases','lifeos-macros','lifeos-tags','lifeos-pomo'].forEach(k=>localStorage.removeItem(k));
+  // Push empty state to cloud FIRST — otherwise the server will restore everything on next load
+  await fetch('/api/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-nova-key': localStorage.getItem('nova-sync-key')||'' },
+    body: JSON.stringify({ userId: SyncManager.getUid(), updatedAt: Date.now(),
+      goals:[], history:[], gems:0, streak:{days:0,lastDate:'',doneToday:false,best:0} }),
+  }).catch(()=>{});
+  ['nova-goals','nova-history','nova-gems','nova-streak','nova-purchases','nova-macros','nova-tags',
+   'nova-pomo','nova-sleep','nova-uid','nova-theme','nova-routines','nova-tg-token','nova-tg-chat',
+   'nova-webhook','nova-profile-name','nova-updatedAt','nova-dim-recurring','nova-migrated-v8',
+   'nova-active-task','nova-sync-v2',
+   'lifeos-goals','lifeos-history','lifeos-gems','lifeos-streak2','lifeos-purchases',
+   'lifeos-macros','lifeos-tags','lifeos-pomo'].forEach(k=>localStorage.removeItem(k));
+  // nova-sync-key is intentionally NOT removed so the user stays authenticated
   location.reload();
 }
 function loadDemoData() {
@@ -3245,7 +3616,7 @@ const VoiceInput = {
    NLP PARSER
 ═══════════════════════════════════════════════════════════ */
 const NLP = {
-  parse(text) {
+  parse(text, opts = {}) {
     const result={title:text,scheduledAt:null,priority:'mid',cat:'business',duration_min:DEFAULT_TIMER_MIN,tags:[]};
     let s=text;
     if(/\bp1\b/i.test(s)){result.priority='high'; s=s.replace(/\bp1\b/ig,'');}
@@ -3257,7 +3628,7 @@ const NLP = {
     else if (/\b(art|design|write|creative)\b/i.test(s)) result.cat='creative';
     const tagMatches=s.match(/@\S+/g)||[];
     const tags=StateManager.get('tags');
-    tagMatches.forEach(m=>{ const name=m.slice(1).toLowerCase(); let t=tags.find(t=>t.name.toLowerCase()===name); if(!t){t={id:'tag_'+Date.now().toString(36)+rnd(),name,color:TAG_PALETTE[tags.length%TAG_PALETTE.length]}; tags.push(t); StateManager.set('tags',tags);} result.tags.push(t.id); });
+    tagMatches.forEach(m=>{ const name=m.slice(1).toLowerCase(); let t=tags.find(t=>t.name.toLowerCase()===name); if(!t){ if (opts.dryRun) return; t={id:'tag_'+Date.now().toString(36)+rnd(),name,color:TAG_PALETTE[tags.length%TAG_PALETTE.length]}; tags.push(t); StateManager.set('tags',tags);} result.tags.push(t.id); });
     s=s.replace(/@\S+/g,'').trim();
     const durM=s.match(/for\s+(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i);
     if(durM){const num=parseInt(durM[1]); result.duration_min=/h/i.test(durM[2])?num*60:num; s=s.replace(durM[0],'').trim();}
@@ -3308,7 +3679,7 @@ function initGlobalEvents() {
 
   // Generic toggle affordance for any [data-toggle] not already wired individually
   document.querySelectorAll('[data-toggle]').forEach(el => {
-    if (el.id==='toggle-soft-alarm' || el.dataset.action==='toggle-routine') return; // wired elsewhere
+    if (el.id==='toggle-soft-alarm' || el.id==='settings-dim-recurring' || el.dataset.action==='toggle-routine') return; // wired elsewhere
     el.addEventListener('click', () => el.classList.toggle('on'));
   });
 
@@ -3341,6 +3712,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // this is what stops the name resetting to "—" on reload.
   try { syncProfileNameEverywhere();  } catch(e) { console.error('[Init:profile-name]',e); }
   try { ViewRouter.switchTo('tasks'); } catch(e) { console.error('[Init:view]',e); }
-  setTimeout(()=>{ try{SyncManager.loadFromCloud();}catch(e){console.warn('[Init:KV]',e);} }, 2000);
+  // Skip cloud sync in lite (safe) mode — avoid triggering OOM again on recovery load
+  if (!document.documentElement.classList.contains('lite')) {
+    setTimeout(()=>{ try{SyncManager.loadFromCloud();}catch(e){console.warn('[Init:KV]',e);} }, 2000);
+  }
+  // Safe boot: clear the crash-detection key 4s after successful init
+  setTimeout(()=>{ localStorage.removeItem('nova-boot'); }, 4000);
   console.log('[Nova OS v7.1] ✅ Initialization complete');
+});
+
+/* ═══════════════════════════════════════════════════════════
+   GLOBAL ERROR HANDLERS (iOS crash guard)
+═══════════════════════════════════════════════════════════ */
+window.addEventListener('error', (e) => {
+  console.error('[Nova OS] Uncaught error:', e.message, '—', e.filename, 'line', e.lineno);
+  if (e.filename) showToast('⚠️ Something went wrong');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[Nova OS] Unhandled promise rejection:', e.reason);
 });

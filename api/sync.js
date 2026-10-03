@@ -9,7 +9,7 @@
  *
  * Env vars: KV_REST_API_URL, KV_REST_API_TOKEN
  */
-import { createClient } from '@vercel/kv';
+const { createClient } = require('@vercel/kv');
 
 const MAX_GOALS     = 400;
 const MAX_HISTORY   = 200;
@@ -79,7 +79,7 @@ function sanitizeState(body, clientUserId) {
   };
 }
 
-export default async function handler(req,res) {
+async function handler(req,res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers','Content-Type');
@@ -132,3 +132,5 @@ export default async function handler(req,res) {
 
   return res.status(405).json({error:'Method not allowed'});
 }
+
+module.exports = handler;
