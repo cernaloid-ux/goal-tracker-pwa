@@ -2103,7 +2103,7 @@ const CalendarController = {
       c.innerHTML = html;
 
       // 3.3 — Click-to-create on empty grid area
-      c.addEventListener('click', (e) => {
+      c.onclick = (e) => {
         if (e.target !== c && e.target.closest('[data-task-id]')) return;
         const rect = c.getBoundingClientRect();
         const rawMin = (e.clientY - rect.top) / PX;
@@ -2113,7 +2113,7 @@ const CalendarController = {
         const presetTs = new Date(dayMs);
         presetTs.setHours(h, m, 0, 0);
         TaskController.openModal(null, { presetScheduledAt: presetTs.getTime(), presetType: 'event' });
-      });
+      };
 
       // Task cards — only isEvent:true items + ghost recurrences go in the time grid
       const dayStart = new Date(this._calDate); dayStart.setHours(0,0,0,0);
