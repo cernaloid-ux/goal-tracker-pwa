@@ -2815,7 +2815,7 @@ const RoutineManager = {
    TIMER CONTROLLER
 ═══════════════════════════════════════════════════════════ */
 const TimerController = {
-  _rafId:null, _firedAlarms:new Set(), _alarmAudio:{}, _reminderTimers:[],
+  _rafId:null, _endTimer:null, _firedAlarms:new Set(), _alarmAudio:{}, _reminderTimers:[],
 
   init() {
     document.getElementById('btn-add-5m')?.addEventListener('click', ()=>this.addMinutes(5));
@@ -2826,22 +2826,38 @@ const TimerController = {
     document.getElementById('btn-timer-restart')?.addEventListener('click', ()=>this.reset());
     document.getElementById('btn-timer-delete')?.addEventListener('click', ()=>this.deleteActive());
     document.getElementById('btn-timer-pick-task')?.addEventListener('click', ()=>this.openPicker());
-    // FIX: goalPickerModal task selection.
-    // Delegated click bound ONCE on the stable container (#goal-picker-list),
-    // not on the individual row elements that get wiped out and rebuilt by
-    // innerHTML on every openPicker()/_renderPickerList() call. Because the
-    // listener lives on the parent, it survives every re-render and always
-    // finds the row via closest('[data-id]') at click time — this is what
-    // makes task selection for the timer actually work.
     document.getElementById('goal-picker-list')?.addEventListener('click', (e)=>{
       const row = e.target.closest('[data-id]');
       if (!row) return;
       this.setGoal(row.dataset.id);
       closeModal('goalPickerModal');
     });
+    // A4b/c: kick tick on tab restore (RAF stops in background)
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) this.tick(); });
+    // A4c: resume raf+armEndTimer if a timer was running before the page reloaded
+    const _g = this._goal();
+    if (_g && _g.startTime && !_g.paused && !_g.done) { this._rafLoop(); this._armEndTimer(); }
+  },
+
+  // A4b: set a real setTimeout as a fallback so background-tab timers still fire
+  _armEndTimer() {
+    clearTimeout(this._endTimer); this._endTimer = null;
+    const g = this._goal(); if (!g || !g.startTime || g.paused || g.done) return;
+    const total = (g.duration_min || DEFAULT_TIMER_MIN) * 60;
+    const left = (total - ((g.elapsed||0) + (Date.now() - g.startTime) / 1000)) * 1000;
+    this._endTimer = setTimeout(()=>this.tick(), Math.max(0, left) + 50);
   },
 
   setGoal(id) {
+    // A4d: pause the previously running task before switching
+    const prevId = StateManager.get('activeTaskId');
+    if (prevId && prevId !== id) {
+      const prev = StateManager.get('goals').find(x=>x.id===prevId);
+      if (prev && prev.startTime && !prev.paused) {
+        prev.elapsed = (prev.elapsed||0) + (Date.now()-prev.startTime)/1000;
+        prev.startTime = null; prev.paused = true;
+      }
+    }
     const g = StateManager.get('goals').find(x=>x.id===id);
     if (!g) { showToast('That task could not be found — it may have been deleted'); return; }
     StateManager.set('activeTaskId', id);
@@ -2857,7 +2873,7 @@ const TimerController = {
     const g=this._goal(); if(!g) { showToast('Pick a task first — tap ⏱ on any task'); return; }
     g.duration_min = (g.duration_min||DEFAULT_TIMER_MIN) + mins;
     StateManager.patch({goals:StateManager.get('goals')});
-    this.tick();
+    this.tick(); this._armEndTimer();
     showToast(`+${mins}m added`, 1200);
   },
 
@@ -2871,13 +2887,14 @@ const TimerController = {
     g.startTime=Date.now(); g.paused=false;
     StateManager.patch({goals:StateManager.get('goals')}); SyncManager.scheduleSync();
     this._updateToggleLabel();
-    showToast('▶ Timer started', 1200); this._rafLoop();
+    showToast('▶ Timer started', 1200); this._rafLoop(); this._armEndTimer();
   },
   _pauseCd() {
     const g=this._goal(); if(!g) return;
     g.elapsed=(g.elapsed||0)+(Date.now()-g.startTime)/1000; g.startTime=null; g.paused=true;
     StateManager.patch({goals:StateManager.get('goals')}); SyncManager.scheduleSync();
     cancelAnimationFrame(this._rafId); this._rafId=null;
+    clearTimeout(this._endTimer); this._endTimer=null;
     this._updateToggleLabel();
   },
   _updateToggleLabel() {
@@ -2888,6 +2905,7 @@ const TimerController = {
 
   reset() {
     cancelAnimationFrame(this._rafId); this._rafId=null;
+    clearTimeout(this._endTimer); this._endTimer=null;
     const g = this._goal();
     if (g) {
       if (!confirm(`Restart the timer for "${g.title}"? This resets elapsed time to zero.`)) return;
@@ -2959,8 +2977,11 @@ const TimerController = {
     }
     if (remaining<=0 && g.startTime && !this._firedAlarms.has(g.id)) {
       this._firedAlarms.add(g.id); this.triggerAlarm(g,'⏰ Time is up!');
+      // A4a: persist elapsed before nulling startTime so the ring stays at 100% after alarm
+      g.elapsed = totalSec;
       g.startTime=null; g.paused=true; StateManager.patch({goals:StateManager.get('goals')}); SyncManager.scheduleSync();
       cancelAnimationFrame(this._rafId); this._rafId=null;
+      clearTimeout(this._endTimer); this._endTimer=null;
       this._updateToggleLabel();
     }
   },

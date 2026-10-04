@@ -25,7 +25,7 @@
 | A1 | Auth: getSyncKey, getUid guard, x-nova-key header, api/sync.js 401 guard | ✅ Done (предыдущая сессия) |
 | A2 | StateManager.set UI_ONLY, activeTaskId, sync-v2 migration, auto-refresh | ⚠️ Частично — UI_ONLY set + activeTaskId + sync-v2 migration сделано; 60s interval + visibilitychange ещё нет; expand sync fields done |
 | A3 | Priority sort `\|\|1` → `??1` (4 места) | ✅ Done |
-| A4 | Timer: elapsed save (a), _armEndTimer background tab (b), resume after reload (c), pause prev on switch (d) | ❌ TODO |
+| A4 | Timer: elapsed save (a), _armEndTimer background tab (b), resume after reload (c), pause prev on switch (d) | ✅ Done |
 | A5 | Reminders: setTimeout overflow >24.8d, ghost occurrences missing | ❌ TODO |
 | A6 | Routines: days field ignored, one-time alarms, streak reset | ❌ TODO |
 | A7 | Task form: allDay flag, hidden time-from defaults, time-to wrapping | ❌ TODO |
