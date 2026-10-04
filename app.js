@@ -1603,6 +1603,27 @@ function updateCrystalChips() {
   const shopGems = document.getElementById('shop-gems'); if (shopGems) shopGems.textContent = formatted;
 }
 
+function layoutOverlaps(items) {
+  const out = new Map(); let cluster = [], clusterEnd = 0;
+  const flush = () => {
+    const colsEnd = [];
+    cluster.forEach(g => {
+      const s = g.scheduledAt, e = s + (g.duration_min||DEFAULT_TIMER_MIN)*60000;
+      let c = colsEnd.findIndex(end => end <= s);
+      if (c === -1) { c = colsEnd.length; colsEnd.push(e); } else colsEnd[c] = e;
+      out.set(g.id, { col: c, cols: 1 });
+    });
+    cluster.forEach(g => out.get(g.id).cols = colsEnd.length);
+    cluster = [];
+  };
+  items.forEach(g => {
+    const s = g.scheduledAt, e = s + (g.duration_min||DEFAULT_TIMER_MIN)*60000;
+    if (cluster.length && s >= clusterEnd) { flush(); clusterEnd = 0; }
+    cluster.push(g); clusterEnd = Math.max(clusterEnd, e);
+  });
+  flush(); return out;
+}
+
 /* ═══════════════════════════════════════════════════════════
    CALENDAR CONTROLLER (with drag & drop rescheduling)
 ═══════════════════════════════════════════════════════════ */
@@ -2130,6 +2151,7 @@ const CalendarController = {
       const ghosts    = getGhostOccurrences(dayStart.getTime(), dayEnd.getTime()).filter(g => dateKey(g.scheduledAt)===dk);
       const goals = [...realEvents, ...ghosts];
       goals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
+      const layout = layoutOverlaps(goals);
 
       goals.forEach(g => {
         const d = new Date(g.scheduledAt);
@@ -2140,15 +2162,17 @@ const CalendarController = {
         const color   = catColor(g);
         const cat     = catInfo(g);
         const twoLine = heightPx >= 36;
+        const { col, cols } = layout.get(g.id) || { col: 0, cols: 1 };
+        const leftWidth = `left:calc(50px + (100% - 54px) * ${col/cols});width:calc((100% - 54px) / ${cols} - 2px);`;
 
         const card = document.createElement('div');
         card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
         if (g.isGhost) {
           card.dataset.ghost = '1';
-          card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
+          card.style.cssText = `position:absolute;${leftWidth}top:${topPx}px;height:${heightPx}px;`
             + this._ghostStyle(color, '8px', '4px 8px');
         } else {
-          card.style.cssText = `position:absolute;left:50px;right:4px;top:${topPx}px;height:${heightPx}px;`
+          card.style.cssText = `position:absolute;${leftWidth}top:${topPx}px;height:${heightPx}px;`
             + `background:${color}22;border-left:3px solid ${color};border-radius:8px;`
             + `padding:4px 8px;cursor:grab;overflow:hidden;box-sizing:border-box;`
             + (g.done ? 'opacity:.5;' : '');
@@ -2268,6 +2292,7 @@ const CalendarController = {
         // Cards for this day (isEvent real + ghosts only in time grid)
         const dayGoals = allEventGoals.filter(g=>dateKey(g.scheduledAt)===dk);
         dayGoals.sort((a,b)=>a.scheduledAt-b.scheduledAt);
+        const layout = layoutOverlaps(dayGoals);
         dayGoals.forEach(g => {
           const dt      = new Date(g.scheduledAt);
           const topMin  = dt.getHours()*60 + dt.getMinutes();
@@ -2277,15 +2302,17 @@ const CalendarController = {
           const color   = catColor(g);
           const cat     = catInfo(g);
           const twoLine = heightPx >= 32;
+          const { col: cCol, cols: cCols } = layout.get(g.id) || { col: 0, cols: 1 };
+          const leftWidth = `left:calc(${cCol/cCols*100}% + 2px);width:calc(${100/cCols}% - 4px);`;
 
           const card = document.createElement('div');
           card.dataset.taskId = g.isGhost ? g.ghostOf : g.id;
           if (g.isGhost) {
             card.dataset.ghost = '1';
-            card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
+            card.style.cssText = `position:absolute;${leftWidth}top:${topPx}px;height:${heightPx}px;`
               + this._ghostStyle(color, '6px', '3px 6px');
           } else {
-            card.style.cssText = `position:absolute;left:2px;right:2px;top:${topPx}px;height:${heightPx}px;`
+            card.style.cssText = `position:absolute;${leftWidth}top:${topPx}px;height:${heightPx}px;`
               + `background:${color}22;border-left:3px solid ${color};border-radius:6px;`
               + `padding:3px 6px;cursor:grab;overflow:hidden;box-sizing:border-box;`
               + (g.done ? 'opacity:.5;' : '');
