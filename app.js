@@ -3517,10 +3517,10 @@ function initSettingsHandlers() {
   });
   document.getElementById('btn-export-data')?.addEventListener('click', exportData);
   document.getElementById('btn-import-data')?.addEventListener('click', ()=>{
-    const inp = document.getElementById('import-file-input');
+    const inp = document.getElementById('import-file') || document.getElementById('import-file-input');
     if (inp) inp.click();
   });
-  document.getElementById('import-file-input')?.addEventListener('change', (e)=>{
+  const handleImportFile = (e)=>{
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -3543,7 +3543,9 @@ function initSettingsHandlers() {
     };
     reader.readAsText(file);
     e.target.value = ''; // reset so same file can be re-imported
-  });
+  };
+  document.getElementById('import-file')?.addEventListener('change', handleImportFile);
+  document.getElementById('import-file-input')?.addEventListener('change', handleImportFile);
   document.getElementById('btn-reset-data')?.addEventListener('click', resetData);
   document.getElementById('btn-load-demo')?.addEventListener('click', loadDemoData);
   document.getElementById('settings-dim-recurring')?.addEventListener('click', (e)=>{
