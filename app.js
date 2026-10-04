@@ -3715,6 +3715,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Skip cloud sync in lite (safe) mode — avoid triggering OOM again on recovery load
   if (!document.documentElement.classList.contains('lite')) {
     setTimeout(()=>{ try{SyncManager.loadFromCloud();}catch(e){console.warn('[Init:KV]',e);} }, 2000);
+    // A2: background refresh every 60 s + on tab focus
+    setInterval(()=>{ try{SyncManager.loadFromCloud({silent:true});}catch(e){} }, 60000);
+    document.addEventListener('visibilitychange', ()=>{
+      if (!document.hidden) { try{SyncManager.loadFromCloud({silent:true});}catch(e){} }
+    });
   }
   // Safe boot: clear the crash-detection key 4s after successful init
   setTimeout(()=>{ localStorage.removeItem('nova-boot'); }, 4000);
