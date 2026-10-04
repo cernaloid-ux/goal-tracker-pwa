@@ -909,7 +909,10 @@
   <div id="ghostEditChoiceModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="ghostEditChoiceModal"></div>
     <div class="modal-card glass rounded-3xl p-5 w-full max-w-sm relative" role="dialog" aria-modal="true">
-      <h3 class="text-lg font-bold mb-4">Edit recurring event</h3>
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold">Edit recurring event</h3>
+        <button data-close="ghostEditChoiceModal" aria-label="Close" class="w-8 h-8 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
       <div class="flex flex-col gap-2">
         <button id="btn-ghost-edit-this" class="glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Edit only this event</button>
         <button id="btn-ghost-edit-following" class="glass-hover accent-grad rounded-xl py-3 text-sm font-semibold">Edit all following</button>
