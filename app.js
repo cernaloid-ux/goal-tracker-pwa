@@ -92,6 +92,7 @@ function fmtD(s) { const dy=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=M
 function fmtRel(ts) { const d=Date.now()-ts,m=Math.floor(d/60000),h=Math.floor(m/60),dy=Math.floor(h/24); if(dy>0) return `${dy}d ago`; if(h>0) return `${h}h ago`; if(m>0) return `${m}m ago`; return 'just now'; }
 function fmtTime(ts) { if(!ts) return ''; const d=new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function fmtDateTime(ts) { if(!ts) return ''; const d=new Date(ts); return d.toLocaleString('en-US',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
+function fmtWhen(g){ return g.allDay ? new Date(g.scheduledAt).toLocaleDateString('en-US',{day:'numeric',month:'short'}) : fmtDateTime(g.scheduledAt); }
 function fmtDayLabel(ts) { const d=new Date(ts); return d.toLocaleDateString('en-US',{day:'numeric',month:'long',weekday:'short'}); }
 function fmtMinutesToHM(mins) { const h=Math.floor(mins/60), m=Math.round(mins%60); return `${h}h ${pad(m)}m`; }
 function fmtTimeRange(scheduledAt, durationMin) {
@@ -724,7 +725,7 @@ function _buildLeafTaskRow(g) {
   return `<label class="flex items-center gap-3 cursor-pointer" data-task-row="${g.id}">
     <input type="checkbox" class="chk" data-action="toggle-task" data-id="${g.id}" ${g.done?'checked':''}>
     <span class="tasklabel flex-1 truncate" style="${g.done?'text-decoration:line-through;opacity:.45;':''}">${esc(g.title)}</span>
-    ${g.scheduledAt?`<span class="cal-event-time flex-none">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span>`:''}
+    ${(g.scheduledAt && !g.allDay)?`<span class="cal-event-time flex-none">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span>`:''}
     <span class="tag ${isUrgent(g)?'':'tag-grey'} flex-none">${cat.label}</span>
     <button class="node-icon-btn flex-none" data-action="edit-task" data-id="${g.id}" title="Edit task">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -1103,7 +1104,7 @@ const TaskController = {
     card.className = 'glass-soft glass-hover rounded-2xl p-4' + (g.done ? ' opacity-50' : '');
     card.dataset.id=g.id;
     const prio={high:'🔴',mid:'🟡',low:'⚪'}[g.priority]||'🟡';
-    const hasTime=!!g.scheduledAt, isOverdue=hasTime&&g.scheduledAt<Date.now()&&!g.done;
+    const hasTime=!!g.scheduledAt, isOverdue=hasTime&&!g.done&&(g.allDay ? dateKey(g.scheduledAt)<dateKey() : g.scheduledAt<Date.now());
     const subDone=(g.subtasks||[]).filter(s=>s.done).length, subTotal=(g.subtasks||[]).length;
     const tagHtml=(g.tags||[]).map(id=>{ const t=StateManager.get('tags').find(x=>x.id===id); return t?`<span class="tag" style="background:${t.color}22;color:${t.color};border-color:${t.color}44;">${esc(t.name)}</span>`:''; }).join('');
     const elapsed=(g.elapsed||0)+(g.startTime?(Date.now()-g.startTime)/1000:0);
@@ -1119,7 +1120,7 @@ const TaskController = {
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
             <span class="tag ${isUrgent(g)?'':'tag-grey'}">${cat.label}${catEarnsGems(g.cat)?' 💎':''}</span>
-            ${hasTime?`<span class="tag-grey tag" style="${isOverdue?'color:#ff8f88;':''}">${isOverdue?'⚠ ':''}${fmtDateTime(g.scheduledAt)}</span>`:''}
+            ${hasTime?`<span class="tag-grey tag" style="${isOverdue?'color:#ff8f88;':''}">${isOverdue?'⚠ ':''}${fmtWhen(g)}</span>`:''}
             ${g.location?`<span class="tag-grey tag">📍 ${esc(g.location)}</span>`:''}
           </div>
           ${tagHtml?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${tagHtml}</div>`:''}
@@ -1259,8 +1260,8 @@ const TaskController = {
       else { const d=new Date(); dateInp.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
     }
     if (fromInp) {
-      if (g?.scheduledAt) { const d=new Date(g.scheduledAt); fromInp.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-      else fromInp.value = `${pad(new Date().getHours())}:00`;
+      if (g && !g.allDay && g.scheduledAt) { const d=new Date(g.scheduledAt); fromInp.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+      else fromInp.value = '';
     }
     if (toInp) {
       if (g?.scheduledAt && g.duration_min) { const end=new Date(g.scheduledAt + g.duration_min*60000); toInp.value = `${pad(end.getHours())}:${pad(end.getMinutes())}`; }
@@ -1367,8 +1368,15 @@ const TaskController = {
 
   _syncFieldVisibility() {
     const isEvent = this._selectedType === 'event';
-    document.getElementById('event-time-fields')?.classList.toggle('hidden', !isEvent);
+    document.getElementById('task-time-to-wrap')?.classList.toggle('hidden', !isEvent);
     document.getElementById('event-recurrence-section')?.classList.toggle('hidden', !isEvent);
+    const fromLbl = document.getElementById('task-time-from-label');
+    if (fromLbl) fromLbl.textContent = isEvent ? 'Time from' : 'Time (optional)';
+    const fromInp = document.getElementById('task-time-from-input');
+    if (isEvent && fromInp && !fromInp.value) {
+      const nextH = (new Date().getHours() + 1) % 24;
+      fromInp.value = `${pad(nextH)}:00`;
+    }
     if (!isEvent) this._selectedRecurrence = null;
   },
 
@@ -1474,17 +1482,20 @@ const TaskController = {
     const startVal = document.getElementById('task-time-from-input')?.value;
     const endVal = document.getElementById('task-time-to-input')?.value;
     const parentId = document.getElementById('task-parent-select')?.value || null;
-    let scheduledAt=null;
-    if(dateVal && startVal) {
-      const [dy, dm, dd] = dateVal.split('-').map(Number);
-      const [th, tm]     = startVal.split(':').map(Number);
-      scheduledAt = new Date(dy, dm - 1, dd, th, tm, 0, 0).getTime();
+    const isEventType = this._selectedType === 'event';
+    let scheduledAt = null, allDay = false;
+    if (dateVal) {
+      const [dy,dm,dd]=dateVal.split('-').map(Number);
+      if (startVal) { const [th,tm]=startVal.split(':').map(Number); scheduledAt = new Date(dy,dm-1,dd,th,tm,0,0).getTime(); }
+      else { scheduledAt = new Date(dy,dm-1,dd,23,59,0,0).getTime(); allDay = true; }
     }
+    if (isEventType && !startVal) { showToast('Set a start time for the event'); return; }
+
     // Duration: read from explicit input first, then override with event time range if provided
     const durationInpEl = document.getElementById('task-duration-input');
     const durationInpVal = parseInt(durationInpEl?.value || '', 10);
     let durMin = Number.isFinite(durationInpVal) && durationInpVal > 0 ? durationInpVal : DEFAULT_TIMER_MIN;
-    if(startVal && endVal){
+    if (isEventType && startVal && endVal) {
       const [sh, sm] = startVal.split(':').map(Number);
       const [eh, em] = endVal.split(':').map(Number);
       const diff = (eh * 60 + em) - (sh * 60 + sm);
@@ -1493,13 +1504,14 @@ const TaskController = {
     const id=StateManager.get('editingTaskId');
     const notesInp = document.getElementById('task-notes-input');
     const budgetInp = document.getElementById('task-budget-input');
-    const recurrence = (this._selectedType === 'event' && this._selectedRecurrence && this._selectedRecurrence.days?.length)
+    const recurrence = (isEventType && this._selectedRecurrence && this._selectedRecurrence.days?.length)
       ? { days: [...this._selectedRecurrence.days], until: this._selectedRecurrence.until || null, exceptions: this._selectedRecurrence.exceptions || [] }
       : null;
     const data={
       title, notes: notesInp?.value.trim()||'',
       priority: prioBtn?.dataset.priority||'mid', cat, scheduledAt, duration_min:durMin,
-      isEvent: this._selectedType === 'event',
+      isEvent: isEventType,
+      allDay: allDay && !isEventType,
       isProject: false,
       parentId: parentId || null,
       recurrence,
@@ -1551,7 +1563,7 @@ const TaskController = {
     body.innerHTML=`
       <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:${color}">${cat.emoji} ${cat.label}${catEarnsGems(g.cat)?' · 💎 earns crystals':''}</div>
       ${parent?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>🗂️</span><span>${esc(parent.title)}</span></div>`:''}
-      ${g.scheduledAt?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>📅</span><span>${fmtDateTime(g.scheduledAt)}</span></div>`:''}
+      ${g.scheduledAt?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>📅</span><span>${fmtWhen(g)}</span></div>`:''}
       ${g.duration_min?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>⏱</span><span>${g.duration_min} min</span></div>`:''}
       ${g.cost?`<div style="display:flex;gap:8px;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:6px;"><span>💰</span><span>$${g.cost}</span></div>`:''}
       ${g.notes?`<div style="font-size:13px;color:rgba(255,255,255,.6);background:rgba(255,255,255,.04);padding:10px 12px;border-radius:12px;margin-top:8px;">${esc(g.notes)}</div>`:''}
@@ -2381,7 +2393,7 @@ const CalendarController = {
           const ghostStyle = isGhost ? this._ghostStyle(color, '4px', '0') : '';
           const baseStyle = isGhost ? ghostStyle : `background:${color}22;`;
           const chipAttr = isGhost ? `data-ghost-date="${dateKey(g.scheduledAt)}"` : `data-task-id="${g.id}" draggable="true"`;
-          return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="${baseStyle}border-left:2px ${isGhost?'dashed':'solid'} ${color};color:rgba(255,255,255,${isGhost?'.55':'.85'});" ${chipAttr}><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${isGhost?' 🔁':''}</span><span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span></div>`;
+          return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="${baseStyle}border-left:2px ${isGhost?'dashed':'solid'} ${color};color:rgba(255,255,255,${isGhost?'.55':'.85'});" ${chipAttr}><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${isGhost?' 🔁':''}</span>${g.allDay ? '' : `<span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span>`}</div>`;
         }).join('');
         if (dayTasks.length>MAX) items += `<div class="text-[10px] text-accent mt-1">+ ${dayTasks.length-MAX} more</div>`;
         html += `<div class="glass-soft glass-hover rounded-xl p-2 flex flex-col gap-1 min-h-24 cursor-pointer ${isToday?'ring-1 ring-accent':''}" data-day="${dk}">

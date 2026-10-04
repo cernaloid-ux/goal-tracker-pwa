@@ -639,8 +639,8 @@
         <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="task-title-input" class="field" placeholder="e.g. Design onboarding flow"><p id="nlp-hint" class="text-xs text-white/35 hidden" style="margin-top:4px;"></p></div>
         <div><label class="text-sm text-white/50 mb-1.5 block">Date</label><input id="task-date-input" type="date" class="field"></div>
         <div id="event-time-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label class="text-sm text-white/50 mb-1.5 block">Time from</label><input id="task-time-from-input" type="time" class="field"></div>
-          <div><label class="text-sm text-white/50 mb-1.5 block">Time to</label><input id="task-time-to-input" type="time" class="field"></div>
+          <div><label id="task-time-from-label" class="text-sm text-white/50 mb-1.5 block">Time from</label><input id="task-time-from-input" type="time" class="field"></div>
+          <div id="task-time-to-wrap"><div><label class="text-sm text-white/50 mb-1.5 block">Time to</label><input id="task-time-to-input" type="time" class="field"></div></div>
         </div>
         <div id="event-recurrence-section" class="glass-soft rounded-2xl p-4 space-y-3 hidden">
           <div class="flex items-center justify-between">
