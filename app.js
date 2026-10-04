@@ -524,6 +524,7 @@ const StateManager = (() => {
 const SyncManager = (() => {
   const KV = '/api/sync';
   let kvTimer=null;
+  let _syncKeyToastShown=false;
 
   function getSyncKey() { return localStorage.getItem('nova-sync-key') || ''; }
 
@@ -561,6 +562,13 @@ const SyncManager = (() => {
           sleepSettings: s.sleepSettings,
         }),
       });
+      if (res.status === 401) {
+        if (!_syncKeyToastShown && getUid() === 'master_admin_id') {
+          _syncKeyToastShown = true;
+          showToast('🔑 Sync key required');
+        }
+        return;
+      }
       if (res.ok) {
         const json = await res.json();
         if (json.forceUpdate && json.data) {
@@ -611,6 +619,13 @@ const SyncManager = (() => {
   async function loadFromCloud(opts = {}) {
     try {
       const res = await fetch(`${KV}?userId=${getUid()}`, { headers: { 'x-nova-key': getSyncKey() } });
+      if (res.status === 401) {
+        if (!_syncKeyToastShown && getUid() === 'master_admin_id') {
+          _syncKeyToastShown = true;
+          showToast('🔑 Sync key required');
+        }
+        return;
+      }
       if (!res.ok) return;
       const data = await res.json();
       if (!data || !data.goals) return;
@@ -3532,6 +3547,8 @@ function renderSettingsPanel() {
   if (tokenInp) tokenInp.value = StateManager.get('tgToken')||'';
   if (chatInp) chatInp.value = StateManager.get('tgChatId')||'';
   if (webhookInp) webhookInp.value = StateManager.get('webhookUrl')||'';
+  const syncKeyInp = document.getElementById('settings-sync-key');
+  if (syncKeyInp) syncKeyInp.value = localStorage.getItem('nova-sync-key') || '';
 
   const mgr = document.getElementById('tags-manager');
   if (mgr) {
@@ -3560,6 +3577,8 @@ function initSettingsHandlers() {
   document.getElementById('btn-save-settings')?.addEventListener('click', ()=>{
     const nameVal = document.getElementById('settings-profile-name')?.value.trim();
     const dimRecurring = !!document.getElementById('settings-dim-recurring')?.classList.contains('on');
+    const syncKeyVal = document.getElementById('settings-sync-key')?.value;
+    if (syncKeyVal !== undefined) localStorage.setItem('nova-sync-key', syncKeyVal.trim());
     StateManager.patch({
       profileName: nameVal || 'You',
       tgToken: document.getElementById('settings-tg-token')?.value.trim()||'',
@@ -3568,6 +3587,7 @@ function initSettingsHandlers() {
       dimRecurring,
     });
     SyncManager.scheduleSync();
+    SyncManager.loadFromCloud();
     closeModal('modal-settings');
     syncProfileNameEverywhere();
     if (StateManager.get('currentView')==='profile') ProfileRenderer.render();

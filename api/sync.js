@@ -82,19 +82,23 @@ function sanitizeState(body, clientUserId) {
 async function handler(req,res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers','Content-Type');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type, x-nova-key');
   if(req.method==='OPTIONS') return res.status(200).end();
 
   const kv=getKV();
 
   if(req.method==='GET'){
-    // userId из query не влияет на выбор ключа KV — ключ всегда MASTER_KV_KEY.
-    // Но мы «зеркалим» клиентский userId обратно, чтобы фронтенд принял ответ.
     const clientUserId = req.query.userId || null;
+    if (String(clientUserId) === 'master_admin_id') {
+      const syncKey = process.env.NOVA_SYNC_KEY;
+      if (!syncKey || req.headers['x-nova-key'] !== syncKey) {
+        return res.status(401).json({ error: 'unauthorized' });
+      }
+    }
+    const kvKey = (clientUserId && clientUserId !== 'master_admin_id') ? ('цель:' + clientUserId) : MASTER_KV_KEY;
     try {
-      const data=await kv.get(MASTER_KV_KEY);
+      const data=await kv.get(kvKey);
       if(!data) return res.status(404).json({error:'No state found'});
-      // Подставляем clientUserId, не меняя сохранённые данные
       const payload = clientUserId ? { ...data, userId: clientUserId } : data;
       return res.status(200).json(payload);
     }
@@ -104,11 +108,16 @@ async function handler(req,res) {
   if(req.method==='POST'){
     let body; try{body=typeof req.body==='string'?JSON.parse(req.body):req.body;}catch(e){return res.status(400).json({error:'Invalid JSON'});}
     if(!body||typeof body!=='object') return res.status(400).json({error:'Invalid body'});
-    // userId из body не влияет на ключ KV (всегда MASTER_KV_KEY), но возвращается
-    // в ответе — иначе фронтенд с guest_123 молча отвергает синхронизацию.
     const clientUserId = body.userId || null;
+    if (String(clientUserId) === 'master_admin_id') {
+      const syncKey = process.env.NOVA_SYNC_KEY;
+      if (!syncKey || req.headers['x-nova-key'] !== syncKey) {
+        return res.status(401).json({ error: 'unauthorized' });
+      }
+    }
+    const kvKey = (clientUserId && clientUserId !== 'master_admin_id') ? ('цель:' + clientUserId) : MASTER_KV_KEY;
     try {
-      const existing=await kv.get(MASTER_KV_KEY);
+      const existing=await kv.get(kvKey);
 
       // ── Last-Write-Wins ───────────────────────────────────────────────
       // Если сервер новее клиента — отклоняем запись и возвращаем серверные данные.
@@ -117,7 +126,6 @@ async function handler(req,res) {
       const serverTs  = (existing && typeof existing === 'object') ? (parseInt(existing.updatedAt) || 0) : 0;
 
       if (existing && typeof existing === 'object' && clientTs < serverTs) {
-        // Сервер новее — возвращаем его данные клиенту, запись отклонена
         const payload = clientUserId ? { ...existing, userId: clientUserId } : existing;
         console.log(`[KV POST] forceUpdate: server=${serverTs} > client=${clientTs}`);
         return res.status(200).json({ ok: false, forceUpdate: true, data: payload });
@@ -125,7 +133,7 @@ async function handler(req,res) {
 
       // Клиент новее или равен — полностью перезаписываем базу.
       const sanitized = sanitizeState(body, clientUserId);
-      await kv.set(MASTER_KV_KEY, sanitized, {ex: TTL_SECONDS});
+      await kv.set(kvKey, sanitized, {ex: TTL_SECONDS});
       return res.status(200).json({ok:true, userId:sanitized.userId, updatedAt:sanitized.updatedAt, gems:sanitized.gems, goalsCount:sanitized.goals.length});
     } catch(e){console.error('[KV POST]',e); return res.status(500).json({error:'KV write error',detail:e.message});}
   }
