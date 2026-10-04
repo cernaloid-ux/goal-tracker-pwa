@@ -18,11 +18,23 @@
 
 ---
 
+## Пакет F — Допроверки
+
+| # | Описание | Статус |
+|---|----------|--------|
+| F1 | Viewport `width=device-width, initial-scale=1, viewport-fit=cover` & 16px font-size for mobile inputs | ✅ Done (коммит `df4c708`) |
+| F2 | resetData cloud flush with empty state & preserve `nova-sync-key` | ✅ Verified (строки `3631-3648` app.js) |
+| F3 | importData single input cleanup & listener verification | ✅ Done (коммит `fb167e8`) |
+| F4 | renderCategoryFilters catKey normalization (`creative` → `life`) | ✅ Done (коммит `fea24ce`) |
+| F5 | Modal accessibility: `.modal-card`, `role="dialog"`, `aria-label="Close"` | ✅ Done (коммит `d9e43ee`) |
+
+---
+
 ## Часть A — Исправления (статусы)
 
 | # | Описание | Статус |
 |---|----------|--------|
-| A1 | Auth: getSyncKey, getUid guard, x-nova-key header, api/sync.js 401 guard | ✅ Done (предыдущая сессия) |
+| A1 | Auth & Sync Key: `NOVA_SYNC_KEY` in `api/sync.js`, `x-nova-key` header in doSync/loadFromCloud, guest uid isolation, token strip in exportData | ✅ Done (коммит `311b7b9`) |
 | A2 | StateManager.set UI_ONLY, activeTaskId, sync-v2 migration, auto-refresh | ✅ Done |
 | A3 | Priority sort `\|\|1` → `??1` (4 места) | ✅ Done |
 | A4 | Timer: elapsed save (a), _armEndTimer background tab (b), resume after reload (c), pause prev on switch (d) | ✅ Done |
@@ -42,11 +54,15 @@
 
 | # | Описание | Статус |
 |---|----------|--------|
-| B1 | Smart Dictation 2.0 — api/parse-voice.js (Gemini), DictationController, voice modal redesign | ❌ TODO |
-| B2 | Plan My Day — автопланировщик, findFreeSlots(), Accept/Shuffle UI | ❌ TODO |
-| B3 | Insights & Weekly Review — SVG heatmap, donut chart, productivity bars | ❌ TODO |
-| B4 | Boss of the Day + Achievements (~12) + Combo system | ❌ TODO |
-| B5 | Appearance Studio — accent color, glass blur/opacity, density, font size | ❌ TODO |
+| B1.1 | Serverless endpoint `api/parse-voice.js` (Gemini API, CommonJS, schema validation) | ✅ Done (коммит `b1e2047`) |
+| B1.2 | UI redesign of `#modal-voice` (chips RU/RO/EN, big mic, calendar header mic button) | ✅ Done (коммит `e2cb812`) |
+| B1.3 | DictationController client + `NLP.parseMulti` offline fallback (8s abort timeout) | ✅ Done (коммит `e8a7b13`) |
+| B1.4 | Voice Draft Board with collision check (incl. ghost recurrences) & `TaskController.openModal` prefill | ✅ Done (коммит `6b177a5`) |
+| B1.5 | Batch commit (`buildGoalFromDraft`, single undo snapshot, sync & reminders schedule, undoable toast) | ✅ Done (коммит `837f76b`) |
+| B2 | Plan My Day — автопланировщик, findFreeSlots(), Accept/Shuffle UI | ❌ TODO (не тронуто) |
+| B3 | Insights & Weekly Review — SVG heatmap, donut chart, productivity bars | ❌ TODO (не тронуто) |
+| B4 | Boss of the Day + Achievements (~12) + Combo system | ❌ TODO (не тронуто) |
+| B5 | Appearance Studio — accent color, glass blur/opacity, density, font size | ❌ TODO (не тронуто) |
 
 ---
 
@@ -60,8 +76,27 @@
 
 ---
 
-## Статус пакета Части A
-Все пункты Части A (A1-A13) полностью выполнены и верифицированы.
+## DECISIONS
+
+1. **A1: Sync Key & Guest Isolation (`api/sync.js`)**
+   - *Выбор:* При запросе от `master_admin_id` строго проверяется `x-nova-key === process.env.NOVA_SYNC_KEY`. Для гостевых сессий (`guest_...`) данные изолируются в отдельный KV-ключ `цель:${clientUserId}` без краша интерфейса.
+   - *Причина:* Защищает данные владельца от перезаписи неавторизованными пользователями, сохраняя при этом работоспособность локальных тестов и гостевых визитов.
+
+2. **B1.1: CommonJS и Gemini API в Serverless (`api/parse-voice.js`)**
+   - *Выбор:* Использована реализация `fetch` к Google Gemini Generative Language API без внешних SDK, с валидацией входных данных и строгим форматом ответа JSON schema.
+   - *Причина:* Соответствует правилу CommonJS (`require`/`module.exports`) и предотвращает сбои рантайма Vercel Serverless Function.
+
+3. **B1.3: Офлайн-парсер `NLP.parseMulti`**
+   - *Выбор:* Многосоставной парсер разбивает речь по разделителям («и еще», «затем», «потом», «также», переносы строк, `;`), извлекает дни недели, относительные даты («сегодня», «завтра», «послезавтра»), форматы времени/длительности, приоритеты и категории, подставляя `defaultDate` календаря.
+   - *Причина:* Обеспечивает полную автономность системы: при отсутствии сети или сбоях AI парсинг не падает, а выводит черновики с пометкой низкой уверенности для ручной корректировки.
+
+4. **B1.4: Проверка коллизий с учётом Ghost-событий**
+   - *Выбор:* Метод `_checkCollision` проверяет пересечения не только с обычными делами и событиями, но и с синтетическими повторениями через `getGhostOccurrences`.
+   - *Причина:* Предотвращает назначение встреч на время, уже занятое регулярными рутинами или еженедельными митингами.
+
+5. **B1.5: Атомарное пакетное сохранение с отменой**
+   - *Выбор:* Делается один снапшот `StateManager.pushUndoSnapshot('Голосовой ввод')` перед добавлением всех выбранных дел в массив `goals`. После сохранения выводится тост с интерактивной кнопкой «Отменить».
+   - *Причина:* Позволяет пользователю в один клик отменить добавление целой пачки распознанных дел, если результат не устроил.
 
 ---
 
