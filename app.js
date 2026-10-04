@@ -681,7 +681,7 @@ const ViewRouter = {
     document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === view));
     try {
       if (view==='tasks')    { TaskController.render(); renderTagFilterRow(); renderProjectsPanel(); renderCategoryFilters(); }
-      if (view==='calendar') CalendarController.render();
+      if (view==='calendar') { CalendarController._didAutoScroll = false; CalendarController.render(); }
       if (view==='profile')  ProfileRenderer.render();
       if (view==='focus')    { TimerController.renderGoalCard(); TimerController.tick(); TimerController.renderSpheres(); }
       if (view==='sleep')    RoutineManager.render();
@@ -1641,7 +1641,7 @@ function layoutOverlaps(items) {
 ═══════════════════════════════════════════════════════════ */
 const CalendarController = {
   _calDate: new Date(), _view: 'day', _nowTimer: null, _yearDate: new Date(),
-  _dragGoalId: null,
+  _dragGoalId: null, _didAutoScroll: false,
   _pendingGhost: null,   // 3.5 — ghost being edited in choice dialog
   // ── Layout constants ──────────────────────────────────────
   PX_PER_MIN: 1,   // 1440px total height = 24 h × 60 min
@@ -1657,7 +1657,7 @@ const CalendarController = {
     StateManager.subscribe(()=>{ if(StateManager.get('currentView')==='calendar') this.render(); });
     document.getElementById('cal-prev')?.addEventListener('click', ()=>this.prev());
     document.getElementById('cal-next')?.addEventListener('click', ()=>this.next());
-    document.getElementById('cal-today')?.addEventListener('click', ()=>{ this._calDate=new Date(); this._yearDate=new Date(); this.render(); });
+    document.getElementById('cal-today')?.addEventListener('click', ()=>{ this._calDate=new Date(); this._yearDate=new Date(); this._didAutoScroll=false; this.render(); });
     document.getElementById('btn-undo')?.addEventListener('click', ()=>this.undo());
     document.getElementById('btn-redo')?.addEventListener('click', ()=>this.redo());
     document.addEventListener('keydown', (e)=>{
@@ -1692,6 +1692,7 @@ const CalendarController = {
   },
 
   setView(v) {
+    this._didAutoScroll = false;
     this._view = v;
     document.querySelectorAll('#calTabs .subtab').forEach(b=>{
       const on = b.dataset.cal === v;
@@ -1702,6 +1703,7 @@ const CalendarController = {
   },
 
   prev() {
+    this._didAutoScroll = false;
     if(this._view==='year') { this._yearDate.setFullYear(this._yearDate.getFullYear()-1); this.render(); return; }
     if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()-1);
     else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()-7);
@@ -1709,6 +1711,7 @@ const CalendarController = {
     this.render();
   },
   next() {
+    this._didAutoScroll = false;
     if(this._view==='year') { this._yearDate.setFullYear(this._yearDate.getFullYear()+1); this.render(); return; }
     if(this._view==='month') this._calDate.setMonth(this._calDate.getMonth()+1);
     else if(this._view==='week') this._calDate.setDate(this._calDate.getDate()+7);
@@ -2206,6 +2209,32 @@ const CalendarController = {
           this._attachResizeHandle(card.querySelector('.cal-resize-handle'), card, g.id);
         }
       });
+
+      // A9.4 — Now-line (today only)
+      if (dk === dateKey()) {
+        const nowLine = document.createElement('div');
+        nowLine.style.cssText = 'position:absolute;left:44px;right:0;height:2px;background:#FF3B30;z-index:20;pointer-events:none;';
+        nowLine.innerHTML = '<span style="position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:#FF3B30;"></span>';
+        const updateNow = () => {
+          const n = new Date();
+          nowLine.style.top = ((n.getHours()*60 + n.getMinutes()) * PX) + 'px';
+        };
+        updateNow();
+        c.appendChild(nowLine);
+        this._nowTimer = setInterval(updateNow, 60000);
+      }
+
+      // A9.4 — Auto-scroll to current time - 2h on first render
+      if (!this._didAutoScroll) {
+        this._didAutoScroll = true;
+        const calDay = document.getElementById('cal-day');
+        if (calDay) {
+          const targetMins = new Date().getHours() * 60 + new Date().getMinutes();
+          setTimeout(() => {
+            calDay.scrollTop = Math.max(0, targetMins - 120) * PX;
+          }, 0);
+        }
+      }
     } catch(e) { console.error('[_renderDay]', e); }
   },
   _renderWeek() {
@@ -2347,11 +2376,37 @@ const CalendarController = {
           }
         });
 
+        // A9.4 — Now-line (today column only)
+        if (dk === todayKey) {
+          const nowLine = document.createElement('div');
+          nowLine.style.cssText = 'position:absolute;left:0;right:0;height:2px;background:#FF3B30;z-index:20;pointer-events:none;';
+          nowLine.innerHTML = '<span style="position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:#FF3B30;"></span>';
+          const updateNow = () => {
+            const n = new Date();
+            nowLine.style.top = ((n.getHours()*60 + n.getMinutes()) * PX) + 'px';
+          };
+          updateNow();
+          col.appendChild(nowLine);
+          this._nowTimer = setInterval(updateNow, 60000);
+        }
+
         bodyWrapper.appendChild(col);
       }
 
       c.innerHTML = head + allDayRow;
       c.appendChild(bodyWrapper);
+
+      // A9.4 — Auto-scroll to current time - 2h on first render
+      if (!this._didAutoScroll) {
+        this._didAutoScroll = true;
+        const weekScroll = c.parentElement;
+        if (weekScroll) {
+          const targetMins = new Date().getHours() * 60 + new Date().getMinutes();
+          setTimeout(() => {
+            weekScroll.scrollTop = Math.max(0, targetMins - 120) * PX;
+          }, 0);
+        }
+      }
 
       // Day header click → navigate
       c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',()=>this._navigateToDay(el.dataset.day)));
