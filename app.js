@@ -3853,6 +3853,266 @@ const NLP = {
     result.title=s.replace(/\s+/g,' ').trim()||text;
     return result;
   },
+
+  parseMulti(text, lang = 'ru', defaultDate = null) {
+    if (!text || typeof text !== 'string') return [];
+    const splitRegex = /(?:\r?\n|;|(?:\s+|^)(?:и\s+еще|и\s+ещё|затем|потом|также|после\s+этого|apoi|și\s+apoi|and\s+then|also)(?:\s+|$))/i;
+    const rawSegments = text.split(splitRegex).map(s => s.trim()).filter(Boolean);
+    const segments = rawSegments.length ? rawSegments : [text.trim()];
+
+    const results = [];
+    const now = new Date();
+
+    for (let seg of segments) {
+      if (!seg) continue;
+      let s = seg;
+      let date = defaultDate || null;
+      let time = null;
+      let timeTo = null;
+      let duration_min = null;
+      let kind = 'task';
+      let cat = 'life';
+      let priority = 'medium';
+      let reminders = [];
+
+      // 1. Date heuristics
+      if (/\b(?:сегодня|today|azi)\b/i.test(s)) {
+        date = dateKey(now.getTime());
+        s = s.replace(/\b(?:сегодня|today|azi)\b/ig, ' ');
+      } else if (/\b(?:завтра|tomorrow|mâine|maine)\b/i.test(s)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        date = dateKey(d.getTime());
+        s = s.replace(/\b(?:завтра|tomorrow|mâine|maine)\b/ig, ' ');
+      } else if (/\b(?:послезавтра|poimâine|poimaine)\b/i.test(s)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 2);
+        date = dateKey(d.getTime());
+        s = s.replace(/\b(?:послезавтра|poimâine|poimaine)\b/ig, ' ');
+      } else {
+        const dowMap = {
+          'понедельник': 1, 'пн': 1, 'luni': 1, 'monday': 1, 'mon': 1,
+          'вторник': 2, 'вт': 2, 'marți': 2, 'marti': 2, 'tuesday': 2, 'tue': 2,
+          'среду': 3, 'среда': 3, 'ср': 3, 'miercuri': 3, 'wednesday': 3, 'wed': 3,
+          'четверг': 4, 'чт': 4, 'joi': 4, 'thursday': 4, 'thu': 4,
+          'пятницу': 5, 'пятница': 5, 'пт': 5, 'vineri': 5, 'friday': 5, 'fri': 5,
+          'субботу': 6, 'суббота': 6, 'сб': 6, 'sâmbătă': 6, 'sambata': 6, 'saturday': 6, 'sat': 6,
+          'воскресенье': 7, 'вс': 7, 'duminică': 7, 'duminica': 7, 'sunday': 7, 'sun': 7
+        };
+        const dowRegex = /(?:в|во|on|la)?\s*\b(понедельник|вторник|среду|среда|четверг|пятницу|пятница|субботу|суббота|воскресенье|luni|marți|marti|miercuri|joi|vineri|sâmbătă|sambata|duminică|duminica|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+        const dowMatch = s.match(dowRegex);
+        if (dowMatch) {
+          const targetDow = dowMap[dowMatch[1].toLowerCase()];
+          if (targetDow) {
+            const curDow = now.getDay() === 0 ? 7 : now.getDay();
+            let diff = targetDow - curDow;
+            if (diff <= 0) diff += 7;
+            const d = new Date(now);
+            d.setDate(d.getDate() + diff);
+            date = dateKey(d.getTime());
+            s = s.replace(dowMatch[0], ' ');
+          }
+        } else {
+          const ddmmyyyy = s.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
+          if (ddmmyyyy) {
+            const dayNum = parseInt(ddmmyyyy[1], 10);
+            const monthNum = parseInt(ddmmyyyy[2], 10);
+            const yearNum = ddmmyyyy[3] ? parseInt(ddmmyyyy[3], 10) : now.getFullYear();
+            const fullYear = yearNum < 100 ? 2000 + yearNum : yearNum;
+            if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+              date = `${fullYear}-${pad(monthNum)}-${pad(dayNum)}`;
+              s = s.replace(ddmmyyyy[0], ' ');
+            }
+          }
+        }
+      }
+
+      // 2. Time heuristics
+      const timeRegex = /(?:в|at|la)\s+(\d{1,2})(?::(\d{2})|\s*(?:часов|часа|ч|h|:00))?/i;
+      const tm = s.match(timeRegex);
+      if (tm) {
+        let h = parseInt(tm[1], 10);
+        let m = tm[2] ? parseInt(tm[2], 10) : 0;
+        if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+          time = `${pad(h)}:${pad(m)}`;
+          s = s.replace(tm[0], ' ');
+        }
+      }
+
+      // 3. TimeTo heuristics
+      const timeToRegex = /(?:до|till|until|până\s+la)\s+(\d{1,2})(?::(\d{2})|\s*(?:часов|часа|ч|h|:00))?/i;
+      const ttm = s.match(timeToRegex);
+      if (ttm) {
+        let h = parseInt(ttm[1], 10);
+        let m = ttm[2] ? parseInt(ttm[2], 10) : 0;
+        if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+          timeTo = `${pad(h)}:${pad(m)}`;
+          s = s.replace(ttm[0], ' ');
+        }
+      }
+
+      // 4. Duration heuristics
+      const durMatch = s.match(/(?:на|for|timp\s+de)\s+(\d+)\s*(часов|часа|час|ч|hours?|hrs?|h|минут|минуты|минуту|мин|m|minutes?|mins?)\b/i);
+      if (durMatch) {
+        const val = parseInt(durMatch[1], 10);
+        const unit = durMatch[2].toLowerCase();
+        duration_min = /ч|h/i.test(unit) ? val * 60 : val;
+        s = s.replace(durMatch[0], ' ');
+      } else if (time && timeTo) {
+        const [sh, sm] = time.split(':').map(Number);
+        const [eh, em] = timeTo.split(':').map(Number);
+        const diff = (eh * 60 + em) - (sh * 60 + sm);
+        if (diff > 0) duration_min = diff;
+      } else if (time) {
+        duration_min = 30;
+      }
+
+      // 5. Kind
+      if (time || timeTo || /\b(?:встреча|созвон|митинг|вебинар|звонок|сессия|meeting|call|session|ședință|apel)\b/i.test(s)) {
+        kind = 'event';
+      }
+
+      // 6. Category
+      if (/\b(?:клиент|митинг|встреча|проект|звонок|созвон|работа|договор|отчет|memernity|cerna|work|client|meeting|call|project|job)\b/i.test(s)) {
+        cat = 'business';
+      } else if (/\b(?:тренировка|спорт|врач|зал|бег|бассейн|таблетки|доктор|gym|workout|sport|doctor|run|health|sală|antrenament|medic)\b/i.test(s)) {
+        cat = 'health';
+      } else if (/\b(?:курс|книга|урок|читать|лекция|дз|homework|study|book|read|exam|school|curs|carte|lecție)\b/i.test(s)) {
+        cat = 'study';
+      } else {
+        cat = 'life';
+      }
+
+      // 7. Priority
+      if (/\b(?:срочно|важно|asap|urgent|important|p1)\b/i.test(s)) {
+        priority = 'high';
+        s = s.replace(/\b(?:срочно|важно|asap|urgent|important|p1)\b/ig, ' ');
+      } else if (/\b(?:если\s+успею|фоном|не\s+к\s+спеху|low\s+priority|p3)\b/i.test(s)) {
+        priority = 'low';
+        s = s.replace(/\b(?:если\s+успею|фоном|не\s+к\s+спеху|low\s+priority|p3)\b/ig, ' ');
+      } else {
+        priority = 'medium';
+      }
+
+      // 8. Reminders
+      const remMatch = s.match(/(?:напомни\s+за|напоминание\s+за|remind\s+me)\s+(\d+)\s*(?:мин|минут|m|min)?/i);
+      if (remMatch) {
+        reminders = [parseInt(remMatch[1], 10)];
+        s = s.replace(remMatch[0], ' ');
+      } else if (time) {
+        reminders = [15];
+      }
+
+      // 9. Title
+      const cleanTitle = s.replace(/\s+/g, ' ').trim();
+      const title = cleanTitle.length > 1 ? cleanTitle : seg.trim();
+
+      results.push({
+        kind,
+        title,
+        cat,
+        date,
+        time,
+        timeTo,
+        duration_min,
+        priority,
+        reminders,
+        recurrence: null,
+        confidence: 0.5,
+        notes: '',
+        tags: []
+      });
+    }
+
+    return results;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DICTATION CONTROLLER (Nova Voice v9)
+═══════════════════════════════════════════════════════════ */
+const DictationController = {
+  _draftItems: [],
+  defaultDate: null,
+
+  openModal(opts = {}) {
+    this.defaultDate = opts.defaultDate || null;
+    this._draftItems = [];
+    const interimEl = document.getElementById('voiceInterim');
+    if (interimEl) { interimEl.textContent = ''; interimEl.classList.add('hidden'); }
+    const draftSection = document.getElementById('voice-draft-section');
+    if (draftSection) draftSection.classList.add('hidden');
+    const draftCards = document.getElementById('voice-draft-cards');
+    if (draftCards) draftCards.innerHTML = '';
+    const draftCount = document.getElementById('voice-draft-count');
+    if (draftCount) draftCount.textContent = '0';
+    openModal('modal-voice');
+  },
+
+  async parse(text) {
+    if (!text || !text.trim()) {
+      showToast('⚠️ Введите или надиктуйте текст');
+      return;
+    }
+    const parseBtn = document.getElementById('btn-voice-parse');
+    const origHtml = parseBtn ? parseBtn.innerHTML : '';
+    if (parseBtn) {
+      parseBtn.disabled = true;
+      parseBtn.innerHTML = '<span>⏳ Распознаю...</span>';
+    }
+
+    const langSetting = localStorage.getItem('nova-voice-lang') || 'ru-RU';
+    const lang = langSetting.slice(0, 2);
+    const payload = {
+      text: text.trim(),
+      now: new Date().toISOString(),
+      lang: lang || 'ru',
+      defaultDate: this.defaultDate || null
+    };
+
+    let items = null;
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 8000);
+
+    try {
+      const syncKey = localStorage.getItem('nova-sync-key') || '';
+      const res = await fetch('/api/parse-voice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-nova-key': syncKey
+        },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (Array.isArray(data.items) && data.items.length) {
+        items = data.items;
+      } else {
+        throw new Error('No items returned');
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn('Voice parse-voice API error or timeout, falling back to NLP:', err);
+      items = NLP.parseMulti(text, lang, this.defaultDate);
+      showToast('Offline parse — проверь черновик');
+    } finally {
+      if (parseBtn) {
+        parseBtn.disabled = false;
+        parseBtn.innerHTML = origHtml;
+      }
+    }
+
+    if (items && items.length) {
+      if (typeof this.renderDraftBoard === 'function') {
+        this.renderDraftBoard(items);
+      }
+    } else {
+      showToast('⚠️ Ничего не удалось распознать');
+    }
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════
