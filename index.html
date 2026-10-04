@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Nova OS — Productivity</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -23,6 +23,7 @@
     }
   </script>
   <style>
+    .app-shell{height:100vh;height:100dvh;width:100%}
     :root { color-scheme: dark; }
     html, body { height: 100%; }
     body {
@@ -275,7 +276,7 @@
 </head>
 <body class="text-white/90 font-sans antialiased overflow-hidden">
 
-  <div class="flex h-screen w-screen">
+  <div class="flex h-screen w-screen app-shell">
 
     <!-- ============ LEFT SIDEBAR (desktop) / BOTTOM TAB BAR (mobile) ============ -->
     <aside id="sidebar" class="glass fixed md:relative inset-x-0 bottom-0 md:inset-auto m-0 md:m-3 rounded-t-3xl md:rounded-3xl flex flex-row md:flex-col items-center md:items-stretch py-2 md:py-6 px-2 md:px-3 transition-all duration-300 z-40 md:z-auto flex-none" style="width: 240px;">
@@ -373,7 +374,7 @@
                   <button class="seg-btn glass-hover" data-filter="all" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">All</button>
                   <button class="seg-btn glass-hover" data-filter="done" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Done</button>
                 </div>
-                <button id="btn-search-toggle" class="glass-soft glass-hover rounded-lg" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);">🔍</button>
+                <button id="btn-search-toggle" aria-label="Search" class="glass-soft glass-hover rounded-lg" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);">🔍</button>
                 <button id="btn-sort" class="glass-soft glass-hover rounded-lg text-xs font-medium" style="padding:7px 12px;color:rgba(255,255,255,.6);">⇅ Date</button>
               </div>
             </div>
@@ -489,8 +490,8 @@
           <div class="flex items-center gap-3 min-w-0">
             <h1 id="calendar-header-title" class="text-xl md:text-2xl font-bold truncate max-w-[50vw] md:max-w-none">—</h1>
             <div class="flex gap-1 flex-none">
-              <button id="cal-prev" data-action="cal-prev" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 19l-7-7 7-7"/></svg></button>
-              <button id="cal-next" data-action="cal-next" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg></button>
+              <button id="cal-prev" data-action="cal-prev" aria-label="Previous" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 19l-7-7 7-7"/></svg></button>
+              <button id="cal-next" data-action="cal-next" aria-label="Next" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg></button>
               <button id="cal-today" data-action="cal-today" class="glass-soft glass-hover rounded-lg px-3 text-xs font-medium text-white/60">Today</button>
               <button id="btn-undo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Undo (⌘Z)" disabled>↩</button>
               <button id="btn-redo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Redo (⌘⇧Z)" disabled>↪</button>
@@ -623,10 +624,10 @@
     <!-- ============ TASK MODAL ============ -->
   <div id="taskModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="taskModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6 gap-3">
         <h2 id="taskModalTitle" class="text-xl font-bold truncate">New Task</h2>
-        <button data-close="taskModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="taskModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="space-y-4">
         <div>
@@ -698,10 +699,10 @@
   <!-- ============ TASK DETAIL MODAL ============ -->
   <div id="taskDetailModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="taskDetailModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6 gap-3">
         <h2 id="td-title" class="text-xl font-bold truncate max-w-[75%]">Task Details</h2>
-        <button data-close="taskDetailModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="taskDetailModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="task-detail-body"></div>
       <div class="flex flex-wrap gap-3 mt-6">
@@ -716,10 +717,10 @@
   <!-- ============ ROUTINE MODAL ============ -->
   <div id="routineModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="routineModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6 gap-3">
         <h2 id="routineModalTitle" class="text-xl font-bold truncate">New Routine</h2>
-        <button data-close="routineModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="routineModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="space-y-4">
         <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="routine-title-input" class="field" placeholder="e.g. Evening wind down"></div>
@@ -748,10 +749,10 @@
   <!-- ============ MACRO GOAL (PROJECT) MODAL ============ -->
   <div id="macroModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="macroModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6 gap-3">
         <h2 id="macroModalTitle" class="text-xl font-bold truncate">New Project</h2>
-        <button data-close="macroModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="macroModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="space-y-4">
         <input type="hidden" id="macro-edit-id">
@@ -774,10 +775,10 @@
   <!-- ============ CART MODAL ============ -->
   <div id="cartModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="cartModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-bold">Cart</h2>
-        <button data-close="cartModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="cartModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="cart-list"></div>
       <div style="display:flex;justify-content:space-between;margin-top:14px;font-weight:700;"><span>Total</span><span id="cart-total">0 💎</span></div>
@@ -796,10 +797,10 @@
   <!-- ============ PURCHASES MODAL ============ -->
   <div id="purchasesModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="purchasesModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-bold">Purchase History</h2>
-        <button data-close="purchasesModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="purchasesModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="purchases-list"></div>
     </div>
@@ -808,10 +809,10 @@
   <!-- ============ GOAL PICKER MODAL ============ -->
   <div id="goalPickerModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="goalPickerModal"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-bold">Pick a task</h2>
-        <button data-close="goalPickerModal" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="goalPickerModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="goal-picker-list"></div>
     </div>
@@ -820,7 +821,7 @@
   <!-- ============ SETTINGS MODAL ============ -->
   <div id="modal-settings" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="modal-settings"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6 gap-3">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-11 h-11 rounded-2xl accent-grad flex items-center justify-center flex-none">
@@ -828,7 +829,7 @@
           </div>
           <h2 class="text-xl font-bold">Settings</h2>
         </div>
-        <button data-close="modal-settings" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="modal-settings" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="space-y-4">
         <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.08);">
@@ -879,10 +880,10 @@
   <!-- ============ VOICE MODAL ============ -->
   <div id="modal-voice" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="modal-voice"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative">
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative" role="dialog" aria-modal="true">
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-bold">Voice Input</h2>
-        <button data-close="modal-voice" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button data-close="modal-voice" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="flex flex-col items-center text-center">
         <div id="voiceMic" class="w-24 h-24 rounded-full accent-grad accent-glow flex items-center justify-center mb-4">
@@ -902,7 +903,7 @@
   <!-- ============ GHOST EDIT CHOICE MODAL ============ -->
   <div id="ghostEditChoiceModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="ghostEditChoiceModal"></div>
-    <div class="modal-card glass rounded-3xl p-5 w-full max-w-sm relative">
+    <div class="modal-card glass rounded-3xl p-5 w-full max-w-sm relative" role="dialog" aria-modal="true">
       <h3 class="text-lg font-bold mb-4">Edit recurring event</h3>
       <div class="flex flex-col gap-2">
         <button id="btn-ghost-edit-this" class="glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Edit only this event</button>
