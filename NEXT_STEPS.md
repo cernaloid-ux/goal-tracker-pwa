@@ -30,7 +30,7 @@
 | A6 | Routines: days field ignored, one-time alarms, streak reset | ✅ Done |
 | A7 | Task form: allDay flag, hidden time-from defaults, time-to wrapping | ✅ Done |
 | A8 | NLP dryRun on input keystroke | ✅ Done |
-| A9 | Calendar: tap earlyCancel, addEventListener leak, overlap layout, now-line, month drag | ❌ TODO |
+| A9 | Calendar: tap earlyCancel, addEventListener leak, overlap layout, now-line, month drag | ✅ Done |
 | A10 | Level from lifetime gems; stats exclude projects | ✅ Done |
 | A11 | Uncomplete removes history entry, reverts exact gem amount | ✅ Done |
 | A12 | Project gemsReward payment on leaf completion (settleProjectRewards) | ✅ Done |
@@ -60,14 +60,9 @@
 
 ---
 
-## A2 — Следующий приоритет (первый невыполненный)
-
-**Что осталось из A2:**
-- `setInterval(()=>SyncManager.loadFromCloud({silent:true}), 60000)` в DOMContentLoaded
-- `document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) SyncManager.loadFromCloud({silent:true}); })` в DOMContentLoaded
-
-**Затем A4 (timer fixes).**
+## Статус пакета Части A
+Все пункты Части A (A1-A13) полностью выполнены и верифицированы.
 
 ---
 
-> Последнее обновление: 2026-10-03
+> Последнее обновление: 2026-10-04
