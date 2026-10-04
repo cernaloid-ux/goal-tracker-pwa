@@ -498,6 +498,7 @@
               <button id="cal-today" data-action="cal-today" class="glass-soft glass-hover rounded-lg px-3 text-xs font-medium text-white/60">Today</button>
               <button id="btn-undo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Undo (⌘Z)" disabled>↩</button>
               <button id="btn-redo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Redo (⌘⇧Z)" disabled>↪</button>
+              <button id="btn-cal-voice" aria-label="Voice input" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center text-accent" title="Voice Input">🎤</button>
             </div>
           </div>
           <div class="glass rounded-xl p-1 flex gap-1 max-w-full overflow-x-auto" id="calTabs">
@@ -886,21 +887,42 @@
   <!-- ============ VOICE MODAL ============ -->
   <div id="modal-voice" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="modal-voice"></div>
-    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative" role="dialog" aria-modal="true">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-bold">Voice Input</h2>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-xl relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-xl font-bold">Nova Voice</h2>
+          <div id="voice-lang-chips" class="flex gap-1 bg-white/5 p-1 rounded-xl">
+            <button type="button" data-lang="ru-RU" class="px-2 py-0.5 rounded-lg text-xs font-semibold glass-soft active">RU</button>
+            <button type="button" data-lang="ro-RO" class="px-2 py-0.5 rounded-lg text-xs font-semibold text-white/40">RO</button>
+            <button type="button" data-lang="en-US" class="px-2 py-0.5 rounded-lg text-xs font-semibold text-white/40">EN</button>
+          </div>
+        </div>
         <button data-close="modal-voice" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div class="flex flex-col items-center text-center">
-        <div id="voiceMic" class="w-24 h-24 rounded-full accent-grad accent-glow flex items-center justify-center mb-4">
-          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-        </div>
+      <div class="flex flex-col items-center text-center my-3">
+        <button id="voiceMic" type="button" aria-label="Toggle voice recording" class="w-20 h-20 rounded-full accent-grad accent-glow flex items-center justify-center mb-3 cursor-pointer transition-transform hover:scale-105 active:scale-95">
+          <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
         <p class="text-sm"><span class="w-2 h-2 inline-block rounded-full bg-white/40 mr-1.5 align-middle" id="voiceDot"></span><span id="voiceStatus" class="text-white/60 align-middle">Ready</span></p>
       </div>
-      <div class="mt-5"><label class="text-sm text-white/50 mb-1.5 block">Transcript</label><textarea id="voiceTranscript" rows="4" class="field resize-none" placeholder="Your spoken words will appear here..."></textarea></div>
-      <div class="flex gap-3 mt-6">
-        <button id="btn-voice-stop" data-action="voice-stop" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Stop</button>
-        <button id="btn-voice-parse" data-action="voice-parse" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Parse Task</button>
+      <div class="mt-3">
+        <label class="text-xs text-white/50 mb-1 block">Transcript (editable)</label>
+        <textarea id="voiceTranscript" rows="3" class="field resize-none text-sm w-full" placeholder="Говорите... например: завтра в 10 созвон по Memernity до 11:30, потом в 15 тренировка на час"></textarea>
+        <div id="voiceInterim" class="text-xs text-white/40 mt-1 italic hidden"></div>
+      </div>
+      <div class="mt-4">
+        <button id="btn-voice-parse" type="button" data-action="voice-parse" class="w-full accent-grad accent-glow rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2">
+          <span>⚡ Parse with Nova AI</span>
+        </button>
+        <p class="text-[11px] text-white/40 text-center mt-1.5">Текст отправляется на сервер только по нажатию Parse</p>
+      </div>
+      <!-- Draft Board (B1.4) -->
+      <div id="voice-draft-section" class="mt-6 pt-4 border-t border-white/10 hidden">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-white/70">Draft Board (<span id="voice-draft-count">0</span>)</h3>
+          <button id="btn-draft-add-all" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold accent-grad">Add All to Plan</button>
+        </div>
+        <div id="voice-draft-cards" class="space-y-3"></div>
       </div>
     </div>
   </div>

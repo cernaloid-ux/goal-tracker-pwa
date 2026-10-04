@@ -3704,22 +3704,65 @@ function loadDemoData() {
    VOICE INPUT
 ═══════════════════════════════════════════════════════════ */
 const VoiceInput = {
-  _rec:null, _active:false,
+  _rec: null, _active: false, _lang: 'ru-RU', _baseTranscript: '',
   init() {
     try {
-      const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-      if(!SR){ this._unsupported=true; return; }
-      this._rec=new SR(); this._rec.lang='en-US'; this._rec.continuous=false; this._rec.interimResults=true;
-      this._rec.onresult=e=>{
-        const txt=[...e.results].map(r=>r[0].transcript).join('');
-        const el=document.getElementById('voiceTranscript'); if(el) el.value=txt;
-        if(e.results[e.results.length-1].isFinal){ this.stop(); this.apply(txt); }
+      this._lang = localStorage.getItem('nova-voice-lang') || 'ru-RU';
+      const updateLangChips = () => {
+        document.querySelectorAll('#voice-lang-chips button[data-lang]').forEach(b => {
+          const on = b.dataset.lang === this._lang;
+          b.classList.toggle('glass-soft', on);
+          b.classList.toggle('active', on);
+          b.classList.toggle('text-white/40', !on);
+        });
       };
+      updateLangChips();
+      document.querySelectorAll('#voice-lang-chips button[data-lang]').forEach(b => {
+        b.addEventListener('click', () => {
+          this._lang = b.dataset.lang;
+          localStorage.setItem('nova-voice-lang', this._lang);
+          updateLangChips();
+          if (this._rec) this._rec.lang = this._lang;
+        });
+      });
+
+      document.getElementById('voiceMic')?.addEventListener('click', () => {
+        if (this._active) this.stop(); else this.start();
+      });
+
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { this._unsupported = true; return; }
+      this._rec = new SR();
+      this._rec.lang = this._lang;
+      this._rec.continuous = true;
+      this._rec.interimResults = true;
+
+      this._rec.onresult = (e) => {
+        let interim = '';
+        let finalTxt = this._baseTranscript || '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+            finalTxt += (finalTxt ? ' ' : '') + e.results[i][0].transcript.trim();
+          } else {
+            interim += e.results[i][0].transcript;
+          }
+        }
+        this._baseTranscript = finalTxt;
+        const el = document.getElementById('voiceTranscript');
+        if (el) el.value = finalTxt + (interim ? (finalTxt ? ' ' : '') + interim : '');
+        const interimEl = document.getElementById('voiceInterim');
+        if (interimEl) {
+          interimEl.textContent = interim ? `... ${interim}` : '';
+          interimEl.classList.toggle('hidden', !interim);
+        }
+      };
+
       this._rec.onerror = (e) => {
         this.stop();
         if (e?.error === 'not-allowed') showToast('Разреши доступ к микрофону');
         else if (e?.error && e.error !== 'no-speech') showToast(`🎤 Microphone error: ${e.error}`);
       };
+
       this._rec.onend = () => {
         this._active = false;
         const status = document.getElementById('voiceStatus');
@@ -3727,18 +3770,21 @@ const VoiceInput = {
         const dot = document.getElementById('voiceDot');
         if (dot) dot.style.background = 'rgba(255,255,255,0.4)';
       };
-    } catch(e){ console.warn('Voice not supported',e); this._unsupported=true; }
+    } catch(e) { console.warn('Voice not supported', e); this._unsupported = true; }
   },
+
   start() {
     const dot = document.getElementById('voiceDot');
     const status = document.getElementById('voiceStatus');
     if (this._unsupported) { showToast('🎤 Voice input not supported in this browser'); return; }
     if (!this._rec) return;
     this._active = true;
+    this._baseTranscript = document.getElementById('voiceTranscript')?.value || '';
     if (status) status.textContent = 'Listening...';
     if (dot) dot.style.background = '#FF3B30';
     try { this._rec.start(); } catch(e){}
   },
+
   stop() {
     this._active = false;
     try { this._rec?.stop(); } catch(e){}
@@ -3746,6 +3792,8 @@ const VoiceInput = {
     const status = document.getElementById('voiceStatus');
     if (status) status.textContent = 'Ready';
     if (dot) dot.style.background = 'rgba(255,255,255,0.4)';
+    const interimEl = document.getElementById('voiceInterim');
+    if (interimEl) interimEl.classList.add('hidden');
   },
   apply(text) {
     if (!text || !text.trim()) return;
