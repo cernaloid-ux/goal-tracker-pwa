@@ -1723,6 +1723,7 @@ const CalendarController = {
     if (!next) return; // safety guard for invalid date strings
     next.setHours(old.getHours(), old.getMinutes(), 0, 0);
     const updated = goals.map(x => x.id===goalId ? { ...x, scheduledAt: next.getTime() } : x);
+    StateManager.pushUndoSnapshot();
     StateManager.patch({ goals: updated });
     SyncManager.scheduleSync();
     TimerController.scheduleReminders();
@@ -2352,7 +2353,7 @@ const CalendarController = {
           const isGhost = !!g.isGhost;
           const ghostStyle = isGhost ? this._ghostStyle(color, '4px', '0') : '';
           const baseStyle = isGhost ? ghostStyle : `background:${color}22;`;
-          const chipAttr = isGhost ? `data-ghost-date="${dateKey(g.scheduledAt)}"` : `data-task-id="${g.id}"`;
+          const chipAttr = isGhost ? `data-ghost-date="${dateKey(g.scheduledAt)}"` : `data-task-id="${g.id}" draggable="true"`;
           return `<div class="flex items-center gap-1.5 text-[10px] px-1.5 py-1 rounded-md mt-1 overflow-hidden ${g.done?'opacity-50':''}" style="${baseStyle}border-left:2px ${isGhost?'dashed':'solid'} ${color};color:rgba(255,255,255,${isGhost?'.55':'.85'});" ${chipAttr}><span class="w-1.5 h-1.5 rounded-full flex-none" style="background:${color}"></span><span class="whitespace-nowrap overflow-hidden text-ellipsis" style="${g.done?'text-decoration:line-through;':''}">${esc(g.title)}${isGhost?' 🔁':''}</span><span class="cal-event-time" style="margin-left:auto;">${fmtTimeRange(g.scheduledAt, g.duration_min)}</span></div>`;
         }).join('');
         if (dayTasks.length>MAX) items += `<div class="text-[10px] text-accent mt-1">+ ${dayTasks.length-MAX} more</div>`;
@@ -2360,6 +2361,10 @@ const CalendarController = {
           <span class="text-xs font-semibold ${isToday?'text-accent':'text-white/60'}">${d}</span>${items}</div>`;
       }
       c.innerHTML = html;
+      c.querySelectorAll('[data-task-id][draggable="true"]').forEach(el=>{
+        el.addEventListener('dragstart', e=>{ this._dragGoalId = el.dataset.taskId; e.dataTransfer.setData('text/plain', el.dataset.taskId); e.dataTransfer.effectAllowed='move'; });
+        el.addEventListener('dragend', ()=>{ this._dragGoalId = null; });
+      });
       c.querySelectorAll('[data-day]').forEach(el=>{
         el.addEventListener('click',()=>this._navigateToDay(el.dataset.day));
         this._makeMonthDropTarget(el, el.dataset.day);
