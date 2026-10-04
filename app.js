@@ -304,6 +304,31 @@ function showToast(msg, duration=3000) {
   requestAnimationFrame(()=>{ t.style.opacity='1'; t.style.transform='translateX(0)'; });
   setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(20px)'; setTimeout(() => t.remove(), 400); }, duration);
 }
+function showToastWithUndo(msg, duration=5000) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const t = document.createElement('div');
+  t.className = 'toast-card';
+  t.style.cssText = 'background:rgba(44,44,46,.96);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:10px 14px;color:#fff;font-size:13px;font-weight:500;box-shadow:0 12px 28px -8px rgba(0,0,0,.6);opacity:0;transform:translateX(20px);transition:opacity .3s,transform .3s;pointer-events:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;';
+  const span = document.createElement('span');
+  span.textContent = msg;
+  t.appendChild(span);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = 'Отменить';
+  btn.style.cssText = 'background:rgba(255,59,48,0.25);border:1px solid rgba(255,59,48,0.5);color:#fff;padding:4px 9px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;';
+  btn.onclick = () => {
+    if (StateManager.undo()) {
+      refreshEverything();
+      showToast('↩ Отменено', 1500);
+    }
+    t.remove();
+  };
+  t.appendChild(btn);
+  stack.appendChild(t);
+  requestAnimationFrame(()=>{ t.style.opacity='1'; t.style.transform='translateX(0)'; });
+  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(20px)'; setTimeout(() => t.remove(), 400); }, duration);
+}
 let popQueue=[], popShowing=false;
 function showPopup(type, icon, title, sub) { popQueue.push({type,icon,title,sub}); if(!popShowing) flushPopup(); }
 function flushPopup() {
@@ -4053,6 +4078,78 @@ const NLP = {
   }
 };
 
+function buildGoalFromDraft(it, tagsState = []) {
+  let scheduledAt = null;
+  if (it.date) {
+    if (it.time) {
+      const [sh, sm] = it.time.split(':').map(Number);
+      scheduledAt = new Date(`${it.date}T${pad(isNaN(sh)?9:sh)}:${pad(isNaN(sm)?0:sm)}:00`).getTime();
+    } else {
+      scheduledAt = new Date(`${it.date}T09:00:00`).getTime();
+    }
+  }
+
+  let durMin = 30;
+  if (it.duration_min) {
+    durMin = parseInt(it.duration_min, 10) || 30;
+  } else if (it.time && it.timeTo) {
+    const [sh, sm] = it.time.split(':').map(Number);
+    const [eh, em] = it.timeTo.split(':').map(Number);
+    const diff = (eh * 60 + em) - (sh * 60 + sm);
+    if (diff > 0) durMin = diff;
+  }
+
+  const goalTags = [];
+  if (Array.isArray(it.tags)) {
+    for (const rawTag of it.tags) {
+      const name = String(rawTag).replace(/^@/, '').trim().toLowerCase();
+      if (!name) continue;
+      let found = tagsState.find(t => t.name.toLowerCase() === name || t.id === rawTag);
+      if (!found) {
+        found = {
+          id: 'tag_' + Date.now().toString(36) + rnd(),
+          name,
+          color: TAG_PALETTE[tagsState.length % TAG_PALETTE.length]
+        };
+        tagsState.push(found);
+      }
+      if (!goalTags.includes(found.id)) goalTags.push(found.id);
+    }
+  }
+
+  const prio = it.priority === 'high' ? 'high' : (it.priority === 'low' ? 'low' : 'mid');
+  const cat = ['business', 'health', 'study', 'life'].includes(it.cat) ? it.cat : 'life';
+
+  return {
+    id: 'g_' + Date.now().toString(36) + rnd(),
+    title: String(it.title || 'Новое дело').trim(),
+    cat,
+    priority: prio,
+    scheduledAt,
+    duration_min: durMin,
+    isEvent: it.kind === 'event',
+    allDay: false,
+    isProject: false,
+    parentId: null,
+    recurrence: it.recurrence || null,
+    notes: it.notes || '',
+    location: it.location || '',
+    travelTime: 0,
+    cost: 0,
+    tags: goalTags,
+    reminders: Array.isArray(it.reminders) ? [...it.reminders] : [],
+    participants: [],
+    color: '',
+    subtasks: [],
+    done: false,
+    completed: false,
+    elapsed: 0,
+    startTime: null,
+    paused: false,
+    createdAt: Date.now()
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════
    DICTATION CONTROLLER (Nova Voice v9)
 ═══════════════════════════════════════════════════════════ */
@@ -4354,6 +4451,32 @@ const DictationController = {
       });
     });
   },
+
+  commitAll() {
+    const selected = this._draftItems.filter(x => x._selected);
+    if (!selected.length) {
+      showToast('⚠️ Выберите хотя бы одно дело');
+      return;
+    }
+
+    StateManager.pushUndoSnapshot('Голосовой ввод');
+    const existingGoals = StateManager.get('goals') || [];
+    const currentTags = [...(StateManager.get('tags') || [])];
+    const newGoals = selected.map(it => buildGoalFromDraft(it, currentTags));
+
+    StateManager.patch({
+      goals: [...existingGoals, ...newGoals],
+      tags: currentTags
+    });
+    SyncManager.scheduleSync();
+    TimerController.scheduleReminders();
+    refreshEverything();
+    closeModal('modal-voice');
+
+    this._draftItems = [];
+    const count = newGoals.length;
+    showToastWithUndo(`✅ Добавлено ${count} ${count === 1 ? 'дело' : (count < 5 ? 'дела' : 'дел')}`);
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -4366,11 +4489,19 @@ function initGlobalEvents() {
   document.querySelectorAll('#focusTabs .subtab').forEach(t => {
     t.addEventListener('click', () => switchSub('focusTabs','focus', t.dataset.sub));
   });
-  document.getElementById('btn-open-voice')?.addEventListener('click', ()=>openModal('modal-voice'));
-  document.getElementById('btn-voice-stop')?.addEventListener('click', ()=>{ VoiceInput.stop(); });
-  document.getElementById('btn-voice-parse')?.addEventListener('click', ()=>{
+  document.getElementById('btn-open-voice')?.addEventListener('click', () => DictationController.openModal());
+  document.getElementById('btn-cal-voice')?.addEventListener('click', () => {
+    const cd = CalendarController._calDate;
+    const defaultDate = cd ? dateKey(cd.getTime()) : dateKey(Date.now());
+    DictationController.openModal({ defaultDate });
+  });
+  document.getElementById('btn-voice-stop')?.addEventListener('click', () => { VoiceInput.stop(); });
+  document.getElementById('btn-voice-parse')?.addEventListener('click', () => {
     const txt = document.getElementById('voiceTranscript')?.value.trim();
-    if (txt) VoiceInput.apply(txt); else closeModal('modal-voice');
+    if (txt) DictationController.parse(txt); else closeModal('modal-voice');
+  });
+  document.getElementById('btn-draft-add-all')?.addEventListener('click', () => {
+    DictationController.commitAll();
   });
   document.getElementById('btn-open-settings')?.addEventListener('click', ()=>{ renderSettingsPanel(); openModal('modal-settings'); });
   document.getElementById('btn-profile-open-shop')?.addEventListener('click', ()=>{ ViewRouter.switchTo('focus'); switchSub('focusTabs','focus','shop'); });
