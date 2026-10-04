@@ -3571,7 +3571,7 @@ async function resetData() {
   ['nova-goals','nova-history','nova-gems','nova-streak','nova-purchases','nova-macros','nova-tags',
    'nova-pomo','nova-sleep','nova-uid','nova-theme','nova-routines','nova-tg-token','nova-tg-chat',
    'nova-webhook','nova-profile-name','nova-updatedAt','nova-dim-recurring','nova-migrated-v8',
-   'nova-active-task','nova-sync-v2',
+   'nova-active-task','nova-sync-v2','nova-boot',
    'lifeos-goals','lifeos-history','lifeos-gems','lifeos-streak2','lifeos-purchases',
    'lifeos-macros','lifeos-tags','lifeos-pomo'].forEach(k=>localStorage.removeItem(k));
   // nova-sync-key is intentionally NOT removed so the user stays authenticated
