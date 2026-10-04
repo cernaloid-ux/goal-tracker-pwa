@@ -2837,6 +2837,7 @@ const TimerController = {
     // A4c: resume raf+armEndTimer if a timer was running before the page reloaded
     const _g = this._goal();
     if (_g && _g.startTime && !_g.paused && !_g.done) { this._rafLoop(); this._armEndTimer(); }
+    setInterval(()=>this.scheduleReminders(), 3600000);
   },
 
   // A4b: set a real setTimeout as a fallback so background-tab timers still fire
@@ -3082,10 +3083,12 @@ const TimerController = {
   },
   scheduleReminders() {
     this._reminderTimers.forEach(t=>clearTimeout(t)); this._reminderTimers=[];
-    StateManager.get('goals').filter(g=>!g.done&&g.scheduledAt&&g.reminders?.length).forEach(g=>{
+    const MAX = 2147483647, now = Date.now();
+    const pool = [...StateManager.get('goals'), ...getGhostOccurrences(now, now + 7*86400000)];
+    pool.filter(g=>!g.isProject && !g.done && g.scheduledAt && g.reminders?.length).forEach(g=>{
       g.reminders.forEach(mins=>{
-        const fireAt=g.scheduledAt-mins*60000, delta=fireAt-Date.now();
-        if(delta>0){const tid=setTimeout(()=>this.triggerAlarm(g,`In ${mins<60?mins+' min':(mins/60)+' h'}!`),delta); this._reminderTimers.push(tid);}
+        const delta = g.scheduledAt - mins*60000 - Date.now();
+        if (delta > 0 && delta <= MAX) this._reminderTimers.push(setTimeout(()=>this.triggerAlarm(g, `In ${mins<60?mins+' min':(mins/60)+' h'}!`), delta));
       });
     });
   },
