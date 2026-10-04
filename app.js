@@ -904,7 +904,7 @@ function renderCategoryFilters() {
   catWrap.innerHTML = CAT_ORDER.map(key=>{
     const c = CATS[key];
     const count = goals.filter(g=>!g.done && catKey(g)===key).length;
-    const active = activeCat===key;
+    const active = (activeCat === 'creative' ? 'life' : activeCat) === key;
     return `<button class="w-full glass-soft glass-hover rounded-xl px-4 py-2.5 text-left text-sm flex items-center gap-3 justify-between" data-action="filter-cat" data-cat="${key}" style="${active?`border-color:${c.color}88;color:#fff;`:''}">
       <span class="flex items-center gap-3"><span class="w-2.5 h-2.5 rounded-full" style="background:${c.color}"></span>${c.label}</span>
       <span class="text-[10px] text-white/40">${count}</span>
