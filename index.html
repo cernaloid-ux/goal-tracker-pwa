@@ -182,6 +182,9 @@
        Nothing here changes the desktop (≥768px) appearance.
     ═══════════════════════════════════════════════════════════ */
     @media (max-width: 767px) {
+      /* Предотвращение автозума iOS в поля ввода */
+      input, select, textarea { font-size: 16px !important; }
+
       /* ── MOBILE CRASH FIX: все тяжёлые GPU-эффекты отключены ── */
       /* fixed-фон пережёвывает GPU на iOS — переключаем на scroll */
       body { background-attachment: scroll; }
