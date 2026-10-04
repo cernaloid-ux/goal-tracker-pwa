@@ -1298,9 +1298,34 @@ const TaskController = {
       if (fromInp) fromInp.value = `${pad(pd.getHours())}:${pad(pd.getMinutes())}`;
     }
 
+    // Prefill from DictationController Draft Board (B1.4)
+    if (!id && opts.prefill) {
+      const pf = opts.prefill;
+      if (pf.title && titleInp) titleInp.value = pf.title;
+      if (pf.notes && notesInp) notesInp.value = pf.notes;
+      if (pf.location && locationInp) locationInp.value = pf.location;
+      if (pf.kind) this._selectedType = pf.kind;
+      if (pf.cat) this._activeCat = pf.cat;
+      if (pf.date && dateInp) dateInp.value = pf.date;
+      if (pf.time && fromInp) fromInp.value = pf.time;
+      if (pf.timeTo && toInp) toInp.value = pf.timeTo;
+      if (pf.duration_min && durationInp) durationInp.value = pf.duration_min;
+      if (Array.isArray(pf.tags)) {
+        const allTags = StateManager.get('tags') || [];
+        this._selectedTags = pf.tags.map(t => {
+          const found = allTags.find(x => x.name.toLowerCase() === String(t).toLowerCase() || x.id === t);
+          return found ? found.id : t;
+        });
+      }
+      if (Array.isArray(pf.reminders)) this._selectedReminders = [...pf.reminders];
+      if (pf.recurrence) this._selectedRecurrence = JSON.parse(JSON.stringify(pf.recurrence));
+    }
+
     // Priority buttons
+    const prefillPrio = opts.prefill?.priority ? (opts.prefill.priority === 'medium' ? 'mid' : opts.prefill.priority) : null;
+    const targetPriority = (!id && prefillPrio) || g?.priority || 'mid';
     document.querySelectorAll('#priority-ctrl .seg-btn').forEach(btn=>{
-      const active = (g?.priority||'mid')===btn.dataset.priority;
+      const active = targetPriority===btn.dataset.priority;
       btn.style.background = active ? 'rgba(255,59,48,.18)' : 'rgba(255,255,255,.05)';
       btn.style.color = active ? '#fff' : 'rgba(255,255,255,.5)';
       btn.classList.toggle('active', active);
@@ -4112,6 +4137,222 @@ const DictationController = {
     } else {
       showToast('⚠️ Ничего не удалось распознать');
     }
+  },
+
+  renderDraftBoard(items) {
+    this._draftItems = (items || []).map((it, idx) => ({
+      _id: idx,
+      _selected: true,
+      kind: it.kind === 'event' ? 'event' : 'task',
+      title: it.title || '',
+      cat: it.cat || 'life',
+      date: it.date || null,
+      time: it.time || null,
+      timeTo: it.timeTo || null,
+      duration_min: it.duration_min || null,
+      priority: it.priority === 'mid' ? 'medium' : (it.priority || 'medium'),
+      reminders: Array.isArray(it.reminders) ? [...it.reminders] : [],
+      recurrence: it.recurrence || null,
+      confidence: typeof it.confidence === 'number' ? it.confidence : 1.0,
+      notes: it.notes || '',
+      tags: Array.isArray(it.tags) ? [...it.tags] : [],
+      location: it.location || ''
+    }));
+
+    const sec = document.getElementById('voice-draft-section');
+    if (sec) sec.classList.remove('hidden');
+
+    this._renderCards();
+  },
+
+  _checkCollision(item) {
+    if (!item.date || !item.time) return null;
+    const [sh, sm] = item.time.split(':').map(Number);
+    if (isNaN(sh) || isNaN(sm)) return null;
+    const startD = new Date(`${item.date}T${pad(sh)}:${pad(sm)}:00`);
+    const startTs = startD.getTime();
+    let endTs = null;
+    if (item.timeTo) {
+      const [eh, em] = item.timeTo.split(':').map(Number);
+      if (!isNaN(eh) && !isNaN(em)) {
+        endTs = new Date(`${item.date}T${pad(eh)}:${pad(em)}:00`).getTime();
+      }
+    }
+    if (!endTs || endTs <= startTs) {
+      const durMin = item.duration_min ? parseInt(item.duration_min, 10) : 30;
+      endTs = startTs + (durMin || 30) * 60 * 1000;
+    }
+
+    const dayStart = new Date(item.date + 'T00:00:00').getTime();
+    const dayEnd = new Date(item.date + 'T23:59:59.999').getTime();
+
+    const allGoals = StateManager.get('goals') || [];
+    const realOnDay = allGoals.filter(g => !g.isProject && g.scheduledAt && dateKey(g.scheduledAt) === item.date);
+    const ghostsOnDay = typeof getGhostOccurrences === 'function' ? getGhostOccurrences(dayStart, dayEnd).filter(g => dateKey(g.scheduledAt) === item.date) : [];
+    const candidates = [...realOnDay, ...ghostsOnDay];
+
+    for (const cand of candidates) {
+      const candStart = cand.scheduledAt;
+      const candDur = (cand.duration_min || 30) * 60 * 1000;
+      const candEnd = candStart + candDur;
+      if (startTs < candEnd && endTs > candStart) {
+        const cStartD = new Date(candStart);
+        const cEndD = new Date(candEnd);
+        const timeSpan = `${pad(cStartD.getHours())}:${pad(cStartD.getMinutes())} - ${pad(cEndD.getHours())}:${pad(cEndD.getMinutes())}`;
+        return {
+          title: cand.title,
+          timeSpan
+        };
+      }
+    }
+    return null;
+  },
+
+  _renderCards() {
+    const container = document.getElementById('voice-draft-cards');
+    const countEl = document.getElementById('voice-draft-count');
+    if (!container) return;
+
+    if (countEl) countEl.textContent = String(this._draftItems.length);
+    if (!this._draftItems.length) {
+      container.innerHTML = '<p class="text-xs text-white/40 text-center py-4">Черновиков нет</p>';
+      const sec = document.getElementById('voice-draft-section');
+      if (sec) sec.classList.add('hidden');
+      return;
+    }
+
+    container.innerHTML = this._draftItems.map(it => {
+      const isLowConf = typeof it.confidence === 'number' && it.confidence < 0.6;
+      const col = this._checkCollision(it);
+      const isEvent = it.kind === 'event';
+
+      return `
+        <div class="draft-card glass-soft rounded-2xl p-3 relative ${isLowConf ? 'border border-amber-400/60 bg-amber-500/10' : 'border border-white/10'}" data-draft-id="${it._id}">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <input type="checkbox" class="draft-toggle-cb w-4 h-4 rounded accent-red-500 cursor-pointer" ${it._selected ? 'checked' : ''}>
+              <button type="button" class="draft-kind-btn px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors ${isEvent ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}">
+                ${isEvent ? '📅 Событие' : '✓ Дело'}
+              </button>
+              ${isLowConf ? '<span class="text-[10px] text-amber-300 bg-amber-400/20 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-medium">⚠️ Низкая уверенность</span>' : ''}
+            </div>
+            <div class="flex items-center gap-1">
+              <button type="button" class="btn-draft-open-full px-2 py-1 text-[11px] font-medium glass-hover text-white/70 rounded-lg hover:text-white" title="Открыть в полной форме">
+                ✏️ Полная форма
+              </button>
+              <button type="button" class="btn-draft-delete p-1 text-white/40 hover:text-red-400 rounded-lg" title="Удалить">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <input type="text" class="draft-field-title field text-xs w-full py-1.5 px-2 rounded-lg bg-white/5 border border-white/10" value="${esc(it.title)}" placeholder="Название дела/события">
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <label class="text-[10px] text-white/40 block mb-0.5">Дата</label>
+              <input type="date" class="draft-field-date field text-xs w-full py-1 px-1.5 rounded-lg bg-white/5 border border-white/10" value="${it.date || ''}">
+            </div>
+            <div>
+              <label class="text-[10px] text-white/40 block mb-0.5">С</label>
+              <input type="time" class="draft-field-time field text-xs w-full py-1 px-1.5 rounded-lg bg-white/5 border border-white/10" value="${it.time || ''}">
+            </div>
+            <div>
+              <label class="text-[10px] text-white/40 block mb-0.5">До</label>
+              <input type="time" class="draft-field-timeto field text-xs w-full py-1 px-1.5 rounded-lg bg-white/5 border border-white/10" value="${it.timeTo || ''}">
+            </div>
+            <div>
+              <label class="text-[10px] text-white/40 block mb-0.5">Приоритет</label>
+              <select class="draft-field-priority field text-xs w-full py-1 px-1.5 rounded-lg bg-white/5 border border-white/10">
+                <option value="high" ${it.priority === 'high' ? 'selected' : ''}>🔴 Срочно</option>
+                <option value="medium" ${it.priority === 'medium' || it.priority === 'mid' ? 'selected' : ''}>🟡 Обычно</option>
+                <option value="low" ${it.priority === 'low' ? 'selected' : ''}>⚪ Фоном</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-white/5 text-xs">
+            <div class="flex items-center gap-1.5">
+              <label class="text-[10px] text-white/40">Категория:</label>
+              <select class="draft-field-cat field text-xs py-0.5 px-1.5 rounded-lg bg-white/5 border border-white/10">
+                <option value="business" ${it.cat === 'business' ? 'selected' : ''}>💼 Business</option>
+                <option value="health" ${it.cat === 'health' ? 'selected' : ''}>💪 Health</option>
+                <option value="study" ${it.cat === 'study' ? 'selected' : ''}>📚 Study</option>
+                <option value="life" ${it.cat === 'life' ? 'selected' : ''}>🌱 Life</option>
+              </select>
+            </div>
+            ${it.duration_min ? `<span class="text-[11px] text-white/40">⏱ ${it.duration_min} мин</span>` : ''}
+          </div>
+
+          ${col ? `
+            <div class="text-[11px] text-amber-300 mt-2 p-1.5 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center gap-1">
+              <span>⚠️ Пересекается с: <strong>${esc(col.title)}</strong> (${col.timeSpan})</span>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    this._bindDraftEvents();
+  },
+
+  _bindDraftEvents() {
+    const container = document.getElementById('voice-draft-cards');
+    if (!container) return;
+
+    container.querySelectorAll('.draft-card').forEach(card => {
+      const id = parseInt(card.dataset.draftId, 10);
+      const item = this._draftItems.find(x => x._id === id);
+      if (!item) return;
+
+      card.querySelector('.draft-toggle-cb')?.addEventListener('change', (e) => {
+        item._selected = e.target.checked;
+      });
+
+      card.querySelector('.draft-kind-btn')?.addEventListener('click', () => {
+        item.kind = item.kind === 'event' ? 'task' : 'event';
+        this._renderCards();
+      });
+
+      card.querySelector('.draft-field-title')?.addEventListener('input', (e) => {
+        item.title = e.target.value;
+      });
+
+      card.querySelector('.draft-field-date')?.addEventListener('change', (e) => {
+        item.date = e.target.value || null;
+        this._renderCards();
+      });
+
+      card.querySelector('.draft-field-time')?.addEventListener('change', (e) => {
+        item.time = e.target.value || null;
+        this._renderCards();
+      });
+
+      card.querySelector('.draft-field-timeto')?.addEventListener('change', (e) => {
+        item.timeTo = e.target.value || null;
+        this._renderCards();
+      });
+
+      card.querySelector('.draft-field-priority')?.addEventListener('change', (e) => {
+        item.priority = e.target.value;
+      });
+
+      card.querySelector('.draft-field-cat')?.addEventListener('change', (e) => {
+        item.cat = e.target.value;
+      });
+
+      card.querySelector('.btn-draft-delete')?.addEventListener('click', () => {
+        this._draftItems = this._draftItems.filter(x => x._id !== id);
+        this._renderCards();
+      });
+
+      card.querySelector('.btn-draft-open-full')?.addEventListener('click', () => {
+        closeModal('modal-voice');
+        TaskController.openModal(null, { prefill: item });
+      });
+    });
   },
 };
 
