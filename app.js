@@ -3584,7 +3584,7 @@ function initSettingsHandlers() {
   });
   document.getElementById('btn-export-data')?.addEventListener('click', exportData);
   document.getElementById('btn-import-data')?.addEventListener('click', ()=>{
-    const inp = document.getElementById('import-file') || document.getElementById('import-file-input');
+    const inp = document.getElementById('import-file');
     if (inp) inp.click();
   });
   const handleImportFile = (e)=>{
@@ -3612,7 +3612,6 @@ function initSettingsHandlers() {
     e.target.value = ''; // reset so same file can be re-imported
   };
   document.getElementById('import-file')?.addEventListener('change', handleImportFile);
-  document.getElementById('import-file-input')?.addEventListener('change', handleImportFile);
   document.getElementById('btn-reset-data')?.addEventListener('click', resetData);
   document.getElementById('btn-load-demo')?.addEventListener('click', loadDemoData);
   document.getElementById('settings-dim-recurring')?.addEventListener('click', (e)=>{
