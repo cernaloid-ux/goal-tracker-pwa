@@ -3627,8 +3627,18 @@ const VoiceInput = {
         const el=document.getElementById('voiceTranscript'); if(el) el.value=txt;
         if(e.results[e.results.length-1].isFinal){ this.stop(); this.apply(txt); }
       };
-      this._rec.onerror=()=>this.stop();
-      this._rec.onend=()=>{ this._active=false; };
+      this._rec.onerror = (e) => {
+        this.stop();
+        if (e?.error === 'not-allowed') showToast('Разреши доступ к микрофону');
+        else if (e?.error && e.error !== 'no-speech') showToast(`🎤 Microphone error: ${e.error}`);
+      };
+      this._rec.onend = () => {
+        this._active = false;
+        const status = document.getElementById('voiceStatus');
+        if (status) status.textContent = 'Ready';
+        const dot = document.getElementById('voiceDot');
+        if (dot) dot.style.background = 'rgba(255,255,255,0.4)';
+      };
     } catch(e){ console.warn('Voice not supported',e); this._unsupported=true; }
   },
   start() {
