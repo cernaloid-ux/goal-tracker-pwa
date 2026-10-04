@@ -2767,9 +2767,11 @@ const RoutineManager = {
     // Enabled routines with a trigger time also get scheduled as popups.
     StateManager.get('routines').filter(r=>r.on && r.trigger).forEach(r=>{
       const [rh,rm]=r.trigger.split(':').map(Number);
-      let t=new Date(Date.now()); t.setHours(rh,rm,0,0); if(t<=now) t.setDate(t.getDate()+1);
-      const delta=t.getTime()-now;
-      if(delta>0&&delta<86400000) this._timerIds.push(setTimeout(()=>{
+      const days = (Array.isArray(r.days)&&r.days.length) ? r.days : [1,2,3,4,5,6,7];
+      const t = new Date(); t.setHours(rh,rm,0,0);
+      for (let i=0; i<8 && (t.getTime()<=now || !days.includes(t.getDay()===0?7:t.getDay())); i++) t.setDate(t.getDate()+1);
+      const delta = t.getTime()-now;
+      if (delta>0 && delta<86400000) this._timerIds.push(setTimeout(()=>{
         showPopup('info','🔔',r.title,(r.actions||[]).join(' · '));
         if (r.push) this._sendTg(`🔔 ${r.title}: ${(r.actions||[]).join(', ')}`);
       },delta));
@@ -2794,13 +2796,15 @@ const RoutineManager = {
     if (rem > 0) this._timerIds.push(setTimeout(()=>{ showPopup('info','☀️','Доброе утро!','Пора вставать, Чемпион!'); this._sendTg('☀️ Доброе утро, Чемпион! Пора вставать - новый день ждёт.'); }, rem));
   },
   _scheduleMidnightCheck() {
-    setInterval(()=>{
-      const now=new Date();
-      if(now.getHours()===0&&now.getMinutes()===0){
-        const st=StateManager.get('streak'), today=dateKey(), yest=dateKey(Date.now()-86400000);
-        if(st.lastDate!==today&&st.lastDate!==yest) StateManager.patch({streak:{...st,days:0,doneToday:false}});
-      }
-    },60000);
+    this._lastDay = dateKey();
+    const tick = () => {
+      const today = dateKey(), yest = dateKey(Date.now()-86400000), st = StateManager.get('streak');
+      if (st.lastDate && st.lastDate!==today && st.lastDate!==yest && (st.days>0 || st.doneToday)) StateManager.patch({streak:{...st,days:0,doneToday:false}});
+      else if (st.lastDate!==today && st.doneToday) StateManager.patch({streak:{...st,doneToday:false}});
+      if (today !== this._lastDay) { this._lastDay = today; this._scheduleSoftAlarms(); }
+    };
+    tick(); setInterval(tick, 60000);
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) tick(); });
   },
   _sendTg(text) {
     const token=StateManager.get('tgToken'), chatId=StateManager.get('tgChatId');

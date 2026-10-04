@@ -27,7 +27,7 @@
 | A3 | Priority sort `\|\|1` → `??1` (4 места) | ✅ Done |
 | A4 | Timer: elapsed save (a), _armEndTimer background tab (b), resume after reload (c), pause prev on switch (d) | ✅ Done |
 | A5 | Reminders: setTimeout overflow >24.8d, ghost occurrences missing | ✅ Done |
-| A6 | Routines: days field ignored, one-time alarms, streak reset | ❌ TODO |
+| A6 | Routines: days field ignored, one-time alarms, streak reset | ✅ Done |
 | A7 | Task form: allDay flag, hidden time-from defaults, time-to wrapping | ❌ TODO |
 | A8 | NLP dryRun on input keystroke | ✅ Done |
 | A9 | Calendar: tap earlyCancel, addEventListener leak, overlap layout, now-line, month drag | ❌ TODO |
