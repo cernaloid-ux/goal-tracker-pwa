@@ -1869,6 +1869,7 @@ const CalendarController = {
         if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         document.removeEventListener('pointermove', earlyMoveCheck);
         document.removeEventListener('pointerup',   earlyCancel);
+        document.removeEventListener('pointercancel', cancelPending);
       };
 
       // ── early-move / early-cancel (before drag is confirmed) ─
@@ -1878,7 +1879,12 @@ const CalendarController = {
         const dy = Math.abs(moveE.clientY - startY);
         if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) cancelPending(); // treat as scroll
       };
-      const earlyCancel = () => { if (!dragStarted) cancelPending(); };
+      const earlyCancel = (upE) => {
+        if (dragStarted) return;
+        const wasTap = longPressTimer !== null && Math.abs(upE.clientX-startX)<=MOVE_TOLERANCE && Math.abs(upE.clientY-startY)<=MOVE_TOLERANCE;
+        cancelPending();
+        if (wasTap) { if (ghostObj) this._openGhostEditChoice(ghostObj); else TaskController.openDetail(goalId); }
+      };
 
       // ── main drag handlers ────────────────────────────────────
       const onMove = (ev) => {
@@ -1956,6 +1962,7 @@ const CalendarController = {
         // Long-press for both touch and mouse (400ms) — short tap always opens detail
         document.addEventListener('pointermove', earlyMoveCheck);
         document.addEventListener('pointerup',   earlyCancel);
+        document.addEventListener('pointercancel', cancelPending, {once:true});
         longPressTimer = setTimeout(() => {
           cancelPending();
           e.preventDefault();
