@@ -6137,6 +6137,57 @@ const SprintUI = {
       SprintEngine.finish();
     });
 
+    document.getElementById('btn-sprint-finished-copy')?.addEventListener('click', () => {
+      const state = SprintStore.get();
+      const stats = state.stats || { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 };
+      const queue = state.queue || [];
+
+      const reasons = queue
+        .filter(t => t.status === 'frozen' && t.reason)
+        .map(t => `${t.title || 'Task'}: ${t.reason}`);
+      const reasonsStr = reasons.length > 0 ? ` (reasons: ${reasons.join(', ')})` : '';
+
+      const now = Date.now();
+      const start = state.sessionStartedAt || now;
+      const end = (state.sessionEndsAt && state.sessionEndsAt < now) ? state.sessionEndsAt : now;
+      const mins = Math.max(1, Math.round((end - start) / 60000));
+
+      const text = `Sprint finished: ${stats.done || 0} done, ${stats.frozen || 0} frozen${reasonsStr}, ${stats.pausesPaid || 0} paid pauses, +${stats.crystalsEarned || 0}/-${stats.crystalsSpent || 0} crystals, ${mins} min total`;
+
+      const doCopy = () => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            showToast('Summary copied');
+          }).catch(() => {
+            fallbackCopy(text);
+          });
+        } else {
+          fallbackCopy(text);
+        }
+      };
+
+      const fallbackCopy = (str) => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = str;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (ok) showToast('Summary copied');
+          else showToast('Failed to copy');
+        } catch (e) {
+          showToast('Failed to copy');
+        }
+      };
+
+      doCopy();
+    });
+
     document.getElementById('btn-sprint-finished-close')?.addEventListener('click', () => {
       SprintUI.close();
     });
@@ -7286,6 +7337,33 @@ const SprintEngine = {
       pausedAt: null,
       sessionEndsAt: state.sessionEndsAt ? Math.min(state.sessionEndsAt, now) : now
     });
+
+    try {
+      const rawLog = localStorage.getItem('nova-sprint-log');
+      let log = rawLog ? JSON.parse(rawLog) : [];
+      if (!Array.isArray(log)) log = [];
+
+      const start = state.sessionStartedAt || now;
+      const end = (state.sessionEndsAt && state.sessionEndsAt < now) ? state.sessionEndsAt : now;
+      const minutes = Math.max(1, Math.round((end - start) / 60000));
+      const stats = state.stats || { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 };
+
+      const entry = {
+        date: new Date(now).toISOString(),
+        minutes,
+        done: stats.done || 0,
+        frozen: stats.frozen || 0,
+        pausesPaid: stats.pausesPaid || 0,
+        crystalsSpent: stats.crystalsSpent || 0,
+        crystalsEarned: stats.crystalsEarned || 0
+      };
+
+      log.unshift(entry);
+      if (log.length > 50) log = log.slice(0, 50);
+      localStorage.setItem('nova-sprint-log', JSON.stringify(log));
+    } catch (e) {
+      console.warn('Failed to save nova-sprint-log:', e);
+    }
 
     SprintUI.render();
   },
