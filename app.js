@@ -3872,6 +3872,7 @@ const InsightsRenderer = {
       ${this.renderHeatmap(history)}
       ${this.renderFocusDonut(history)}
       ${this.renderHourlyProductivity(history)}
+      ${this.renderWeekOverWeek(history)}
     `;
 
     root.querySelectorAll('[data-action="toggle-focus-days"]').forEach(btn => {
@@ -4086,6 +4087,69 @@ const InsightsRenderer = {
             <text x="${18 * (barW+gap)}" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">18:00</text>
             <text x="${svgW - 24}" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">23:00</text>
           </svg>
+        </div>
+      </div>`;
+  },
+
+  renderWeekOverWeek(history) {
+    const now = new Date();
+    const dayOfWeek = (now.getDay() + 6) % 7; // 0=Mon, 6=Sun
+    const thisWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek, 0, 0, 0, 0).getTime();
+    const lastWeekStart = thisWeekStart - 7 * 86400000;
+    const lastWeekEnd = thisWeekStart - 1;
+
+    const thisWeek = (history || []).filter(h => h.completedAt >= thisWeekStart);
+    const lastWeek = (history || []).filter(h => h.completedAt >= lastWeekStart && h.completedAt <= lastWeekEnd);
+
+    const twTasks = thisWeek.length;
+    const lwTasks = lastWeek.length;
+    const dTasks = twTasks - lwTasks;
+
+    const twFocusH = thisWeek.reduce((s, h) => s + (h.elapsed_ms || 0), 0) / 3600000;
+    const lwFocusH = lastWeek.reduce((s, h) => s + (h.elapsed_ms || 0), 0) / 3600000;
+    const dFocus = twFocusH - lwFocusH;
+
+    const twGems = thisWeek.reduce((s, h) => s + (h.gems || 0) + (h.bossBonus || 0) + (h.comboBonus || 0), 0);
+    const lwGems = lastWeek.reduce((s, h) => s + (h.gems || 0) + (h.bossBonus || 0) + (h.comboBonus || 0), 0);
+    const dGems = twGems - lwGems;
+
+    const renderDelta = (d, isHour = false) => {
+      const valStr = isHour ? Math.abs(d).toFixed(1) + 'h' : Math.abs(d);
+      if (d > 0) return `<span class="text-xs font-semibold text-emerald-400">▲ +${valStr}</span>`;
+      if (d < 0) return `<span class="text-xs font-semibold text-rose-400">▼ -${valStr}</span>`;
+      return `<span class="text-xs text-white/40">― 0</span>`;
+    };
+
+    return `
+      <div class="rounded-2xl p-4" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">
+        <p class="text-xs font-semibold uppercase tracking-wider text-white/60 mb-3">Week over Week</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="glass-soft rounded-xl p-3 flex flex-col justify-between">
+            <span class="text-[11px] text-white/40">Tasks Completed</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <span class="text-xl font-bold tabular-nums text-white">${twTasks}</span>
+              ${renderDelta(dTasks)}
+            </div>
+            <span class="text-[10px] text-white/30 mt-1">Prev week: ${lwTasks}</span>
+          </div>
+
+          <div class="glass-soft rounded-xl p-3 flex flex-col justify-between">
+            <span class="text-[11px] text-white/40">Focus Hours</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <span class="text-xl font-bold tabular-nums text-white">${twFocusH.toFixed(1)}h</span>
+              ${renderDelta(dFocus, true)}
+            </div>
+            <span class="text-[10px] text-white/30 mt-1">Prev week: ${lwFocusH.toFixed(1)}h</span>
+          </div>
+
+          <div class="glass-soft rounded-xl p-3 flex flex-col justify-between">
+            <span class="text-[11px] text-white/40">Crystals Earned</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <span class="text-xl font-bold tabular-nums text-accent flex items-center gap-1">${twGems} 💎</span>
+              ${renderDelta(dGems)}
+            </div>
+            <span class="text-[10px] text-white/30 mt-1">Prev week: ${lwGems} 💎</span>
+          </div>
         </div>
       </div>`;
   }
