@@ -6505,7 +6505,73 @@ const SprintEngine = {
     }
   },
 
-  _accumulateContinuous(now) {},
+  _accumulateContinuous(now) {
+    const state = SprintStore.get();
+    if (state.phase !== 'running') return;
+
+    if (!this._lastTickAt) {
+      this._lastTickAt = state.lastTickAt || now;
+    }
+    if (typeof this._continuousMs !== 'number') {
+      this._continuousMs = state.continuousMs || 0;
+    }
+
+    const delta = Math.min(Math.max(0, now - this._lastTickAt), 2000);
+    this._continuousMs += delta;
+    this._lastTickAt = now;
+
+    let rewardedBlocks = state.rewardedBlocks || 0;
+    const stats = state.stats || { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 };
+    let crystalsEarned = stats.crystalsEarned || 0;
+    let awarded = false;
+
+    while (this._continuousMs >= 1800000) {
+      this._continuousMs -= 1800000;
+      rewardedBlocks++;
+      crystalsEarned++;
+      awarded = true;
+
+      // Award 1 crystal via StateManager
+      if (typeof StateManager !== 'undefined' && StateManager.get && StateManager.patch) {
+        const currentGems = StateManager.get('gems') || 0;
+        StateManager.patch({ gems: currentGems + 1 });
+      }
+      if (typeof updateCrystalChips === 'function') {
+        updateCrystalChips();
+      }
+      if (typeof SyncManager !== 'undefined' && SyncManager.scheduleSync) {
+        SyncManager.scheduleSync();
+      }
+
+      if (typeof showPopup === 'function') {
+        showPopup('sprint', '💎', '+1 crystal', '30 min of continuous focus');
+      } else if (typeof showToast === 'function') {
+        showToast('💎 +1 crystal: 30 min of continuous focus');
+      }
+    }
+
+    if (awarded) {
+      SprintStore.set({
+        continuousMs: this._continuousMs,
+        lastTickAt: now,
+        rewardedBlocks,
+        stats: {
+          ...stats,
+          crystalsEarned
+        }
+      });
+      this._lastSaveAt = now;
+    } else {
+      SprintStore._state.continuousMs = this._continuousMs;
+      SprintStore._state.lastTickAt = now;
+      if (!this._lastSaveAt || (now - this._lastSaveAt) >= 5000) {
+        this._lastSaveAt = now;
+        try {
+          localStorage.setItem('nova-sprint', JSON.stringify(SprintStore._state));
+        } catch (e) {}
+      }
+    }
+  },
 
   playSound(type) {
     try {
@@ -6766,6 +6832,9 @@ const SprintEngine = {
       lastTickAt: now
     });
 
+    this._continuousMs = 0;
+    this._lastTickAt = now;
+
     // 5. Unlock audio on click gesture
     this._unlockAudio();
 
@@ -6825,6 +6894,9 @@ const SprintEngine = {
       stats: newStats
     });
 
+    this._continuousMs = 0;
+    this._lastTickAt = now;
+
     this._scheduleHoldTimeout(180000);
     SprintUI.render();
     SprintUI.tickDisplay(this.getMsLeft());
@@ -6839,6 +6911,7 @@ const SprintEngine = {
     this._clearHoldTimeout();
 
     const now = Date.now();
+    this._lastTickAt = now;
     SprintStore.set({
       phase: 'running',
       taskStartedAt: now,
