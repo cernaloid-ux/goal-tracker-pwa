@@ -3858,6 +3858,83 @@ function checkAchievements() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   INSIGHTS & ANALYTICS RENDERER (B3)
+═══════════════════════════════════════════════════════════ */
+const InsightsRenderer = {
+  _focusDays: 7,
+
+  render() {
+    const root = document.getElementById('insights-root');
+    if (!root) return;
+    const history = StateManager.get('history') || [];
+
+    root.innerHTML = `
+      ${this.renderHeatmap(history)}
+    `;
+  },
+
+  renderHeatmap(history) {
+    const counts = {};
+    (history || []).forEach(h => {
+      const dk = dateKey(h.completedAt);
+      counts[dk] = (counts[dk] || 0) + 1;
+    });
+
+    const now = new Date();
+    const dayOfWeek = (now.getDay() + 6) % 7; // 0=Mon, 6=Sun
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (6 - dayOfWeek));
+    const days = 26 * 7;
+    const startDate = new Date(endDate.getTime() - (days - 1) * 86400000);
+
+    const cellSize = 11;
+    const gap = 3;
+    const width = 26 * (cellSize + gap);
+    const height = 7 * (cellSize + gap);
+
+    let rects = '';
+    const cur = new Date(startDate);
+    for (let c = 0; c < 26; c++) {
+      for (let r = 0; r < 7; r++) {
+        const dk = dateKey(cur.getTime());
+        const isFuture = cur.getTime() > now.getTime();
+        const cnt = isFuture ? 0 : (counts[dk] || 0);
+        let fill = 'rgba(255,255,255,0.06)';
+        if (!isFuture) {
+          if (cnt >= 5) fill = '#FF3B30';
+          else if (cnt >= 3) fill = 'rgba(255,59,48,0.7)';
+          else if (cnt >= 1) fill = 'rgba(255,59,48,0.35)';
+        }
+        const x = c * (cellSize + gap);
+        const y = r * (cellSize + gap);
+        const label = isFuture ? 'Future' : `${dk}: ${cnt} completed`;
+        rects += `<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="2.5" fill="${fill}" data-date="${dk}"><title>${label}</title></rect>`;
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
+    return `
+      <div class="rounded-2xl p-4" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <p class="text-xs font-semibold uppercase tracking-wider text-white/60">26-Week Activity Heatmap</p>
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:rgba(255,255,255,.4);">
+            <span>Less</span>
+            <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:rgba(255,255,255,0.06);"></span>
+            <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:rgba(255,59,48,0.35);"></span>
+            <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:rgba(255,59,48,0.7);"></span>
+            <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#FF3B30;"></span>
+            <span>More</span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;padding-bottom:4px;" class="hide-scrollbar">
+          <svg viewBox="0 0 ${width} ${height}" style="width:${width}px;max-width:none;display:block;">
+            ${rects}
+          </svg>
+        </div>
+      </div>`;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
    PROFILE RENDERER
 ═══════════════════════════════════════════════════════════ */
 const ProfileRenderer = {
@@ -3897,6 +3974,7 @@ const ProfileRenderer = {
     this._renderMacroList();
     this._renderPurchaseHistory();
     this._renderTrophyCase();
+    InsightsRenderer.render();
     updateCrystalChips();
   },
 
