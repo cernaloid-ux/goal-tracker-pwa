@@ -7122,7 +7122,43 @@ const SprintEngine = {
     SprintUI.render();
     SprintUI.tickDisplay(taskDurationMs);
   },
-  finish() { showToast('SprintEngine.finish() stub'); },
+  finish() {
+    const state = SprintStore.get();
+    if (state.phase === 'finished') {
+      return;
+    }
+
+    // 1. Stop audio, intervals, timeouts, and release Wake Lock
+    this._stopAudio();
+    this._stopTickInterval();
+    this._scheduleEndTimeout(null);
+    this._clearHoldTimeout();
+    this._releaseWakeLock();
+
+    this._continuousMs = 0;
+    this._lastTickAt = null;
+
+    // 2. Revert any unfinished active task back to 'queued' status
+    const queue = (state.queue || []).map(t => {
+      if (t.status === 'active' || t.id === state.activeId) {
+        if (t.status !== 'done' && t.status !== 'frozen') {
+          return { ...t, status: 'queued' };
+        }
+      }
+      return t;
+    });
+
+    const now = Date.now();
+    SprintStore.set({
+      phase: 'finished',
+      activeId: null,
+      queue,
+      pausedAt: null,
+      sessionEndsAt: state.sessionEndsAt ? Math.min(state.sessionEndsAt, now) : now
+    });
+
+    SprintUI.render();
+  },
   restoreOnLoad() {}
 };
 
