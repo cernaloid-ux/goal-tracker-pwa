@@ -6384,6 +6384,19 @@ const SprintUI = {
         pauseBtn.classList.remove('opacity-40', 'cursor-not-allowed');
       }
     }
+
+    // 7. Timeout selection highlights for DONE / BLOCKER / +5 MIN when msLeft === 0
+    const doneBtn = document.getElementById('btn-sprint-done');
+    const blockerBtn = document.getElementById('btn-sprint-blocker');
+    if (totalSec === 0 && state.phase === 'running') {
+      if (doneBtn) doneBtn.classList.add('ring-2', 'ring-emerald-400');
+      if (blockerBtn) blockerBtn.classList.add('ring-2', 'ring-rose-400');
+      if (extendBtn && !extendBtn.disabled) extendBtn.classList.add('ring-2', 'ring-amber-400');
+    } else {
+      if (doneBtn) doneBtn.classList.remove('ring-2', 'ring-emerald-400');
+      if (blockerBtn) blockerBtn.classList.remove('ring-2', 'ring-rose-400');
+      if (extendBtn) extendBtn.classList.remove('ring-2', 'ring-amber-400');
+    }
   }
 };
 
@@ -6508,6 +6521,7 @@ const SprintEngine = {
   _accumulateContinuous(now) {
     const state = SprintStore.get();
     if (state.phase !== 'running') return;
+    if (this.getMsLeft() <= 0) return;
 
     if (!this._lastTickAt) {
       this._lastTickAt = state.lastTickAt || now;
