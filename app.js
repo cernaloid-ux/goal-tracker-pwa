@@ -8056,6 +8056,190 @@ function initGlobalEvents() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   SPRINT MODULE SELF-TEST (Manual runner via DevTools)
+═══════════════════════════════════════════════════════════ */
+window.__sprintSelfTest = function() {
+  const results = [];
+  const logTest = (name, passed, details = '') => {
+    results.push({
+      Test: name,
+      Status: passed ? 'PASS' : 'FAIL',
+      Details: details
+    });
+  };
+
+  const origConfirm = window.confirm;
+  const origToast = window.showToast;
+  let lastToast = null;
+
+  const realSprintRaw = localStorage.getItem('nova-sprint');
+  const realBackupRaw = localStorage.getItem('nova-sprint-backup');
+  const realState = JSON.parse(JSON.stringify(SprintStore.get()));
+
+  try {
+    window.confirm = () => true;
+    try {
+      window.showToast = function(msg) {
+        lastToast = msg;
+        if (typeof origToast === 'function') {
+          try { origToast(msg); } catch (e) {}
+        }
+      };
+    } catch (e) {}
+
+    // 1) Test valid array parsing (3 tasks)
+    SprintStore.reset();
+    const jsonArr = JSON.stringify([
+      { id: 't1', title: 'Task 1', tag: 'CODE', estMin: 15 },
+      { id: 't2', title: 'Task 2', tag: 'DeSiGn', notes: 'Notes' },
+      { id: 't3', title: 'Task 3', tag: 'marketing', estMin: 25 }
+    ]);
+    const okArr = SprintQueue.load(jsonArr);
+    const q1 = SprintQueue.view();
+    const pass1 = okArr === true &&
+      q1.length === 3 &&
+      q1[0].tag === 'code' && q1[0].estMin === 15 &&
+      q1[1].tag === 'design' && q1[1].estMin === 5 &&
+      q1[2].tag === 'marketing' && q1[2].estMin === 25;
+    logTest('1. Parse valid array (3 tasks)', pass1, `Length=${q1.length}, Tags=[${q1.map(t=>t.tag).join(',')}], estMin=[${q1.map(t=>t.estMin).join(',')}]`);
+
+    // 2) Test object {"tasks":[...]} parsing
+    SprintStore.set({ queue: [] });
+    const jsonObj = JSON.stringify({
+      tasks: [
+        { id: 'o1', title: 'Obj Task 1', tag: 'API', estMin: 10 },
+        { id: 'o2', title: 'Obj Task 2', tag: 'UI' },
+        { id: 'o3', title: 'Obj Task 3', tag: 'DOCS', estMin: 20 }
+      ]
+    });
+    const okObj = SprintQueue.load(jsonObj);
+    const q2 = SprintQueue.view();
+    const pass2 = okObj === true &&
+      q2.length === 3 &&
+      q2[0].tag === 'api' && q2[0].estMin === 10 &&
+      q2[1].tag === 'ui' && q2[1].estMin === 5 &&
+      q2[2].tag === 'docs' && q2[2].estMin === 20;
+    logTest('2. Parse object {"tasks":[...]}', pass2, `Length=${q2.length}, Tags=[${q2.map(t=>t.tag).join(',')}]`);
+
+    // 3) Corrupted JSON error handling
+    lastToast = null;
+    const badJsonRes = SprintQueue.load('{ invalid json format ::: ');
+    const pass3 = badJsonRes === false;
+    logTest('3. Corrupted JSON error handling', pass3, `Returned false as expected`);
+
+    // 4) Skip task without title
+    SprintStore.set({ queue: [] });
+    const missingTitleJson = JSON.stringify([
+      { id: 'm1', title: 'Valid 1', tag: 'test' },
+      { id: 'm2', notes: 'Missing title', tag: 'test' },
+      { id: 'm3', title: '   ', tag: 'test' },
+      { id: 'm4', title: 'Valid 2', tag: 'test' }
+    ]);
+    const ok4 = SprintQueue.load(missingTitleJson);
+    const q4 = SprintQueue.view();
+    const pass4 = ok4 === true && q4.length === 2 && q4[0].id === 'm1' && q4[1].id === 'm4';
+    logTest('4. Skip tasks with missing title', pass4, `Loaded ${q4.length} valid tasks out of 4`);
+
+    // 5) Duplicate ID deduplication
+    SprintStore.set({ queue: [] });
+    const dupIdJson = JSON.stringify([
+      { id: 'dup_1', title: 'First Task', tag: 'dup' },
+      { id: 'dup_1', title: 'Duplicate ID Task', tag: 'dup' },
+      { id: 'dup_2', title: 'Second Task', tag: 'dup' }
+    ]);
+    const ok5 = SprintQueue.load(dupIdJson);
+    const q5 = SprintQueue.view();
+    const pass5 = ok5 === true && q5.length === 2 && q5[0].title === 'First Task' && q5[1].title === 'Second Task';
+    logTest('5. Duplicate ID deduplication', pass5, `Loaded ${q5.length} unique tasks out of 3`);
+
+    // 6) next(preferNotTag) and fallback
+    SprintStore.set({
+      queue: [
+        { id: 'n1', title: 'Code 1', tag: 'code', status: 'queued' },
+        { id: 'n2', title: 'Design 1', tag: 'design', status: 'queued' },
+        { id: 'n3', title: 'Code 2', tag: 'code', status: 'queued' }
+      ]
+    });
+    const pickedNotCode = SprintQueue.next('code');
+    const pass6a = pickedNotCode && pickedNotCode.id === 'n2' && pickedNotCode.tag === 'design';
+
+    const fallbackPicked = SprintQueue.next('code');
+    const pass6b = fallbackPicked && fallbackPicked.id === 'n1' && fallbackPicked.tag === 'code';
+    const pass6 = pass6a && pass6b;
+    logTest('6. next(preferNotTag) and tag fallback', pass6, `First picked ${pickedNotCode?.id} (${pickedNotCode?.tag}); Fallback picked ${fallbackPicked?.id} (${fallbackPicked?.tag})`);
+
+    // 7) unfreeze(id) resets reason and appends to end
+    SprintStore.set({
+      queue: [
+        { id: 'u1', title: 'Active Task', tag: 'code', status: 'active' },
+        { id: 'u2', title: 'Frozen Task', tag: 'design', status: 'frozen', reason: 'Blocked by API' },
+        { id: 'u3', title: 'Queued Task', tag: 'docs', status: 'queued' }
+      ]
+    });
+    SprintQueue.unfreeze('u2');
+    const q7 = SprintQueue.view();
+    const unfrozenTask = q7.find(t => t.id === 'u2');
+    const isAtEnd = q7[q7.length - 1].id === 'u2';
+    const pass7 = unfrozenTask &&
+      unfrozenTask.status === 'queued' &&
+      unfrozenTask.reason === null &&
+      isAtEnd &&
+      q7.length === 3;
+    logTest('7. unfreeze(id) resets reason and appends to end', pass7, `Status=${unfrozenTask?.status}, reason=${unfrozenTask?.reason}, isAtEnd=${isAtEnd}`);
+
+    // 8) clear() backups to localStorage and restoreBackup() restores
+    SprintStore.set({
+      queue: [
+        { id: 'c1', title: 'Clear 1', tag: 'a', status: 'queued' },
+        { id: 'c2', title: 'Clear 2', tag: 'b', status: 'queued' }
+      ]
+    });
+    const clearedOk = SprintQueue.clear();
+    const backupRaw = localStorage.getItem('nova-sprint-backup');
+    const backupArr = backupRaw ? JSON.parse(backupRaw) : null;
+    const q8Cleared = SprintQueue.view();
+    const backupOk = clearedOk === true && q8Cleared.length === 0 && Array.isArray(backupArr) && backupArr.length === 2;
+
+    const restoredOk = SprintQueue.restoreBackup();
+    const q8Restored = SprintQueue.view();
+    const pass8 = backupOk && restoredOk === true && q8Restored.length === 2 && q8Restored[0].id === 'c1' && q8Restored[1].id === 'c2';
+    logTest('8. clear() backups to localStorage and restoreBackup() restores', pass8, `BackupLen=${backupArr?.length}, RestoredLen=${q8Restored.length}`);
+
+  } catch (err) {
+    logTest('Test Execution Exception', false, err.message);
+  } finally {
+    window.confirm = origConfirm;
+    if (origToast) {
+      window.showToast = origToast;
+    }
+    if (realSprintRaw !== null) {
+      localStorage.setItem('nova-sprint', realSprintRaw);
+    } else {
+      localStorage.removeItem('nova-sprint');
+    }
+    if (realBackupRaw !== null) {
+      localStorage.setItem('nova-sprint-backup', realBackupRaw);
+    } else {
+      localStorage.removeItem('nova-sprint-backup');
+    }
+    SprintStore._state = realState;
+    SprintUI.render();
+  }
+
+  console.log('%c[Sprint Self-Test Results]', 'font-weight: bold; font-size: 14px; color: #10B981;');
+  console.table(results);
+
+  const allPassed = results.length === 8 && results.every(r => r.Status === 'PASS');
+  if (allPassed) {
+    console.log('%c✓ All 8 Sprint self-tests PASSED successfully!', 'font-weight: bold; color: #10B981;');
+  } else {
+    console.warn('%c⚠ Some Sprint self-tests FAILED. See details above.', 'font-weight: bold; color: #EF4444;');
+  }
+
+  return allPassed;
+};
+
+/* ═══════════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
