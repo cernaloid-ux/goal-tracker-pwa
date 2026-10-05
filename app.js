@@ -4363,6 +4363,67 @@ const ProfileRenderer = {
 };
 
 /* ═══════════════════════════════════════════════════════════
+   DAY PLANNER (B2 — Auto-schedule tasks into free slots)
+═══════════════════════════════════════════════════════════ */
+const DayPlanner = {
+  _previewPlan: null,
+  _unplaced: [],
+  _shuffleMode: 'morning',
+  _targetDateKey: null,
+
+  getCandidates(targetDateKey = dateKey()) {
+    const st = StateManager.get();
+    const goals = st.goals || [];
+    const [ty, tm, td] = targetDateKey.split('-').map(Number);
+    const targetDayStart = new Date(ty, tm - 1, td, 0, 0, 0, 0).getTime();
+
+    const candidates = [];
+
+    goals.forEach(g => {
+      if (g.done || g.isProject || g.isEvent) return;
+
+      const isUnscheduled = !g.scheduledAt || g.allDay;
+      const isOverdue = g.scheduledAt && (g.allDay ? dateKey(g.scheduledAt) < targetDateKey : g.scheduledAt < targetDayStart);
+
+      // If scheduled for a different future day, skip unless overdue
+      if (g.scheduledAt && !g.allDay && !isOverdue && dateKey(g.scheduledAt) !== targetDateKey) {
+        return;
+      }
+
+      if (isUnscheduled || isOverdue || dateKey(g.scheduledAt) === targetDateKey) {
+        const prioMap = { high: 3, mid: 2, low: 1 };
+        let score = prioMap[g.priority] ?? 2;
+
+        if (isOverdue) score += 2;
+
+        if (g.parentId) {
+          const parent = goals.find(x => x.id === g.parentId && x.isProject);
+          if (parent && parent.deadline) {
+            const dlTime = new Date(parent.deadline).getTime();
+            if (!isNaN(dlTime)) {
+              const daysToDl = (dlTime - targetDayStart) / 86400000;
+              if (daysToDl <= 3) score += 3;
+              else if (daysToDl <= 7) score += 1.5;
+            }
+          }
+        }
+
+        candidates.push({
+          goal: g,
+          score,
+          isOverdue,
+          durationMin: parseInt(g.duration_min, 10) || DEFAULT_TIMER_MIN
+        });
+      }
+    });
+
+    // Sort descending by score
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
    SETTINGS PANEL
 ═══════════════════════════════════════════════════════════ */
 function renderSettingsPanel() {
