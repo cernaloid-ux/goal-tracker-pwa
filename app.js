@@ -1486,6 +1486,7 @@ const TaskController = {
     if(StateManager.get('currentView')==='profile') ProfileRenderer.render();
     if(StateManager.get('currentView')==='calendar') CalendarController.render();
     if(StateManager.get('currentView')==='focus') { TimerController.tick(); TimerController.renderSpheres(); FocusHistoryRenderer.render(); }
+    checkAchievements();
   },
 
   openModal(id=null, opts={}) {
@@ -3620,6 +3621,7 @@ const StoreController = {
     updateCrystalChips();
     this.render();
     if (StateManager.get('currentView')==='profile') ProfileRenderer.render();
+    checkAchievements();
     showToast(`🎉 Purchase complete! ${StateManager.get('gems')} 💎 left`);
   },
   renderPurchases() {
@@ -3720,6 +3722,140 @@ const MacroController = {
     showToast(`🗑 Deleted project and ${total} nested item${total===1?'':'s'}`);
   },
 };
+
+/* ═══════════════════════════════════════════════════════════
+   ACHIEVEMENTS ENGINE (B4.3)
+═══════════════════════════════════════════════════════════ */
+const ACHIEVEMENTS = [
+  {
+    id: 'first_blood',
+    title: 'First Blood',
+    emoji: '🎯',
+    desc: 'Complete your first task',
+    check: ctx => (ctx.history || []).length >= 1
+  },
+  {
+    id: 'streak_3',
+    title: 'Warming Up',
+    emoji: '🔥',
+    desc: 'Reach a 3-day streak',
+    check: ctx => (ctx.streak?.days || 0) >= 3 || (ctx.streak?.best || 0) >= 3
+  },
+  {
+    id: 'streak_7',
+    title: 'Unstoppable',
+    emoji: '⚡',
+    desc: 'Reach a 7-day streak',
+    check: ctx => (ctx.streak?.days || 0) >= 7 || (ctx.streak?.best || 0) >= 7
+  },
+  {
+    id: 'streak_30',
+    title: 'Legendary Master',
+    emoji: '👑',
+    desc: 'Reach a 30-day streak',
+    check: ctx => (ctx.streak?.days || 0) >= 30 || (ctx.streak?.best || 0) >= 30
+  },
+  {
+    id: 'early_bird',
+    title: 'Early Bird',
+    emoji: '🌅',
+    desc: 'Complete a task before 08:00',
+    check: ctx => (ctx.history || []).some(h => {
+      const d = new Date(h.completedAt);
+      return !isNaN(d.getTime()) && d.getHours() < 8;
+    })
+  },
+  {
+    id: 'night_owl',
+    title: 'Night Owl',
+    emoji: '🦉',
+    desc: 'Complete a task after 23:00',
+    check: ctx => (ctx.history || []).some(h => {
+      const d = new Date(h.completedAt);
+      return !isNaN(d.getTime()) && d.getHours() >= 23;
+    })
+  },
+  {
+    id: 'marathoner',
+    title: 'Marathoner',
+    emoji: '🏃',
+    desc: 'Complete 10 Sport/Health tasks',
+    check: ctx => (ctx.history || []).filter(h => h.cat === 'health').length >= 10
+  },
+  {
+    id: 'shipper',
+    title: 'Super Shipper',
+    emoji: '🚀',
+    desc: 'Complete 10 Business tasks',
+    check: ctx => (ctx.history || []).filter(h => h.cat === 'business').length >= 10
+  },
+  {
+    id: 'focus_hour',
+    title: 'Deep Diver',
+    emoji: '🧘',
+    desc: 'Focus for 60+ minutes in one session',
+    check: ctx => (ctx.history || []).some(h => (h.elapsed_ms || 0) >= 3600000)
+  },
+  {
+    id: 'boss_slayer',
+    title: 'Boss Slayer',
+    emoji: '⚔️',
+    desc: 'Defeat 5 Bosses of the Day',
+    check: ctx => (ctx.history || []).filter(h => (h.bossBonus || 0) > 0).length >= 5
+  },
+  {
+    id: 'project_complete',
+    title: 'Grand Architect',
+    emoji: '🏛️',
+    desc: 'Complete an entire project',
+    check: ctx => (ctx.goals || []).some(g => g.isProject && g.rewardPaid)
+  },
+  {
+    id: 'comeback',
+    title: 'Phoenix Rising',
+    emoji: '🦅',
+    desc: 'Complete a task after 3+ days pause',
+    check: ctx => {
+      const h = ctx.history || [];
+      if (h.length < 2) return false;
+      const sorted = [...h].sort((a,b) => a.completedAt - b.completedAt);
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].completedAt - sorted[i-1].completedAt >= 3 * 86400000) return true;
+      }
+      return false;
+    }
+  }
+];
+
+function checkAchievements() {
+  const st = StateManager.get();
+  const achievements = { ...(st.achievements || {}) };
+  const ctx = {
+    state: st,
+    goals: st.goals || [],
+    history: st.history || [],
+    streak: st.streak || { days: 0, lastDate: '', best: 0 },
+    purchases: st.purchases || [],
+    gems: st.gems || 0
+  };
+
+  let newlyUnlocked = false;
+  for (const ach of ACHIEVEMENTS) {
+    if (!achievements[ach.id] && ach.check(ctx)) {
+      achievements[ach.id] = Date.now();
+      newlyUnlocked = true;
+      showPopup('ach', '🏅', ach.title, ach.desc);
+    }
+  }
+
+  if (newlyUnlocked) {
+    StateManager.patch({ achievements });
+    SyncManager.scheduleSync();
+    if (StateManager.get('currentView') === 'profile' && typeof ProfileRenderer !== 'undefined' && ProfileRenderer.render) {
+      ProfileRenderer.render();
+    }
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════
    PROFILE RENDERER
