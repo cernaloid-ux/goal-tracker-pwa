@@ -2580,6 +2580,37 @@ const CalendarController = {
         }
       });
 
+      // DayPlanner Proposed Preview ghost cards
+      if (typeof DayPlanner !== 'undefined' && DayPlanner._previewPlan && DayPlanner._previewPlan.length && DayPlanner._targetDateKey === dk) {
+        DayPlanner._previewPlan.forEach(p => {
+          if (p.accepted) return;
+          const d = new Date(p.slot.s);
+          const topMin = d.getHours() * 60 + d.getMinutes();
+          const durMin = p.durationMin;
+          const topPx = topMin * PX;
+          const heightPx = Math.max(this.MIN_H, durMin * PX);
+          const color = (CATS[p.cat] || CATS.business).color;
+          const leftWidth = 'left:calc(50px + 3px);width:calc(100% - 54px - 6px);';
+
+          const card = document.createElement('div');
+          card.className = 'planner-preview-ghost';
+          card.style.cssText = `position:absolute;${leftWidth}top:${topPx}px;height:${heightPx}px;`
+            + `background:${color}18;border:2px dashed ${color};border-radius:8px;padding:4px 8px;cursor:pointer;overflow:hidden;box-sizing:border-box;z-index:15;`;
+
+          card.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">`
+            + `<p style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;">✨ ${esc(p.title)}</p>`
+            + `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:#FF9F0A;color:#000;flex-shrink:0;">Proposed</span>`
+            + `</div>`
+            + `<span style="font-size:10px;color:rgba(255,255,255,.6);">${fmtTimeRange(p.slot.s, durMin)}</span>`;
+
+          card.onclick = (e) => {
+            e.stopPropagation();
+            DayPlanner.openModal(dk);
+          };
+          c.appendChild(card);
+        });
+      }
+
       // A9.4 — Now-line (today only)
       if (dk === dateKey()) {
         const nowLine = document.createElement('div');
@@ -4677,6 +4708,233 @@ const DayPlanner = {
       totalScheduledMin: placed.reduce((sum, p) => sum + p.durationMin, 0),
       freeSlotsCount: rawFreeSlots.length
     };
+  },
+
+  openModal(targetDateKey = null) {
+    const dk = targetDateKey || (StateManager.get('currentView') === 'calendar' && CalendarController._calDate ? dateKey(CalendarController._calDate) : dateKey());
+    if (!this._previewPlan || this._targetDateKey !== dk) {
+      this.computePlan(dk, this._shuffleMode || 'morning');
+    }
+    this.renderModal();
+    openModal('modal-day-planner');
+    if (StateManager.get('currentView') === 'calendar') {
+      CalendarController.render();
+    }
+  },
+
+  renderModal() {
+    const dk = this._targetDateKey || dateKey();
+    const [y, m, d] = dk.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    const dateLabel = dateObj.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+
+    const sub = document.getElementById('planner-modal-subtitle');
+    if (sub) sub.textContent = `${dateLabel} • Авто-расписание`;
+
+    const shuffleLbl = document.getElementById('planner-shuffle-label');
+    if (shuffleLbl) {
+      shuffleLbl.textContent = this._shuffleMode === 'evening' ? 'High в вечер' : 'High в утро';
+    }
+
+    const plan = this._previewPlan || [];
+    const activeItems = plan.filter(p => !p.accepted);
+    const totalMin = activeItems.reduce((sum, p) => sum + p.durationMin, 0);
+
+    const totalEl = document.getElementById('planner-total-time');
+    if (totalEl) totalEl.textContent = fmtMinutesToHM(totalMin);
+
+    const listEl = document.getElementById('planner-schedule-list');
+    if (listEl) {
+      if (!plan.length) {
+        listEl.innerHTML = `<div class="text-center py-6 text-white/40 text-xs">Нет задач для расписания. Все задачи уже запланированы или завершены!</div>`;
+      } else {
+        listEl.innerHTML = plan.map(item => {
+          const cat = CATS[item.cat] || CATS.business;
+          const color = cat.color || '#0A84FF';
+          const isDone = item.accepted;
+          return `
+            <div class="flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all ${isDone ? 'opacity-40 border-white/5 bg-white/2' : 'border-white/10 bg-white/5'}" style="border-left: 3px solid ${color};">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                  <span class="text-[11px] font-semibold text-accent">${item.startStr} – ${item.endStr}</span>
+                  <span class="text-[10px] text-white/50">(${item.durationMin}m)</span>
+                  <span class="text-[10px] px-1.5 py-0.2 rounded font-medium" style="background:${color}22;color:${color};">${cat.label}</span>
+                  ${item.priority === 'high' ? '<span class="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-red-500/20 text-red-400">High</span>' : ''}
+                </div>
+                <p class="text-xs font-medium text-white truncate ${isDone ? 'line-through' : ''}">${esc(item.title)}</p>
+              </div>
+              <div class="flex items-center gap-1.5 flex-none">
+                ${isDone
+                  ? '<span class="text-xs font-semibold text-green-400 px-2 py-1">✓ Принято</span>'
+                  : `<button type="button" data-plan-id="${item.id}" class="btn-plan-single-accept glass-soft glass-hover rounded-lg px-2.5 py-1 text-xs font-semibold text-accent">Accept</button>`
+                }
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        listEl.querySelectorAll('.btn-plan-single-accept').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.acceptSingle(btn.dataset.planId);
+          });
+        });
+      }
+    }
+
+    // Unplaced section
+    const unplacedWrap = document.getElementById('planner-unplaced-wrap');
+    const unplacedCount = document.getElementById('planner-unplaced-count');
+    const unplacedList = document.getElementById('planner-unplaced-list');
+    if (unplacedWrap && unplacedList) {
+      if (this._unplaced && this._unplaced.length) {
+        unplacedWrap.classList.remove('hidden');
+        if (unplacedCount) unplacedCount.textContent = String(this._unplaced.length);
+        unplacedList.innerHTML = this._unplaced.map(u => `
+          <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg" style="background:rgba(255,255,255,0.04);">
+            <span class="truncate font-medium">${esc(u.candidate.goal.title)} (${u.candidate.durationMin}m)</span>
+            <span class="text-[11px] opacity-75 flex-none">${esc(u.reasonText)}</span>
+          </div>
+        `).join('');
+      } else {
+        unplacedWrap.classList.add('hidden');
+      }
+    }
+
+    const btnAcceptAll = document.getElementById('btn-planner-accept-all');
+    if (btnAcceptAll) {
+      btnAcceptAll.disabled = activeItems.length === 0;
+      btnAcceptAll.style.opacity = activeItems.length === 0 ? '0.5' : '1';
+    }
+  },
+
+  _applyItemToGoal(item, goals) {
+    if (item.totalParts > 1 && item.partIndex > 1) {
+      // Subsequent split part -> create clone event
+      const orig = goals.find(g => g.id === item.goalId);
+      const newGoal = {
+        ...(orig || {}),
+        id: 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        title: item.title,
+        scheduledAt: item.slot.s,
+        isEvent: true,
+        allDay: false,
+        duration_min: item.durationMin,
+        done: false
+      };
+      goals.push(newGoal);
+    } else {
+      // Single task or Part 1 of split task -> update existing goal
+      const gIdx = goals.findIndex(g => g.id === item.goalId);
+      if (gIdx >= 0) {
+        goals[gIdx] = {
+          ...goals[gIdx],
+          title: item.totalParts > 1 ? item.title : goals[gIdx].title,
+          scheduledAt: item.slot.s,
+          isEvent: true,
+          allDay: false,
+          duration_min: item.durationMin
+        };
+      }
+    }
+  },
+
+  acceptAll() {
+    if (!this._previewPlan || !this._previewPlan.length) return;
+    const unaccepted = this._previewPlan.filter(p => !p.accepted);
+    if (!unaccepted.length) {
+      showToast('Все задачи уже приняты');
+      return;
+    }
+
+    StateManager.pushUndoSnapshot('Plan my day');
+    const goals = [...StateManager.get('goals')];
+
+    unaccepted.forEach(item => {
+      this._applyItemToGoal(item, goals);
+      item.accepted = true;
+    });
+
+    StateManager.patch({ goals });
+    TimerController.scheduleReminders();
+    SyncManager.scheduleSync();
+
+    this._previewPlan = null;
+    this._unplaced = [];
+    closeModal('modal-day-planner');
+    refreshEverything();
+    showToastWithUndo(`✨ Запланировано ${unaccepted.length} ${unaccepted.length === 1 ? 'дело' : (unaccepted.length < 5 ? 'дела' : 'дел')}`);
+  },
+
+  acceptSingle(planId) {
+    if (!this._previewPlan) return;
+    const item = this._previewPlan.find(p => p.id === planId);
+    if (!item || item.accepted) return;
+
+    StateManager.pushUndoSnapshot('Plan task');
+    const goals = [...StateManager.get('goals')];
+    this._applyItemToGoal(item, goals);
+    item.accepted = true;
+
+    StateManager.patch({ goals });
+    TimerController.scheduleReminders();
+    SyncManager.scheduleSync();
+
+    if (this._previewPlan.every(p => p.accepted)) {
+      this._previewPlan = null;
+      this._unplaced = [];
+      closeModal('modal-day-planner');
+    } else {
+      this.renderModal();
+    }
+
+    refreshEverything();
+    showToastWithUndo(`✅ Запланировано: ${item.title}`);
+  },
+
+  shuffle() {
+    const nextMode = (this._shuffleMode === 'morning') ? 'evening' : 'morning';
+    this.computePlan(this._targetDateKey || dateKey(), nextMode);
+    this.renderModal();
+    if (StateManager.get('currentView') === 'calendar') {
+      CalendarController.render();
+    }
+  },
+
+  discard() {
+    this._previewPlan = null;
+    this._unplaced = [];
+    closeModal('modal-day-planner');
+    if (StateManager.get('currentView') === 'calendar') {
+      CalendarController.render();
+    }
+    showToast('Превью планировщика снято', 2000);
+  },
+
+  init() {
+    document.getElementById('btn-plan-day-tasks')?.addEventListener('click', () => {
+      this.openModal(dateKey());
+    });
+    document.getElementById('btn-plan-day-cal')?.addEventListener('click', () => {
+      const dk = CalendarController._calDate ? dateKey(CalendarController._calDate) : dateKey();
+      this.openModal(dk);
+    });
+    document.getElementById('btn-planner-shuffle')?.addEventListener('click', () => {
+      this.shuffle();
+    });
+    document.getElementById('btn-planner-recalculate')?.addEventListener('click', () => {
+      this.computePlan(this._targetDateKey || dateKey(), this._shuffleMode || 'morning');
+      this.renderModal();
+      if (StateManager.get('currentView') === 'calendar') {
+        CalendarController.render();
+      }
+    });
+    document.getElementById('btn-planner-accept-all')?.addEventListener('click', () => {
+      this.acceptAll();
+    });
+    document.getElementById('btn-planner-discard')?.addEventListener('click', () => {
+      this.discard();
+    });
   }
 };
 
@@ -4714,6 +4972,15 @@ function renderSettingsPanel() {
   // 2.1 — Sync dim-recurring toggle to current state
   const dimToggle = document.getElementById('settings-dim-recurring');
   if (dimToggle) dimToggle.classList.toggle('on', !!StateManager.get('dimRecurring'));
+
+  // DayPlanner settings
+  const pSettings = DayPlanner.getSettings();
+  const pauseInp = document.getElementById('settings-planner-pause');
+  const maxHInp = document.getElementById('settings-planner-maxhours');
+  const gapInp = document.getElementById('settings-planner-gap');
+  if (pauseInp) pauseInp.value = pSettings.pauseMin;
+  if (maxHInp) maxHInp.value = pSettings.maxWorkHours;
+  if (gapInp) gapInp.value = pSettings.gapMin;
 }
 
 function initSettingsHandlers() {
@@ -4725,6 +4992,16 @@ function initSettingsHandlers() {
     const dimRecurring = !!document.getElementById('settings-dim-recurring')?.classList.contains('on');
     const syncKeyVal = document.getElementById('settings-sync-key')?.value;
     if (syncKeyVal !== undefined) localStorage.setItem('nova-sync-key', syncKeyVal.trim());
+
+    const pauseVal = parseInt(document.getElementById('settings-planner-pause')?.value, 10);
+    const maxHVal = parseFloat(document.getElementById('settings-planner-maxhours')?.value);
+    const gapVal = parseInt(document.getElementById('settings-planner-gap')?.value, 10);
+    DayPlanner.saveSettings({
+      pauseMin: isNaN(pauseVal) ? 15 : Math.max(1, Math.min(120, pauseVal)),
+      maxWorkHours: isNaN(maxHVal) ? 6 : Math.max(1, Math.min(24, maxHVal)),
+      gapMin: isNaN(gapVal) ? 10 : Math.max(0, Math.min(60, gapVal))
+    });
+
     StateManager.patch({
       profileName: nameVal || 'You',
       tgToken: document.getElementById('settings-tg-token')?.value.trim()||'',
@@ -5651,6 +5928,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try { StoreController.init();       } catch(e) { console.error('[Init:store]',e); }
   try { MacroController.init();       } catch(e) { console.error('[Init:macro]',e); }
   try { initSettingsHandlers();       } catch(e) { console.error('[Init:settings]',e); }
+  try { DayPlanner.init();            } catch(e) { console.error('[Init:dayplanner]',e); }
   try { VoiceInput.init();            } catch(e) { console.error('[Init:voice]',e); }
   try { initGlobalEvents();           } catch(e) { console.error('[Init:events]',e); }
   try { updateCrystalChips();         } catch(e) { console.error('[Init:crystals]',e); }

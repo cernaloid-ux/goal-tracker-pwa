@@ -381,6 +381,10 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
                 New Project
               </button>
+              <button id="btn-plan-day-tasks" class="glass-soft glass-hover rounded-2xl px-3.5 py-2.5 md:px-4 md:py-3 text-sm font-semibold flex items-center gap-1.5" title="Plan my day" style="color:#FF9F0A;">
+                <span>✨</span>
+                <span>Plan</span>
+              </button>
               <button id="btn-open-voice" class="w-11 h-11 md:w-12 md:h-12 glass glass-hover rounded-full flex items-center justify-center flex-none" title="Voice input" aria-label="Voice input">
                 <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
               </button>
@@ -526,6 +530,9 @@
               <button id="btn-undo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Undo (⌘Z)" disabled>↩</button>
               <button id="btn-redo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Redo (⌘⇧Z)" disabled>↪</button>
               <button id="btn-cal-voice" aria-label="Voice input" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center text-accent" title="Voice Input">🎤</button>
+              <button id="btn-plan-day-cal" class="glass-soft glass-hover rounded-lg px-2.5 py-1 text-xs font-semibold flex items-center gap-1" title="Plan my day" style="color:#FF9F0A;">
+                <span>✨</span> <span>Plan</span>
+              </button>
             </div>
           </div>
           <div class="glass rounded-xl p-1 flex gap-1 max-w-full overflow-x-auto" id="calTabs">
@@ -906,6 +913,25 @@
             <div id="settings-dim-recurring" class="toggle" style="flex:none;"></div>
           </div>
         </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">✨ Day Planner</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs text-white/50 mb-1 block">Pause (min)</label>
+              <input id="settings-planner-pause" type="number" min="5" max="60" class="field" placeholder="15">
+            </div>
+            <div>
+              <label class="text-xs text-white/50 mb-1 block">Max work (hours)</label>
+              <input id="settings-planner-maxhours" type="number" min="1" max="16" class="field" placeholder="6">
+            </div>
+            <div>
+              <label class="text-xs text-white/50 mb-1 block">Buffer gap (min)</label>
+              <input id="settings-planner-gap" type="number" min="0" max="60" class="field" placeholder="10">
+            </div>
+          </div>
+        </div>
+
         <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
           <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Tags</p>
           <div id="tags-manager" style="margin-bottom:10px;"></div>
@@ -928,6 +954,74 @@
       <div class="flex gap-3 mt-6">
         <button data-close="modal-settings" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
         <button id="btn-save-settings" data-action="save-settings" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ DAY PLANNER MODAL ============ -->
+  <div id="modal-day-planner" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-day-planner"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-xl relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-4 gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center flex-none" style="background:rgba(255,159,10,0.2);color:#FF9F0A;">
+            <span style="font-size:20px;">✨</span>
+          </div>
+          <div class="min-w-0">
+            <h2 class="text-xl font-bold truncate">Plan My Day</h2>
+            <p id="planner-modal-subtitle" class="text-xs text-white/50 truncate">Auto-schedule tasks into free slots</p>
+          </div>
+        </div>
+        <button data-close="modal-day-planner" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- Priority order & shuffle bar -->
+      <div class="flex items-center justify-between gap-2 mb-4 p-2.5 rounded-2xl glass-soft flex-wrap">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-white/60">Priority:</span>
+          <span id="planner-shuffle-label" class="text-xs font-semibold text-accent">High in Morning</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-planner-shuffle" type="button" class="glass-hover rounded-xl px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style="background:rgba(255,255,255,0.08);color:#fff;">
+            <span>🔀</span> Shuffle
+          </button>
+          <button id="btn-planner-recalculate" type="button" class="glass-hover rounded-xl px-3 py-1.5 text-xs font-semibold" style="background:rgba(255,255,255,0.08);color:#fff;">
+            <span>🔄</span> Recalculate
+          </button>
+        </div>
+      </div>
+
+      <!-- Schedule list -->
+      <div class="space-y-2 mb-4">
+        <div class="flex items-center justify-between text-xs text-white/40 uppercase tracking-wider font-semibold px-1">
+          <span>Proposed Schedule</span>
+          <span id="planner-total-time">0h 0m</span>
+        </div>
+        <div id="planner-schedule-list" class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Unplaced tasks section -->
+      <div id="planner-unplaced-wrap" class="mb-4 hidden" style="background:rgba(255,59,48,0.08);border:1px solid rgba(255,59,48,0.2);border-radius:16px;padding:12px;">
+        <div class="flex items-center justify-between text-xs font-semibold text-red-400 mb-2">
+          <span>⚠️ Unplaced Tasks (<span id="planner-unplaced-count">0</span>)</span>
+        </div>
+        <div id="planner-unplaced-list" class="space-y-1.5 text-xs text-white/70">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Bottom footer buttons -->
+      <div class="flex gap-2.5 mt-5 flex-wrap">
+        <button id="btn-planner-discard" type="button" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium" style="min-width:110px;">
+          Discard
+        </button>
+        <button id="btn-planner-accept-all" type="button" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2 text-white" style="min-width:140px;">
+          <span>✓</span> Accept All
+        </button>
       </div>
     </div>
   </div>
