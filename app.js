@@ -1438,10 +1438,19 @@ const TaskController = {
     const isBoss = !!(st.dailyBoss && st.dailyBoss.date === dateKey() && st.dailyBoss.id === g.id);
     const bossBonus = isBoss ? 3 : 0;
 
-    const history=[{ id:'h_'+Date.now().toString(36)+rnd(), goalId:g.id, title:g.title, cat:g.cat, color:catColor(g), completedAt:Date.now(), elapsed_ms:Math.max(0,Math.round(elapsedSec*1000)), gems:gemsEarned, bossBonus, comboBonus:0, tags:[...(g.tags||[])] }, ...st.history];
+    // B4.2: Combo bonus for today's completed tasks
+    const todayCompletedCount = (st.history || []).filter(h => dateKey(h.completedAt) === dateKey()).length;
+    const comboCount = todayCompletedCount + 1;
+    let comboBonus = 0;
+    if (earnsGems) {
+      if (comboCount === 3) comboBonus = 1;
+      else if (comboCount >= 5) comboBonus = 2;
+    }
+
+    const history=[{ id:'h_'+Date.now().toString(36)+rnd(), goalId:g.id, title:g.title, cat:g.cat, color:catColor(g), completedAt:Date.now(), elapsed_ms:Math.max(0,Math.round(elapsedSec*1000)), gems:gemsEarned, bossBonus, comboBonus, tags:[...(g.tags||[])] }, ...st.history];
     // A12: settle any parent-project reward bonuses (pays gemsReward when all leaves done)
     const bonus = settleProjectRewards(g);
-    const gems=st.gems+gemsEarned+bossBonus+bonus;
+    const gems=st.gems+gemsEarned+bossBonus+comboBonus+bonus;
 
     let streak={...st.streak}; const today=dateKey();
     if(streak.lastDate===today) { streak.doneToday=true; }
@@ -1455,6 +1464,10 @@ const TaskController = {
     if (isBoss) {
       showPopup('boss-defeat','👑','Boss defeated!','+3 crystals bonus!');
       launchBossConfetti();
+    }
+
+    if (comboBonus > 0) {
+      showPopup('combo', '🔥', `Combo ×${comboCount}!`, `+${comboBonus} crystal bonus`);
     }
 
     if (earnsGems) {
