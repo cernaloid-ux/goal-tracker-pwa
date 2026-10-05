@@ -7159,7 +7159,58 @@ const SprintEngine = {
 
     SprintUI.render();
   },
-  restoreOnLoad() {}
+  restoreOnLoad() {
+    const state = SprintStore.get();
+    if (!state || !state.phase) return;
+
+    const now = Date.now();
+
+    if (state.phase === 'running') {
+      if (state.sessionEndsAt && state.sessionEndsAt <= now) {
+        this.finish();
+        return;
+      }
+
+      this._bindVisibility();
+      this._requestWakeLock();
+
+      const msLeft = this.getMsLeft();
+      if (msLeft <= 0) {
+        this._soundFlags = { oneMin: true, countdown: true, finishAlert: true };
+        this._startTickInterval();
+        SprintUI.render();
+        SprintUI.tickDisplay(0);
+      } else {
+        this._soundFlags = {
+          oneMin: msLeft <= 60000,
+          countdown: msLeft <= 10000,
+          finishAlert: false
+        };
+        this._startTickInterval();
+        this._scheduleEndTimeout(msLeft);
+        SprintUI.render();
+        SprintUI.tickDisplay(msLeft);
+      }
+    } else if (state.phase === 'paused') {
+      if (state.sessionEndsAt && state.sessionEndsAt <= now) {
+        this.finish();
+        return;
+      }
+
+      const pausedAt = state.pausedAt || now;
+      const pausedElapsed = now - pausedAt;
+      if (pausedElapsed >= 180000) {
+        this.resume();
+      } else {
+        this._bindVisibility();
+        this._scheduleHoldTimeout(180000 - pausedElapsed);
+        SprintUI.render();
+        SprintUI.tickDisplay(this.getMsLeft());
+      }
+    } else if (state.phase === 'finished' || state.phase === 'overflow') {
+      SprintUI.render();
+    }
+  }
 };
 
 const SprintQueue = {
@@ -7257,6 +7308,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try { DayPlanner.init();            } catch(e) { console.error('[Init:dayplanner]',e); }
   try { VoiceInput.init();            } catch(e) { console.error('[Init:voice]',e); }
   try { SprintUI.init();              } catch(e) { console.error('[Init:sprint]',e); }
+  try { SprintEngine.restoreOnLoad(); } catch(e) { console.error('[Init:sprint-restore]',e); }
   try { initGlobalEvents();           } catch(e) { console.error('[Init:events]',e); }
   try { updateCrystalChips();         } catch(e) { console.error('[Init:crystals]',e); }
   // Must run AFTER StateManager.load() (already the case above) so it reads
