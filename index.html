@@ -1210,6 +1210,40 @@
     </div>
   </div>
 
+  <!-- ============ SPRINT QUEUE DRAWER MODAL ============ -->
+  <div id="modal-sprint-queue" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-queue"></div>
+    <div class="modal-card rounded-3xl p-4 sm:p-6 w-full max-w-lg relative max-h-[90vh] flex flex-col" role="dialog" aria-modal="true" style="background:#12151b; border:1px solid rgba(255,255,255,0.1); box-sizing:border-box;">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-4 gap-3 border-b border-white/10 pb-3 flex-none">
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg sm:text-xl font-bold font-mono text-white tracking-wider uppercase">Sprint Queue</h2>
+          <span id="sprint-queue-drawer-badge" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-white/10 text-white/80">0</span>
+        </div>
+        <button data-close="modal-sprint-queue" aria-label="Close" class="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/70 flex-none" style="min-height: 48px; min-width: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- Task list container (scrollable) -->
+      <div id="sprint-queue-list" class="flex-1 overflow-y-auto space-y-2 py-2 pr-1" style="min-height: 180px; max-height: 50vh;">
+        <!-- Rendered by SprintUI.renderQueue() -->
+      </div>
+
+      <!-- DANGER ZONE -->
+      <div class="mt-4 pt-3 border-t border-red-500/20 flex-none flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] uppercase tracking-wider font-mono font-bold text-red-400/80">Danger Zone</span>
+          <span class="text-[10px] text-white/40 font-mono">Irreversible</span>
+        </div>
+        <button type="button" id="btn-sprint-flush-queue" class="w-full rounded-xl bg-[#FF3B30]/15 hover:bg-[#FF3B30]/25 border border-[#FF3B30]/40 text-[#FF453A] text-sm font-bold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          <span>Flush queue</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ SPRINT FULLSCREEN OVERLAY ============ -->
   <div id="sprint-overlay" class="hidden fixed inset-0 flex-col items-center justify-between text-white overflow-y-auto select-none" style="position:fixed;inset:0;z-index:9990;background:#05070b;padding-top:calc(max(env(safe-area-inset-top,0px),16px)+10px);padding-bottom:calc(max(env(safe-area-inset-bottom,0px),16px)+10px);padding-left:max(env(safe-area-inset-left,0px),16px);padding-right:max(env(safe-area-inset-right,0px),16px);box-sizing:border-box;">
     <!-- Telemetry bar -->

@@ -6028,6 +6028,15 @@ const SprintUI = {
       closeModal('modal-sprint-load');
     });
 
+    // Queue drawer actions
+    document.getElementById('btn-sprint-flush-queue')?.addEventListener('click', () => {
+      if (confirm('Flush entire sprint queue?')) {
+        if (confirm('Are you absolutely sure? All tasks will be cleared.')) {
+          SprintQueue.clear();
+        }
+      }
+    });
+
     // Subscribe to store changes: call render only on structural/phase change
     SprintStore.subscribe((state, patch, meta) => {
       if (meta && meta.isStructural) {
@@ -6131,6 +6140,63 @@ const SprintUI = {
         pauseBtn.textContent = state.phase === 'paused' ? '▶ RESUME' : '⏸ PAUSE −1💎';
       }
     }
+
+    // 7. Render queue in drawer
+    this.renderQueue();
+  },
+
+  renderQueue() {
+    const listEl = document.getElementById('sprint-queue-list');
+    const badgeEl = document.getElementById('sprint-queue-drawer-badge');
+    if (!listEl) return;
+    const state = SprintStore.get();
+    const queue = state.queue || [];
+    if (badgeEl) badgeEl.textContent = String(queue.length);
+
+    if (queue.length === 0) {
+      listEl.innerHTML = '<div class="text-center py-8 text-white/40 text-xs font-mono">Queue is empty.<br>Load tasks via JSON to populate.</div>';
+      return;
+    }
+
+    listEl.innerHTML = queue.map(t => {
+      const isDone = t.status === 'done';
+      const isActive = t.status === 'active';
+      const isFrozen = t.status === 'frozen';
+
+      let statusBadge = '';
+      if (isDone) {
+        statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400">✓ DONE</span>';
+      } else if (isActive) {
+        statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">ACTIVE</span>';
+      } else if (isFrozen) {
+        statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30">FROZEN</span>';
+      } else {
+        statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-white/10 text-white/60">QUEUED</span>';
+      }
+
+      const unfreezeBtn = isFrozen
+        ? `<button type="button" class="btn-sprint-unfreeze px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-xs font-mono font-bold flex items-center justify-center transition-colors" data-id="${t.id}" style="min-height: 48px;">Unfreeze</button>`
+        : '';
+
+      return `<div class="p-3 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            ${statusBadge}
+            ${t.tag ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60">${esc(t.tag)}</span>` : ''}
+          </div>
+          <p class="text-sm font-medium ${isDone ? 'text-white/40 line-through' : 'text-white'} break-words">${esc(t.title)}</p>
+          ${t.notes ? `<p class="text-xs text-white/40 truncate mt-0.5">${esc(t.notes)}</p>` : ''}
+        </div>
+        ${unfreezeBtn}
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.btn-sprint-unfreeze').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        SprintQueue.unfreeze(id);
+      });
+    });
   },
 
   tickDisplay(msLeft) {}
