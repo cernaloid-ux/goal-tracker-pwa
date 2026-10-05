@@ -5990,6 +5990,24 @@ const SprintUI = {
       startBtn.addEventListener('click', () => SprintEngine.start());
     }
 
+    // Overlay combat action bindings
+    document.getElementById('btn-sprint-done')?.addEventListener('click', () => SprintEngine.done());
+    document.getElementById('btn-sprint-blocker')?.addEventListener('click', () => {
+      const reason = prompt('Reason for blocker:') || 'Blocker';
+      SprintEngine.blocker(reason);
+    });
+    document.getElementById('btn-sprint-pause')?.addEventListener('click', () => {
+      const ph = SprintStore.get().phase;
+      if (ph === 'paused') SprintEngine.resume();
+      else SprintEngine.pause();
+    });
+    document.getElementById('btn-sprint-extend')?.addEventListener('click', () => SprintEngine.extend());
+    document.getElementById('btn-sprint-abort')?.addEventListener('click', () => {
+      if (confirm('Abort entire sprint session?')) {
+        SprintEngine.finish();
+      }
+    });
+
     // Subscribe to store changes: call render only on structural/phase change
     SprintStore.subscribe((state, patch, meta) => {
       if (meta && meta.isStructural) {
@@ -6049,6 +6067,49 @@ const SprintUI = {
     const prepStatus = document.getElementById('sprint-prep-status');
     if (prepStatus) {
       prepStatus.textContent = state.phase ? state.phase.toUpperCase() : 'STANDBY';
+    }
+
+    // 6. Overlay combat screen visibility & status
+    const overlay = document.getElementById('sprint-overlay');
+    const isCombat = state.phase === 'running' || state.phase === 'paused' || state.phase === 'blocker';
+    if (overlay) {
+      if (isCombat || state.phase === 'overflow' || state.phase === 'finished') {
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+      } else {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+      }
+    }
+
+    if (isCombat) {
+      // Status badge
+      const badge = document.getElementById('sprint-status-badge');
+      if (badge) {
+        if (state.phase === 'running') {
+          badge.textContent = 'GO';
+          badge.className = 'px-3 py-1 rounded text-xs font-mono font-bold tracking-widest uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+        } else if (state.phase === 'paused') {
+          badge.textContent = 'HOLD';
+          badge.className = 'px-3 py-1 rounded text-xs font-mono font-bold tracking-widest uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30';
+        } else if (state.phase === 'blocker') {
+          badge.textContent = 'HOLD';
+          badge.className = 'px-3 py-1 rounded text-xs font-mono font-bold tracking-widest uppercase bg-red-500/20 text-red-400 border border-red-500/30';
+        }
+      }
+
+      // Active task title & tag
+      const activeTask = (state.queue || []).find(t => t.id === state.activeId);
+      const titleEl = document.getElementById('sprint-task-title');
+      const tagEl = document.getElementById('sprint-task-tag');
+      if (titleEl) titleEl.textContent = activeTask ? activeTask.title : 'No active task';
+      if (tagEl) tagEl.textContent = (activeTask && activeTask.tag) ? activeTask.tag : 'Sprint';
+
+      // Pause button label
+      const pauseBtn = document.getElementById('btn-sprint-pause');
+      if (pauseBtn) {
+        pauseBtn.textContent = state.phase === 'paused' ? '▶ RESUME' : '⏸ PAUSE −1💎';
+      }
     }
   },
 

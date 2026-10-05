@@ -1159,6 +1159,62 @@
     </div>
   </div>
 
+  <!-- ============ SPRINT FULLSCREEN OVERLAY ============ -->
+  <div id="sprint-overlay" class="hidden fixed inset-0 flex-col items-center justify-between text-white overflow-y-auto select-none" style="position:fixed;inset:0;z-index:9990;background:#05070b;padding-top:calc(max(env(safe-area-inset-top,0px),16px)+10px);padding-bottom:calc(max(env(safe-area-inset-bottom,0px),16px)+10px);padding-left:max(env(safe-area-inset-left,0px),16px);padding-right:max(env(safe-area-inset-right,0px),16px);box-sizing:border-box;">
+    <!-- Telemetry bar -->
+    <div id="sprint-telemetry" class="w-full text-center text-xs sm:text-sm tracking-wider text-white/70 py-1 flex-none" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+      SESSION T-02:00:00 | DONE 0 | FROZEN 0 | 💎 0
+    </div>
+
+    <!-- Status badge -->
+    <div class="my-1 flex-none">
+      <span id="sprint-status-badge" class="px-3 py-1 rounded text-xs font-mono font-bold tracking-widest uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+        GO
+      </span>
+    </div>
+
+    <!-- Giant Timer with SVG Ring -->
+    <div class="relative w-full max-w-[340px] aspect-square flex items-center justify-center my-auto flex-none">
+      <svg class="w-full h-full" viewBox="0 0 340 340">
+        <circle cx="170" cy="170" r="150" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="12"/>
+        <circle id="sprint-ring" cx="170" cy="170" r="150" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-dasharray="942.48" stroke-dashoffset="0" transform="rotate(-90 170 170)"/>
+      </svg>
+      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <span id="sprint-time" class="font-bold tabular-nums tracking-tighter text-white" style="font-size: clamp(72px, 24vw, 200px); line-height: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">05:00</span>
+      </div>
+    </div>
+
+    <!-- Current Single Task -->
+    <div class="w-full max-w-lg text-center flex flex-col items-center gap-1.5 px-4 my-2 flex-none">
+      <h1 id="sprint-task-title" class="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight break-words max-w-full">No active task</h1>
+      <span id="sprint-task-tag" class="px-3 py-0.5 rounded-full text-xs font-mono font-semibold bg-white/10 text-white/80 border border-white/10">Tag</span>
+    </div>
+
+    <!-- Combat Controls Row -->
+    <div class="w-full max-w-lg grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-2 flex-none" style="box-sizing: border-box;">
+      <button id="btn-sprint-done" type="button" class="col-span-2 sm:col-span-1 rounded-xl bg-[#30D158] hover:bg-[#28bd4e] text-black font-bold text-base flex items-center justify-center gap-1.5 transition-colors" style="min-height: 48px;">
+        ✓ DONE
+      </button>
+      <button id="btn-sprint-blocker" type="button" class="rounded-xl bg-[#FF3B30]/15 hover:bg-[#FF3B30]/25 border border-[#FF3B30]/40 text-[#FF453A] font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 transition-colors" style="min-height: 48px;">
+        ⛔ BLOCKER
+      </button>
+      <button id="btn-sprint-pause" type="button" class="rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-medium text-xs sm:text-sm flex items-center justify-center gap-1 transition-colors" style="min-height: 48px;">
+        ⏸ PAUSE −1💎
+      </button>
+      <button id="btn-sprint-extend" type="button" class="rounded-xl bg-white/5 border border-white/10 text-white/40 font-medium text-xs flex flex-col items-center justify-center px-1 cursor-not-allowed opacity-40 transition-colors" style="min-height: 48px;" disabled title="unlocks at 01:00">
+        <span class="font-semibold">+5 MIN</span>
+        <span class="text-[9px] text-white/40 leading-none">unlocks at 01:00</span>
+      </button>
+    </div>
+
+    <!-- Abort Session Footer -->
+    <div class="my-1 flex-none">
+      <button id="btn-sprint-abort" type="button" class="text-xs text-red-500/70 hover:text-red-400 font-mono tracking-wider uppercase py-2 px-4 transition-colors" style="min-height: 48px;">
+        Abort session
+      </button>
+    </div>
+  </div>
+
   <!-- ============ TOAST / ALARM CONTAINERS ============ -->
   <div id="toast-stack" style="position:fixed;top:20px;right:20px;z-index:20000;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:340px;"></div>
   <div id="alarm-stack" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:20000;display:flex;flex-direction:column;gap:8px;"></div>
