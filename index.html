@@ -302,6 +302,23 @@
       animation: none !important;
       transition: none !important;
     }
+    /* ===== SPRINT MODULE SPACEX STYLING (S1.8) ===== */
+    .sprint-trans {
+      transition: opacity 150ms ease;
+    }
+    #sprint-overlay, #modal-sprint-load, #modal-sprint-queue {
+      transition: opacity 150ms ease;
+    }
+    #focus-sprint input, #focus-sprint textarea,
+    #modal-sprint-load input, #modal-sprint-load textarea {
+      font-size: 16px !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #sprint-overlay, #modal-sprint-load, #modal-sprint-queue, .sprint-trans, .sprint-trans * {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
   </style>
 </head>
 <body class="text-white/90 font-sans antialiased overflow-hidden">
