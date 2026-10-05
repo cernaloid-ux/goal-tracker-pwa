@@ -6186,10 +6186,26 @@ const SprintUI = {
       if (titleEl) titleEl.textContent = activeTask ? activeTask.title : 'No active task';
       if (tagEl) tagEl.textContent = (activeTask && activeTask.tag) ? activeTask.tag : 'Sprint';
 
-      // Pause button label
+      // Pause button label & state
       const pauseBtn = document.getElementById('btn-sprint-pause');
       if (pauseBtn) {
-        pauseBtn.textContent = state.phase === 'paused' ? '▶ RESUME' : '⏸ PAUSE −1💎';
+        if (state.phase === 'paused') {
+          pauseBtn.textContent = '▶ RESUME';
+          pauseBtn.disabled = false;
+          pauseBtn.classList.remove('opacity-40', 'cursor-not-allowed', 'bg-white/10', 'hover:bg-white/15', 'border-white/15');
+          pauseBtn.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'border-emerald-500', 'text-white', 'font-bold');
+        } else {
+          pauseBtn.textContent = '⏸ PAUSE −1💎';
+          pauseBtn.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'border-emerald-500', 'font-bold');
+          pauseBtn.classList.add('bg-white/10', 'hover:bg-white/15', 'border-white/15');
+          const gems = (typeof StateManager !== 'undefined' && StateManager.get) ? (StateManager.get('gems') || 0) : 0;
+          pauseBtn.disabled = gems < 1;
+          if (gems < 1) {
+            pauseBtn.classList.add('opacity-40', 'cursor-not-allowed');
+          } else {
+            pauseBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+          }
+        }
       }
     }
 
@@ -6356,6 +6372,18 @@ const SprintUI = {
         }
       }
     }
+
+    // 6. Pause button disable check when crystals are 0
+    const pauseBtn = document.getElementById('btn-sprint-pause');
+    if (pauseBtn && state.phase === 'running') {
+      const gems = (typeof StateManager !== 'undefined' && StateManager.get) ? (StateManager.get('gems') || 0) : 0;
+      pauseBtn.disabled = gems < 1;
+      if (gems < 1) {
+        pauseBtn.classList.add('opacity-40', 'cursor-not-allowed');
+      } else {
+        pauseBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+      }
+    }
   }
 };
 
@@ -6405,6 +6433,24 @@ const SprintEngine = {
       this._endTimeout = setTimeout(() => {
         this._onTaskTimeout();
       }, msLeft);
+    }
+  },
+
+  _scheduleHoldTimeout(ms = 180000) {
+    this._clearHoldTimeout();
+    this._holdTimeout = setTimeout(() => {
+      const state = SprintStore.get();
+      if (state.phase === 'paused') {
+        showToast('Hold limit reached - resuming');
+        this.resume();
+      }
+    }, Math.max(0, ms));
+  },
+
+  _clearHoldTimeout() {
+    if (this._holdTimeout) {
+      clearTimeout(this._holdTimeout);
+      this._holdTimeout = null;
     }
   },
 
@@ -6659,6 +6705,8 @@ const SprintEngine = {
         if (pausedElapsed >= 180000) {
           showToast('Hold limit reached - resuming');
           this.resume();
+        } else {
+          this._scheduleHoldTimeout(180000 - pausedElapsed);
         }
       }
     });
@@ -6731,8 +6779,81 @@ const SprintEngine = {
     this._scheduleEndTimeout(taskDurationMs);
     SprintUI.tickDisplay(taskDurationMs);
   },
-  pause() { showToast('SprintEngine.pause() stub'); },
-  resume() { showToast('SprintEngine.resume() stub'); },
+  pause() {
+    const state = SprintStore.get();
+    if (state.phase !== 'running') {
+      return;
+    }
+    const gems = (typeof StateManager !== 'undefined' && StateManager.get) ? (StateManager.get('gems') || 0) : 0;
+    if (gems < 1) {
+      showToast('Not enough crystals');
+      return;
+    }
+
+    // Deduct 1 crystal via StateManager
+    if (typeof StateManager !== 'undefined' && StateManager.patch) {
+      StateManager.patch({ gems: gems - 1 });
+    }
+    if (typeof updateCrystalChips === 'function') {
+      updateCrystalChips();
+    }
+    if (typeof SyncManager !== 'undefined' && SyncManager.scheduleSync) {
+      SyncManager.scheduleSync();
+    }
+
+    const now = Date.now();
+    const stats = state.stats || { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 };
+    const newStats = {
+      ...stats,
+      pausesPaid: (stats.pausesPaid || 0) + 1,
+      crystalsSpent: (stats.crystalsSpent || 0) + 1
+    };
+
+    const taskStartedAt = state.taskStartedAt || now;
+    const elapsedBeforePauseMs = (state.elapsedBeforePauseMs || 0) + (now - taskStartedAt);
+
+    this._stopAudio();
+    this._scheduleEndTimeout(null);
+    this._stopTickInterval();
+
+    SprintStore.set({
+      phase: 'paused',
+      pausedAt: now,
+      pauseCount: (state.pauseCount || 0) + 1,
+      continuousMs: 0,
+      elapsedBeforePauseMs,
+      stats: newStats
+    });
+
+    this._scheduleHoldTimeout(180000);
+    SprintUI.render();
+    SprintUI.tickDisplay(this.getMsLeft());
+  },
+
+  resume() {
+    const state = SprintStore.get();
+    if (state.phase !== 'paused') {
+      return;
+    }
+
+    this._clearHoldTimeout();
+
+    const now = Date.now();
+    SprintStore.set({
+      phase: 'running',
+      taskStartedAt: now,
+      pausedAt: null,
+      lastTickAt: now
+    });
+
+    const msLeft = this.getMsLeft();
+    this._scheduleEndTimeout(msLeft);
+    this._startTickInterval();
+    this._requestWakeLock();
+
+    SprintUI.render();
+    SprintUI.tickDisplay(msLeft);
+  },
   extend() {
     const state = SprintStore.get();
     if (state.phase !== 'running') {
