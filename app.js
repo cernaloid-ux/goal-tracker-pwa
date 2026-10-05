@@ -6271,7 +6271,82 @@ const SprintUI = {
     });
   },
 
-  tickDisplay(msLeft) {}
+  tickDisplay(msLeft) {
+    const state = SprintStore.get();
+    const clampedMs = Math.max(0, typeof msLeft === 'number' ? msLeft : (state.taskDurationMs || 300000));
+    const totalSec = Math.ceil(clampedMs / 1000);
+    const mm = Math.floor(totalSec / 60);
+    const ss = totalSec % 60;
+
+    // 1. Time text (#sprint-time) - strictly textContent
+    const timeEl = document.getElementById('sprint-time');
+    if (timeEl) {
+      timeEl.textContent = `${pad(mm)}:${pad(ss)}`;
+    }
+
+    // 2. Color determination: white > 60s, amber <= 60s, red <= 10s (strictly static color, no blinking)
+    let timerColor = '#FFFFFF';
+    if (totalSec <= 10) {
+      timerColor = '#FF453A';
+    } else if (totalSec <= 60) {
+      timerColor = '#FF9F0A';
+    }
+
+    if (timeEl) {
+      timeEl.style.color = timerColor;
+    }
+
+    // 3. Ring progress (#sprint-ring)
+    const ringEl = document.getElementById('sprint-ring');
+    if (ringEl) {
+      const taskTotalMs = state.taskDurationMs || 300000;
+      const elapsedRatio = Math.max(0, Math.min(1, 1 - (clampedMs / taskTotalMs)));
+      const circumference = 942.48; // 2 * PI * 150
+      const offset = (circumference * (1 - elapsedRatio)).toFixed(3);
+      ringEl.setAttribute('stroke-dashoffset', offset);
+      ringEl.setAttribute('stroke', timerColor);
+    }
+
+    // 4. Telemetry string (#sprint-telemetry) - strictly textContent, NO innerHTML
+    const telemetryEl = document.getElementById('sprint-telemetry');
+    if (telemetryEl) {
+      let tMinusStr = 'T-00:00:00';
+      if (state.sessionEndsAt) {
+        const sessionMs = Math.max(0, state.sessionEndsAt - Date.now());
+        const sSec = Math.floor(sessionMs / 1000);
+        const sh = Math.floor(sSec / 3600);
+        const sm = Math.floor((sSec % 3600) / 60);
+        const ss = sSec % 60;
+        tMinusStr = `T-${pad(sh)}:${pad(sm)}:${pad(ss)}`;
+      } else {
+        const sSec = (state.sessionMin || 120) * 60;
+        const sh = Math.floor(sSec / 3600);
+        const sm = Math.floor((sSec % 3600) / 60);
+        const ss = sSec % 60;
+        tMinusStr = `T-${pad(sh)}:${pad(sm)}:${pad(ss)}`;
+      }
+      const doneN = (state.stats && state.stats.done) || 0;
+      const frozenN = (state.stats && state.stats.frozen) || 0;
+      const gems = (typeof StateManager !== 'undefined' && StateManager.get) ? (StateManager.get('gems') || 0) : 0;
+      telemetryEl.textContent = `SESSION ${tMinusStr} | DONE ${doneN} | FROZEN ${frozenN} | 💎 ${gems}`;
+    }
+
+    // 5. "+5 MIN" button unlock state: unlocks at <= 01:00 (60000 ms)
+    const extendBtn = document.getElementById('btn-sprint-extend');
+    if (extendBtn) {
+      const isUnlocked = totalSec <= 60 && state.phase === 'running';
+      extendBtn.disabled = !isUnlocked;
+      if (isUnlocked) {
+        extendBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+        extendBtn.classList.add('hover:bg-white/10', 'text-white');
+        extendBtn.title = 'Add +5 minutes to current task';
+      } else {
+        extendBtn.classList.add('opacity-40', 'cursor-not-allowed');
+        extendBtn.classList.remove('hover:bg-white/10', 'text-white');
+        extendBtn.title = 'unlocks at 01:00';
+      }
+    }
+  }
 };
 
 const SprintEngine = {
