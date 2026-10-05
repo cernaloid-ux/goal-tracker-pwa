@@ -6024,8 +6024,15 @@ const SprintUI = {
     document.getElementById('btn-sprint-load-confirm')?.addEventListener('click', () => {
       const ta = document.getElementById('sprint-load-textarea');
       const val = ta ? ta.value : '';
-      SprintQueue.load(val);
-      closeModal('modal-sprint-load');
+      const ok = SprintQueue.load(val);
+      if (ok) {
+        if (ta) ta.value = '';
+        closeModal('modal-sprint-load');
+        const st = SprintStore.get();
+        if (st.phase === 'overflow') {
+          SprintEngine._advance();
+        }
+      }
     });
 
     // Queue drawer actions
@@ -7246,7 +7253,117 @@ const SprintEngine = {
 };
 
 const SprintQueue = {
-  load(jsonText) { showToast('SprintQueue.load() stub'); },
+  load(jsonText) {
+    if (!jsonText || typeof jsonText !== 'string' || !jsonText.trim()) {
+      showToast('JSON is empty');
+      return false;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (e) {
+      showToast('Invalid JSON');
+      return false;
+    }
+
+    let rawTasks = [];
+    if (Array.isArray(parsed)) {
+      rawTasks = parsed;
+    } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.tasks)) {
+      rawTasks = parsed.tasks;
+    } else {
+      showToast('Expected a JSON array or {"tasks":[...]}');
+      return false;
+    }
+
+    if (rawTasks.length > 300) {
+      rawTasks = rawTasks.slice(0, 300);
+      showToast('Truncated to 300 tasks limit');
+    }
+
+    const state = SprintStore.get();
+    const currentQueue = state.queue || [];
+    const isSessionActive = ['running', 'paused', 'overflow', 'blocker'].includes(state.phase);
+
+    let mode = 'append';
+    if (!isSessionActive && currentQueue.length > 0) {
+      const doReplace = confirm('Replace current queue? OK = replace, Cancel = append');
+      mode = doReplace ? 'replace' : 'append';
+    } else if (!isSessionActive && currentQueue.length === 0) {
+      mode = 'replace';
+    }
+
+    const existingIds = (mode === 'append')
+      ? new Set(currentQueue.map(t => t.id))
+      : new Set();
+    const seenInBatch = new Set();
+    const validTasks = [];
+    let skippedCount = 0;
+    let duplicateIdSkipped = 0;
+
+    for (let i = 0; i < rawTasks.length; i++) {
+      const item = rawTasks[i];
+      if (!item || typeof item !== 'object') {
+        showToast(`Task ${i + 1} is invalid`);
+        skippedCount++;
+        continue;
+      }
+
+      const rawTitle = typeof item.title === 'string' ? item.title.trim() : '';
+      if (!rawTitle) {
+        showToast(`Task ${i + 1} has no title`);
+        skippedCount++;
+        continue;
+      }
+      const title = rawTitle.slice(0, 140);
+
+      let id = (typeof item.id === 'string' && item.id.trim()) ? item.id.trim() : null;
+      if (!id) {
+        id = 'sp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      }
+
+      if (seenInBatch.has(id) || existingIds.has(id)) {
+        duplicateIdSkipped++;
+        skippedCount++;
+        continue;
+      }
+      seenInBatch.add(id);
+      existingIds.add(id);
+
+      const tag = (typeof item.tag === 'string' && item.tag.trim())
+        ? item.tag.trim().toLowerCase().slice(0, 24)
+        : 'general';
+      const notes = (typeof item.notes === 'string') ? item.notes.slice(0, 500) : '';
+      const estMin = (typeof item.estMin === 'number' && !isNaN(item.estMin)) ? item.estMin : 5;
+
+      validTasks.push({
+        id,
+        title,
+        tag,
+        notes,
+        estMin,
+        status: 'queued',
+        reason: null,
+        doneAt: null,
+        frozenAt: null
+      });
+    }
+
+    if (duplicateIdSkipped > 0) {
+      showToast(`Skipped ${duplicateIdSkipped} duplicate ID(s)`);
+    }
+
+    if (validTasks.length === 0) {
+      showToast(`No tasks loaded (${skippedCount} skipped)`);
+      return false;
+    }
+
+    const finalQueue = (mode === 'replace') ? validTasks : [...currentQueue, ...validTasks];
+    SprintStore.set({ queue: finalQueue });
+    showToast(`Loaded ${validTasks.length} tasks (${skippedCount} skipped)`);
+    return true;
+  },
   clear() { showToast('SprintQueue.clear() stub'); },
   view() { return SprintStore.get().queue; },
   next(preferNotTag) {
