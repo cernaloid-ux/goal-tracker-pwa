@@ -1227,6 +1227,48 @@
     </div>
   </div>
 
+  <!-- ============ SPRINT BLOCKER REASON MODAL ============ -->
+  <div id="modal-sprint-blocker" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-blocker"></div>
+    <div class="modal-card rounded-3xl p-4 sm:p-6 w-full max-w-sm relative" role="dialog" aria-modal="true" style="background:#12151b; border:1px solid rgba(255,255,255,0.1); box-sizing:border-box;">
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h2 class="text-base sm:text-lg font-bold font-mono text-white tracking-wider uppercase flex items-center gap-2">
+          <span>⛔</span>
+          <span>Blocker Reason</span>
+        </h2>
+        <button data-close="modal-sprint-blocker" aria-label="Close" class="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/70 flex-none" style="min-height: 48px; min-width: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <div>
+          <textarea id="sprint-blocker-reason" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-red-500/40" style="font-size:16px; min-height:80px; box-sizing:border-box; width:100%; min-width:0;" placeholder="What's blocking this task?..."></textarea>
+        </div>
+
+        <div>
+          <span class="text-[10px] uppercase font-mono tracking-wider text-white/40 block mb-1.5">Quick reasons:</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Waiting for someone">Waiting for someone</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Need info">Need info</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Tool broken">Tool broken</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Not clear">Not clear</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Tired">Tired</button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 mt-2">
+          <button type="button" data-close="modal-sprint-blocker" class="flex-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm font-semibold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Cancel
+          </button>
+          <button type="button" id="btn-sprint-blocker-confirm" class="flex-1 rounded-xl bg-rose-600 hover:bg-rose-500 border border-rose-500 text-white text-sm font-bold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Freeze task
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ SPRINT QUEUE DRAWER MODAL ============ -->
   <div id="modal-sprint-queue" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-queue"></div>

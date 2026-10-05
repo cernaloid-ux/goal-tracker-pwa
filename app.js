@@ -5993,7 +5993,28 @@ const SprintUI = {
     // Overlay combat action bindings
     document.getElementById('btn-sprint-done')?.addEventListener('click', () => SprintEngine.done());
     document.getElementById('btn-sprint-blocker')?.addEventListener('click', () => {
-      const reason = prompt('Reason for blocker:') || 'Blocker';
+      const ta = document.getElementById('sprint-blocker-reason');
+      if (ta) ta.value = '';
+      openModal('modal-sprint-blocker');
+    });
+
+    document.querySelectorAll('.sprint-blocker-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const ta = document.getElementById('sprint-blocker-reason');
+        if (ta) {
+          ta.value = chip.dataset.reason || chip.textContent.trim();
+        }
+      });
+    });
+
+    document.getElementById('btn-sprint-blocker-confirm')?.addEventListener('click', () => {
+      const ta = document.getElementById('sprint-blocker-reason');
+      const reason = ta ? ta.value.trim() : '';
+      if (!reason) {
+        showToast('Reason is required to freeze task');
+        return;
+      }
+      closeModal('modal-sprint-blocker');
       SprintEngine.blocker(reason);
     });
     document.getElementById('btn-sprint-pause')?.addEventListener('click', () => {
@@ -6279,6 +6300,7 @@ const SprintUI = {
             ${t.tag ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60">${esc(t.tag)}</span>` : ''}
           </div>
           <p class="text-sm font-medium ${isDone ? 'text-white/40 line-through' : 'text-white'} break-words">${esc(t.title)}</p>
+          ${isFrozen && t.reason ? `<p class="text-xs text-rose-400/90 font-mono mt-0.5 break-words">⛔ ${esc(t.reason)}</p>` : ''}
           ${t.notes ? `<p class="text-xs text-white/40 truncate mt-0.5">${esc(t.notes)}</p>` : ''}
         </div>
         ${unfreezeBtn}
@@ -6831,6 +6853,7 @@ const SprintEngine = {
   },
 
   start() {
+    this._consecutiveBlockers = 0;
     const state = SprintStore.get();
     const queue = state.queue || [];
     const queuedTasks = queue.filter(t => t.status === 'queued');
@@ -7024,6 +7047,7 @@ const SprintEngine = {
     showToast(`+5 min added (${2 - newExtendCount} extensions left)`);
   },
   done() {
+    this._consecutiveBlockers = 0;
     const state = SprintStore.get();
     const allowed = ['running', 'paused', 'blocker', 'overflow'].includes(state.phase);
     if (!allowed) {
@@ -7069,7 +7093,17 @@ const SprintEngine = {
       return;
     }
 
-    const cleanReason = (reason && typeof reason === 'string' && reason.trim()) ? reason.trim() : 'Blocker';
+    const cleanReason = (reason && typeof reason === 'string') ? reason.trim() : '';
+    if (!cleanReason) {
+      showToast('Reason is required to freeze task');
+      return;
+    }
+
+    this._consecutiveBlockers = (this._consecutiveBlockers || 0) + 1;
+    if (this._consecutiveBlockers >= 3) {
+      showToast('3 blockers in a row - consider a short break or new plan');
+    }
+
     const now = Date.now();
     let frozenTag = null;
     const queue = (state.queue || []).map(t => {
@@ -7175,6 +7209,7 @@ const SprintEngine = {
 
     this._continuousMs = 0;
     this._lastTickAt = null;
+    this._consecutiveBlockers = 0;
 
     // 2. Revert any unfinished active task back to 'queued' status
     const queue = (state.queue || []).map(t => {
