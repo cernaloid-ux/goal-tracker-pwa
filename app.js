@@ -3870,7 +3870,18 @@ const InsightsRenderer = {
 
     root.innerHTML = `
       ${this.renderHeatmap(history)}
+      ${this.renderFocusDonut(history)}
     `;
+
+    root.querySelectorAll('[data-action="toggle-focus-days"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const days = parseInt(btn.dataset.days, 10);
+        if (days && days !== this._focusDays) {
+          this._focusDays = days;
+          this.render();
+        }
+      });
+    });
   },
 
   renderHeatmap(history) {
@@ -3930,6 +3941,92 @@ const InsightsRenderer = {
             ${rects}
           </svg>
         </div>
+      </div>`;
+  },
+
+  renderFocusDonut(history) {
+    const days = this._focusDays || 7;
+    const cutoff = Date.now() - days * 86400000;
+    const recent = (history || []).filter(h => h.completedAt >= cutoff);
+
+    const catTotals = { business: 0, health: 0, study: 0, life: 0 };
+    let zeroElapsedCount = 0;
+    recent.forEach(h => {
+      const cat = ['business', 'health', 'study', 'life'].includes(h.cat) ? h.cat : (h.cat === 'creative' ? 'life' : 'business');
+      const ms = h.elapsed_ms || 0;
+      if (ms === 0) zeroElapsedCount++;
+      catTotals[cat] = (catTotals[cat] || 0) + ms;
+    });
+
+    const totalMs = Object.values(catTotals).reduce((a, b) => a + b, 0);
+    const majorityZero = recent.length > 0 && (zeroElapsedCount / recent.length > 0.5 || totalMs === 0);
+
+    const circ = 238.76; // 2 * PI * 38
+    let offset = 0;
+    let circles = '';
+    if (totalMs > 0) {
+      for (const [cat, ms] of Object.entries(catTotals)) {
+        if (ms <= 0) continue;
+        const color = (CATS[cat] || CATS.business).color;
+        const dash = (ms / totalMs) * circ;
+        circles += `<circle cx="50" cy="50" r="38" fill="none" stroke="${color}" stroke-width="12" stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 50 50)" />`;
+        offset += dash;
+      }
+    } else {
+      circles = `<circle cx="50" cy="50" r="38" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="12" />`;
+    }
+
+    const totalHrs = Math.floor(totalMs / 3600000);
+    const totalMins = Math.round((totalMs % 3600000) / 60000);
+    const totalCenterText = totalHrs > 0 ? `${totalHrs}h ${totalMins}m` : `${totalMins}m`;
+
+    const legendItems = Object.entries(catTotals).map(([cat, ms]) => {
+      const color = (CATS[cat] || CATS.business).color;
+      const label = (CATS[cat] || CATS.business).label;
+      const h = Math.floor(ms / 3600000);
+      const m = Math.round((ms % 3600000) / 60000);
+      const str = h > 0 ? `${h}h ${m}m` : `${m}m`;
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="width:8px;height:8px;border-radius:999px;background:${color};flex:none;"></span>
+            <span class="text-xs text-white/70">${esc(label)}</span>
+          </div>
+          <span class="text-xs font-semibold tabular-nums text-white/90">${str}</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="rounded-2xl p-4" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
+          <p class="text-xs font-semibold uppercase tracking-wider text-white/60">Focus Time by Category</p>
+          <div style="display:flex;gap:4px;background:rgba(255,255,255,.06);padding:2px;border-radius:10px;">
+            <button class="text-[11px] px-2.5 py-1 rounded-lg font-medium ${days===7?'bg-white/20 text-white font-semibold':'text-white/50'}" data-action="toggle-focus-days" data-days="7">7d</button>
+            <button class="text-[11px] px-2.5 py-1 rounded-lg font-medium ${days===30?'bg-white/20 text-white font-semibold':'text-white/50'}" data-action="toggle-focus-days" data-days="30">30d</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+          <div style="position:relative;width:140px;height:140px;margin:0 auto;">
+            <svg viewBox="0 0 100 100" style="width:140px;height:140px;display:block;">
+              ${circles}
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
+              <span class="text-[11px] text-white/40">Total</span>
+              <span class="text-sm font-bold tabular-nums text-white">${totalCenterText}</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            ${legendItems}
+          </div>
+        </div>
+
+        ${majorityZero ? `
+          <div class="mt-3 pt-3 border-t border-white/5 flex items-center gap-1.5 text-[11px] text-white/40">
+            <span style="color:#FFCC00;">💡</span>
+            <span>Используй таймер, чтобы видеть время</span>
+          </div>` : ''}
       </div>`;
   }
 };
