@@ -6350,6 +6350,153 @@ const SprintUI = {
 };
 
 const SprintEngine = {
+  _tickInterval: null,
+  _endTimeout: null,
+  _holdTimeout: null,
+  _wakeLockSentinel: null,
+  _soundFlags: { oneMin: false, countdown: false, finishAlert: false },
+  _audio1Min: null,
+  _audioCountdown: null,
+  _webAudioCtx: null,
+  _visibilityBound: false,
+
+  getMsLeft() {
+    const state = SprintStore.get();
+    const elapsed = (state.elapsedBeforePauseMs || 0) + (state.phase === 'running' && state.taskStartedAt ? (Date.now() - state.taskStartedAt) : 0);
+    return Math.max(0, (state.taskDurationMs || 300000) - elapsed);
+  },
+
+  getSessionLeft() {
+    const state = SprintStore.get();
+    if (!state.sessionEndsAt) return (state.sessionMin || 120) * 60000;
+    return state.sessionEndsAt - Date.now();
+  },
+
+  _startTickInterval() {
+    this._stopTickInterval();
+    this._tickInterval = setInterval(() => {
+      this._onTick();
+    }, 250);
+  },
+
+  _stopTickInterval() {
+    if (this._tickInterval) {
+      clearInterval(this._tickInterval);
+      this._tickInterval = null;
+    }
+  },
+
+  _scheduleEndTimeout(msLeft) {
+    if (this._endTimeout) {
+      clearTimeout(this._endTimeout);
+      this._endTimeout = null;
+    }
+    if (typeof msLeft === 'number' && msLeft > 0) {
+      this._endTimeout = setTimeout(() => {
+        this._onTaskTimeout();
+      }, msLeft);
+    }
+  },
+
+  _onTick() {
+    const state = SprintStore.get();
+    if (state.phase !== 'running') return;
+    const now = Date.now();
+
+    // Check session duration
+    if (state.sessionEndsAt && (state.sessionEndsAt - now) <= 0) {
+      this.finish();
+      return;
+    }
+
+    const msLeft = this.getMsLeft();
+
+    // Check sound thresholds (S2.4)
+    this._checkSoundTriggers(msLeft);
+
+    // Accumulate continuous focus (S2.6)
+    this._accumulateContinuous(now);
+
+    // Update screen: only SprintUI.tickDisplay(msLeft)
+    SprintUI.tickDisplay(msLeft);
+
+    if (msLeft <= 0) {
+      this._onTaskTimeout();
+    }
+  },
+
+  _onTaskTimeout() {
+    const state = SprintStore.get();
+    if (state.sessionEndsAt && (state.sessionEndsAt - Date.now()) <= 0) {
+      this.finish();
+      return;
+    }
+    if (!this._soundFlags.finishAlert) {
+      this._soundFlags.finishAlert = true;
+      this.playSound('finish');
+    }
+    SprintUI.tickDisplay(0);
+  },
+
+  _checkSoundTriggers(msLeft) {},
+  _accumulateContinuous(now) {},
+  playSound(type) {},
+  _unlockAudio() {},
+  _stopAudio() {},
+  _requestWakeLock() {},
+  _releaseWakeLock() {},
+
+  _bindVisibility() {
+    if (this._visibilityBound) return;
+    this._visibilityBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      const state = SprintStore.get();
+      if (state.phase === 'running') {
+        const now = Date.now();
+        if (state.sessionEndsAt && (state.sessionEndsAt - now) <= 0) {
+          this.finish();
+          return;
+        }
+
+        const msLeft = this.getMsLeft();
+
+        // Catch up sound triggers: if passed >3s ago, don't play sound, just set flag
+        if (msLeft <= 60000 && !this._soundFlags.oneMin) {
+          if (60000 - msLeft > 3000) {
+            this._soundFlags.oneMin = true;
+          } else {
+            this._soundFlags.oneMin = true;
+            this.playSound('1min');
+          }
+        }
+        if (msLeft <= 10000 && !this._soundFlags.countdown) {
+          if (10000 - msLeft > 3000) {
+            this._soundFlags.countdown = true;
+          } else {
+            this._soundFlags.countdown = true;
+            this.playSound('countdown');
+          }
+        }
+
+        this._accumulateContinuous(now);
+        this._requestWakeLock();
+        this._scheduleEndTimeout(msLeft);
+        SprintUI.tickDisplay(msLeft);
+
+        if (msLeft <= 0) {
+          this._onTaskTimeout();
+        }
+      } else if (state.phase === 'paused' && state.pausedAt) {
+        const pausedElapsed = Date.now() - state.pausedAt;
+        if (pausedElapsed >= 180000) {
+          showToast('Hold limit reached - resuming');
+          this.resume();
+        }
+      }
+    });
+  },
+
   start() { showToast('SprintEngine.start() stub'); },
   pause() { showToast('SprintEngine.pause() stub'); },
   resume() { showToast('SprintEngine.resume() stub'); },
