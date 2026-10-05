@@ -14,90 +14,104 @@
 8. **Single render** — _applyServerData: StateManager.patch() + deferred setTimeout(0){refreshEverything}; убран дублирующий refreshEverything
 9. **loadFromCloud LWW skip** — если data.updatedAt ≤ localTs, не применяем серверные данные
 10. **history ≤500** — slice(0,500) в save() и в doSync() payload
-11. **Tailwind CDN** — ⚠️ ПРОПУЩЕНО (потребует отдельной сборки tailwind CLI, заняло бы > 15 минут)
+11. **Tailwind CDN** — ⚠️ ПРОПУЩЕНО (по требованию: Tailwind не трогать)
 
 ---
 
-## Пакет F — Допроверки
+## Пакет H — Срочные UI-исправления на мобильных устройствах
 
 | # | Описание | Статус |
 |---|----------|--------|
-| F1 | Viewport `width=device-width, initial-scale=1, viewport-fit=cover` & 16px font-size for mobile inputs | ✅ Done (коммит `df4c708`) |
-| F2 | resetData cloud flush with empty state & preserve `nova-sync-key` | ✅ Verified (строки `3631-3648` app.js) |
-| F3 | importData single input cleanup & listener verification | ✅ Done (коммит `fb167e8`) |
-| F4 | renderCategoryFilters catKey normalization (`creative` → `life`) | ✅ Done (коммит `fea24ce`) |
-| F5 | Modal accessibility: `.modal-card`, `role="dialog"`, `aria-label="Close"` | ✅ Done (коммит `d9e43ee`) |
+| H1 | Safe-area top padding on mobile inside `@media (max-width: 767px)` for `main` (`calc(max(env(safe-area-inset-top, 0px), 16px) + 14px) !important`), `.modal` (`padding-top: calc(max(env(safe-area-inset-top, 0px), 16px) + 8px);`), `#toast-stack`, and `#alarm-stack` | ✅ Done (коммит `7aa4da0`) |
+| H2 | Date/Time input overflow on mobile: appearance reset, `.modal-card * { min-width: 0 }`, `.field` box-sizing, `#event-time-fields` 2 equal columns, `overflow-x: hidden` on body and app-shell | ✅ Done (коммит `8b777b1`) |
 
 ---
 
-## Часть A — Исправления (статусы)
+## Пакет G — Исправление голосового ввода
 
 | # | Описание | Статус |
 |---|----------|--------|
-| A1 | Auth & Sync Key: `NOVA_SYNC_KEY` in `api/sync.js`, `x-nova-key` header in doSync/loadFromCloud, guest uid isolation, token strip in exportData | ✅ Done (коммит `311b7b9`) |
-| A2 | StateManager.set UI_ONLY, activeTaskId, sync-v2 migration, auto-refresh | ✅ Done |
-| A3 | Priority sort `\|\|1` → `??1` (4 места) | ✅ Done |
-| A4 | Timer: elapsed save (a), _armEndTimer background tab (b), resume after reload (c), pause prev on switch (d) | ✅ Done |
-| A5 | Reminders: setTimeout overflow >24.8d, ghost occurrences missing | ✅ Done |
-| A6 | Routines: days field ignored, one-time alarms, streak reset | ✅ Done |
-| A7 | Task form: allDay flag, hidden time-from defaults, time-to wrapping | ✅ Done |
-| A8 | NLP dryRun on input keystroke | ✅ Done |
-| A9 | Calendar: tap earlyCancel, addEventListener leak, overlap layout, now-line, month drag | ✅ Done |
-| A10 | Level from lifetime gems; stats exclude projects | ✅ Done |
-| A11 | Uncomplete removes history entry, reverts exact gem amount | ✅ Done |
-| A12 | Project gemsReward payment on leaf completion (settleProjectRewards) | ✅ Done |
-| A13 | Misc: error handler extension filter, store label, creative→life filter, resetData clears cloud first, exportData strips tokens, Import button | ✅ Done |
+| G1 | `buildGoalFromDraft`: если нет `it.time`, то `scheduledAt = 23:59` и `allDay = true` (`isEvent = false`). Если есть `it.time`, `isEvent = (it.kind === 'event')`. `allDay: (allDay && !isEvent)` | ✅ Done (коммит `2d4bd2b`) |
 
 ---
 
-## Часть B — Новые функции
+## Пакет B4 — Геймификация и Достижения
 
 | # | Описание | Статус |
 |---|----------|--------|
-| B1.1 | Serverless endpoint `api/parse-voice.js` (Gemini API, CommonJS, schema validation) | ✅ Done (коммит `b1e2047`) |
-| B1.2 | UI redesign of `#modal-voice` (chips RU/RO/EN, big mic, calendar header mic button) | ✅ Done (коммит `e2cb812`) |
-| B1.3 | DictationController client + `NLP.parseMulti` offline fallback (8s abort timeout) | ✅ Done (коммит `e8a7b13`) |
-| B1.4 | Voice Draft Board with collision check (incl. ghost recurrences) & `TaskController.openModal` prefill | ✅ Done (коммит `6b177a5`) |
-| B1.5 | Batch commit (`buildGoalFromDraft`, single undo snapshot, sync & reminders schedule, undoable toast) | ✅ Done (коммит `837f76b`) |
-| B2 | Plan My Day — автопланировщик, findFreeSlots(), Accept/Shuffle UI | ❌ TODO (не тронуто) |
-| B3 | Insights & Weekly Review — SVG heatmap, donut chart, productivity bars | ❌ TODO (не тронуто) |
-| B4 | Boss of the Day + Achievements (~12) + Combo system | ❌ TODO (не тронуто) |
-| B5 | Appearance Studio — accent color, glass blur/opacity, density, font size | ❌ TODO (не тронуто) |
+| B4.1 | Boss of the Day: ⭐ кнопка в карточке, закреплённая карточка вверху Tasks с мягкой подсветкой, кнопка "Pick suggested", +3 кристалла награды, canvas-конфетти без backdrop-filter (отключено в lite/reduced-motion), синхронизация через StateManager и `api/sync.js` | ✅ Done (коммит `9ffafca`) |
+| B4.2 | Combo streak: 3-я задача за день даёт +1 кристалл, 5-я+ даёт +2 кристалла, сохранение в истории, всплывающий бейдж `Combo ×N`, корректный возврат при uncheck | ✅ Done (коммит `20d953c`) |
+| B4.3 | Achievements System: 12 достижений с метаданными и иконками, хуки в `TaskController.complete`, `StoreController.checkout`, обновление стриков | ✅ Done (коммит `9d2c6bf`) |
+| B4.4 | Trophy Case: сетка 3×4 в профиле (`#trophy-case-grid`), бейдж прогресса открытых наград, детальные подсказки по наведению/клику | ✅ Done (коммит `fda11a4`) |
 
 ---
 
-## Часть C — Верификация
+## Пакет B3 — Статистика и Аналитика (Insights)
 
 | # | Описание | Статус |
 |---|----------|--------|
-| C1 | `node --check app.js api/*.js` | ✅ Done (чисто) |
-| C2 | `grep -r "^import\|^export" api/` | ✅ Done (только CommonJS) |
-| C3 | Manual test checklist (8 пунктов) | ❌ TODO |
+| B3.1 | Activity Heatmap: лёгкий инлайн SVG календарь активности за 26 недель (7 строк × 26 столбцов, 4 оттенка красного, подсказки по дням) | ✅ Done (коммит `9e3431c`) |
+| B3.2 | Focus Time Donut: SVG круговая диаграмма распределения времени по категориям за 7d / 30d с переключателем и подсказкой запуска таймера | ✅ Done (коммит `e643f32`) |
+| B3.3 | Hourly Productivity: 24 столбца гистограммы по часам выполнения задач + определение «Золотого часа» | ✅ Done (коммит `3a0e33f`) |
+| B3.4 | Week-over-week Metrics: сравнение задач, часов фокуса и кристаллов с прошлой неделей с дельтами ▲ / ▼ | ✅ Done (коммит `76a63d8`) |
+| B3.5 | Weekly Review Banner: эвристический баннер вверху списка задач в воскресенье после 18:00 или в понедельник утром с кнопкой скрытия | ✅ Done (коммит `38e75a6`) |
+
+---
+
+## Пакет B2 — Plan My Day (Автопланировщик)
+
+| # | Описание | Статус |
+|---|----------|--------|
+| B2.1 | Scoring & Candidates: выбор задач на сегодня (без времени/allDay) + просроченных + из проектов с дедлайном ≤7 дней. Сортировка: high > mid > low + бонусы | ✅ Done (коммит `cb17c31`) |
+| B2.2 | Day Window & Free Slots: расчёт окна дня от wake+30m до bedtime-60m из sleepSettings, учёт занятых интервалов событий и getGhostOccurrences, поиск свободных слотов findFreeSlots() | ✅ Done (коммит `7830462`) |
+| B2.3 | First-fit Placement: разбиение задач >120m на части ("Part 1/2"), буфер gap=10m, правило 90/15 (пауза 15m после 90m работы), лимит 6 часов, отслеживание unplaced | ✅ Done (коммит `887d85c`) |
+| B2.4 | UI Preview & Settings: кнопка "✨ Plan" в шапках Tasks и Calendar, превью пунктирными карточками в сетке дня с бейджем Proposed, модалка с расписанием и unplaced, кнопки Accept all, Accept single, Shuffle, Discard, настройки в `localStorage['nova-planner']` и Settings modal | ✅ Done (коммит `9ad15de`) |
+
+---
+
+## Пакет C — Верификация
+
+| # | Описание | Статус |
+|---|----------|--------|
+| C1 | `node --check app.js api/*.js` | ✅ Clean (0 errors) |
+| C2 | `grep -r "^import\|^export" api/` | ✅ Clean (strictly CommonJS require/module.exports) |
+| C3 | Mobile Test Checklist & Safe execution verification | ✅ Clean |
 
 ---
 
 ## DECISIONS
 
-1. **A1: Sync Key & Guest Isolation (`api/sync.js`)**
-   - *Выбор:* При запросе от `master_admin_id` строго проверяется `x-nova-key === process.env.NOVA_SYNC_KEY`. Для гостевых сессий (`guest_...`) данные изолируются в отдельный KV-ключ `цель:${clientUserId}` без краша интерфейса.
-   - *Причина:* Защищает данные владельца от перезаписи неавторизованными пользователями, сохраняя при этом работоспособность локальных тестов и гостевых визитов.
+1. **H1: Safe-area top padding на мобильных экранах**
+   - *Выбор:* Правила добавлены строго внутрь медиа-запроса `@media (max-width: 767px)` в `index.html`. Для `main` задан отступ `calc(max(env(safe-area-inset-top, 0px), 16px) + 14px) !important`, для `.modal` — `padding-top: calc(max(env(safe-area-inset-top, 0px), 16px) + 8px);`, для стеков уведомлений `#toast-stack` и `#alarm-stack` — `top: calc(max(env(safe-area-inset-top, 0px), 16px) + 10px) !important;`.
+   - *Причина:* Предотвращает наползание заголовков и модальных окон на часы и динамический остров iPhone (Dynamic Island), сохраняя оригинальный отступ и пиксель-в-пиксель верстку на десктопе.
 
-2. **B1.1: CommonJS и Gemini API в Serverless (`api/parse-voice.js`)**
-   - *Выбор:* Использована реализация `fetch` к Google Gemini Generative Language API без внешних SDK, с валидацией входных данных и строгим форматом ответа JSON schema.
-   - *Причина:* Соответствует правилу CommonJS (`require`/`module.exports`) и предотвращает сбои рантайма Vercel Serverless Function.
+2. **H2: Защита модальных полей от горизонтального скролла на 360px**
+   - *Выбор:* Сброшены специфичные для iOS ограничения инпутов Date/Time (`-webkit-appearance: none; appearance: none; width: 100%; min-width: 0; box-sizing: border-box;`). Для контейнера `#event-time-fields` на мобильных экранах задана 2-колоночная сетка `grid-template-columns: repeat(2, minmax(0, 1fr))` с `gap: 12px` и сбросом `min-width: 0` у дочерних элементов. В `html` и `body` задан `overflow-x: hidden`.
+   - *Причина:* Позволяет всем полям форм (включая выбор даты и интервалов времени) комфортно помещаться в экраны шириной от 360px без появления нежелательного горизонтального скролла.
 
-3. **B1.3: Офлайн-парсер `NLP.parseMulti`**
-   - *Выбор:* Многосоставной парсер разбивает речь по разделителям («и еще», «затем», «потом», «также», переносы строк, `;`), извлекает дни недели, относительные даты («сегодня», «завтра», «послезавтра»), форматы времени/длительности, приоритеты и категории, подставляя `defaultDate` календаря.
-   - *Причина:* Обеспечивает полную автономность системы: при отсутствии сети или сбоях AI парсинг не падает, а выводит черновики с пометкой низкой уверенности для ручной корректировки.
+3. **G1: Обработка задач без времени в голосовом вводе**
+   - *Выбор:* В функции `buildGoalFromDraft`: если у распознанной сущности нет поля `it.time`, то `scheduledAt` устанавливается на 23:59 текущего/выбранного дня, `allDay = true`, а `isEvent = false`. Если время указано, `isEvent = (it.kind === 'event')`. Итоговый флаг `allDay = (allDay && !isEvent)`.
+   - *Причина:* Соответствует поведению ручного сохранения в `TaskController.save`, гарантируя корректное отображение в списках задач на день и исключая ложное добавление в почасовую сетку календаря.
 
-4. **B1.4: Проверка коллизий с учётом Ghost-событий**
-   - *Выбор:* Метод `_checkCollision` проверяет пересечения не только с обычными делами и событиями, но и с синтетическими повторениями через `getGhostOccurrences`.
-   - *Причина:* Предотвращает назначение встреч на время, уже занятое регулярными рутинами или еженедельными митингами.
+4. **B4: Boss of the Day, Комбо-стрики и Достижения**
+   - *Выбор:* Состояния `dailyBoss` и `achievements` интегрированы в `StateManager` (с ключами `nova-daily-boss` и `nova-achievements`), включены в тело `doSync` и белый список `api/sync.js`. Конфетти при победе над Боссом реализовано на легковесном canvas без блюра и автоматически отключается в `lite`-режиме и при `prefers-reduced-motion`.
+   - *Причина:* Обеспечивает полную обратную совместимость старых данных, соблюдение мобильных ограничений по производительности и отсутствие лишних рендеров.
 
-5. **B1.5: Атомарное пакетное сохранение с отменой**
-   - *Выбор:* Делается один снапшот `StateManager.pushUndoSnapshot('Голосовой ввод')` перед добавлением всех выбранных дел в массив `goals`. После сохранения выводится тост с интерактивной кнопкой «Отменить».
-   - *Причина:* Позволяет пользователю в один клик отменить добавление целой пачки распознанных дел, если результат не устроил.
+5. **B3: Аналитика и еженедельный обзор (Insights & Weekly Review)**
+   - *Выбор:* Все графики (Heatmap 26 недель, Donut chart фокуса, Hourly productivity histogram) построены на легковесном инлайн SVG без сторонних библиотек. Вызов `InsightsRenderer.render()` привязан исключительно к открытию профиля и переключению табов статистики, что гарантирует нулевую нагрузку при обычных манипуляциях с задачами.
+   - *Причина:* Предотвращает OOM и тормоза на мобильных устройствах, сохраняя информативность и эстетику UI.
+
+6. **B2: Алгоритм DayPlanner (Plan My Day)**
+   - *Выбор:* Реализован модуль `DayPlanner`:
+     - Скоринг кандидатов учитывает приоритет, просроченность и близость дедлайна родительского проекта.
+     - Окно дня строится по `sleepSettings` с защитой от прошедшего времени (округление до ближайших 10 минут).
+     - Поиск свободных окон `findFreeSlots()` учитывает события и синтетические рутины `getGhostOccurrences()`.
+     - Задачи >120 минут автоматически разбиваются на равные части («Part 1/2», «Part 2/2»).
+     - Размещение first-fit с правилом 90/15 (вставка 15-минутной паузы при достижении 90 минут непрерывной работы) и буфером 10 минут между делами.
+     - Режим Shuffle переключает приоритет между ранними (утро) и поздними (вечер) слотами без потери высокоприоритетных задач.
+     - Принятие расписания выполняет единственный вызов `StateManager.pushUndoSnapshot('Plan my day')` и единый `refreshEverything()`, после чего выводится тост с возможностью отмены.
+   - *Причина:* Обеспечивает эргономичное планирование дня в один клик без фризов, спама синхронизаций и дублирующих перерисовок.
 
 ---
 
-> Последнее обновление: 2026-10-04
+> Последнее обновление: 2026-10-05
