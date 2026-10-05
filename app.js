@@ -6070,21 +6070,40 @@ const SprintUI = {
     });
 
     document.getElementById('btn-sprint-overflow-pull')?.addEventListener('click', () => {
-      const allGoals = StateManager.get('goals') || [];
+      const allGoals = (typeof StateManager !== 'undefined' && StateManager.get) ? (StateManager.get('goals') || []) : [];
       const pendingGoals = allGoals.filter(g => !g.done && !g.isProject);
-      const converted = pendingGoals.slice(0, 10).map(g => ({
-        id: 'nova-' + g.id,
-        title: g.title,
-        tag: (g.tags && g.tags[0]) || 'Nova',
-        notes: g.desc || '',
-        estMin: 5,
-        status: 'queued'
-      }));
-      if (converted.length === 0) {
+
+      const priorityWeight = { high: 3, mid: 2, low: 1 };
+      pendingGoals.sort((a, b) => {
+        const wa = priorityWeight[a.priority] || 1;
+        const wb = priorityWeight[b.priority] || 1;
+        if (wb !== wa) return wb - wa;
+        const sa = a.scheduledAt || '9999';
+        const sb = b.scheduledAt || '9999';
+        return sa.localeCompare(sb);
+      });
+
+      const candidates = pendingGoals.slice(0, 12);
+      if (candidates.length === 0) {
         showToast('No pending open tasks found in Nova');
-      } else {
-        SprintQueue.addTasks(converted);
-        showToast(`Pulled ${converted.length} tasks from Nova`);
+        return;
+      }
+
+      const converted = candidates.map(g => ({
+        id: 'nova-' + g.id,
+        sourceGoalId: g.id,
+        title: g.title,
+        tag: (g.cat || (g.tags && g.tags[0]) || 'Nova').toLowerCase().slice(0, 24),
+        notes: g.desc || '',
+        estMin: 5
+      }));
+
+      SprintQueue.addTasks(converted);
+      showToast(`Pulled ${converted.length} tasks from Nova`);
+
+      const state = SprintStore.get();
+      if (state.phase === 'overflow') {
+        SprintEngine._advance();
       }
     });
 
@@ -7075,6 +7094,18 @@ const SprintEngine = {
         SprintCalendar.logBlock(completedTask, state.taskStartedAt || now, now);
       } catch (e) {
         console.warn('[SprintEngine] logBlock error:', e);
+      }
+    }
+
+    if (completedTask && completedTask.sourceGoalId) {
+      try {
+        const allGoals = (typeof StateManager !== 'undefined' && StateManager.get) ? (StateManager.get('goals') || []) : [];
+        const targetGoal = allGoals.find(g => g.id === completedTask.sourceGoalId);
+        if (targetGoal && !targetGoal.done && typeof TaskController !== 'undefined' && TaskController.complete) {
+          TaskController.complete(completedTask.sourceGoalId);
+        }
+      } catch (e) {
+        console.warn('[SprintEngine] TaskController.complete error:', e);
       }
     }
 
