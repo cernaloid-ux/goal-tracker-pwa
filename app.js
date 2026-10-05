@@ -6037,6 +6037,38 @@ const SprintUI = {
       }
     });
 
+    // Overflow & Finished screen bindings
+    document.getElementById('btn-sprint-overflow-paste')?.addEventListener('click', () => {
+      openModal('modal-sprint-load');
+    });
+
+    document.getElementById('btn-sprint-overflow-pull')?.addEventListener('click', () => {
+      const allGoals = StateManager.get('goals') || [];
+      const pendingGoals = allGoals.filter(g => !g.done && !g.isProject);
+      const converted = pendingGoals.slice(0, 10).map(g => ({
+        id: 'nova-' + g.id,
+        title: g.title,
+        tag: (g.tags && g.tags[0]) || 'Nova',
+        notes: g.desc || '',
+        estMin: 5,
+        status: 'queued'
+      }));
+      if (converted.length === 0) {
+        showToast('No pending open tasks found in Nova');
+      } else {
+        SprintQueue.addTasks(converted);
+        showToast(`Pulled ${converted.length} tasks from Nova`);
+      }
+    });
+
+    document.getElementById('btn-sprint-overflow-end')?.addEventListener('click', () => {
+      SprintEngine.finish();
+    });
+
+    document.getElementById('btn-sprint-finished-close')?.addEventListener('click', () => {
+      SprintUI.close();
+    });
+
     // Subscribe to store changes: call render only on structural/phase change
     SprintStore.subscribe((state, patch, meta) => {
       if (meta && meta.isStructural) {
@@ -6098,17 +6130,37 @@ const SprintUI = {
       prepStatus.textContent = state.phase ? state.phase.toUpperCase() : 'STANDBY';
     }
 
-    // 6. Overlay combat screen visibility & status
+    // 6. Overlay subviews switching
     const overlay = document.getElementById('sprint-overlay');
     const isCombat = state.phase === 'running' || state.phase === 'paused' || state.phase === 'blocker';
+    const isOverflow = state.phase === 'overflow';
+    const isFinished = state.phase === 'finished';
+
     if (overlay) {
-      if (isCombat || state.phase === 'overflow' || state.phase === 'finished') {
+      if (isCombat || isOverflow || isFinished) {
         overlay.classList.remove('hidden');
         overlay.classList.add('flex');
       } else {
         overlay.classList.add('hidden');
         overlay.classList.remove('flex');
       }
+    }
+
+    const combatView = document.getElementById('sprint-overlay-combat');
+    const overflowView = document.getElementById('sprint-overlay-overflow');
+    const finishedView = document.getElementById('sprint-overlay-finished');
+
+    if (combatView) {
+      combatView.classList.toggle('hidden', !isCombat);
+      combatView.classList.toggle('flex', isCombat);
+    }
+    if (overflowView) {
+      overflowView.classList.toggle('hidden', !isOverflow);
+      overflowView.classList.toggle('flex', isOverflow);
+    }
+    if (finishedView) {
+      finishedView.classList.toggle('hidden', !isFinished);
+      finishedView.classList.toggle('flex', isFinished);
     }
 
     if (isCombat) {
@@ -6138,6 +6190,26 @@ const SprintUI = {
       const pauseBtn = document.getElementById('btn-sprint-pause');
       if (pauseBtn) {
         pauseBtn.textContent = state.phase === 'paused' ? '▶ RESUME' : '⏸ PAUSE −1💎';
+      }
+    }
+
+    if (isFinished) {
+      const stats = state.stats || SPRINT_DEFAULT.stats;
+      const doneEl = document.getElementById('sprint-stat-done');
+      const frozenEl = document.getElementById('sprint-stat-frozen');
+      const pausesEl = document.getElementById('sprint-stat-pauses');
+      const crystalsEl = document.getElementById('sprint-stat-crystals');
+      const durEl = document.getElementById('sprint-stat-duration');
+
+      if (doneEl) doneEl.textContent = String(stats.done || 0);
+      if (frozenEl) frozenEl.textContent = String(stats.frozen || 0);
+      if (pausesEl) pausesEl.textContent = String(stats.pausesPaid || 0);
+      if (crystalsEl) crystalsEl.textContent = `+${stats.crystalsEarned || 0} / −${stats.crystalsSpent || 0}`;
+      if (durEl) {
+        const start = state.sessionStartedAt || Date.now();
+        const end = (state.sessionEndsAt && state.sessionEndsAt < Date.now()) ? state.sessionEndsAt : Date.now();
+        const mins = Math.max(1, Math.round((end - start) / 60000));
+        durEl.textContent = `${mins} min`;
       }
     }
 
