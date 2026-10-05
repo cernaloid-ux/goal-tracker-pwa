@@ -5957,9 +5957,101 @@ const SprintStore = {
 };
 
 const SprintUI = {
-  open() {},
-  close() {},
-  render() {},
+  _initialized: false,
+  init() {
+    if (this._initialized) return;
+    this._initialized = true;
+
+    const minInput = document.getElementById('sprint-session-min');
+    if (minInput) {
+      minInput.addEventListener('input', (e) => {
+        const val = Math.max(5, parseInt(e.target.value, 10) || 120);
+        SprintStore.set({ sessionMin: val });
+      });
+      minInput.addEventListener('change', (e) => {
+        const val = Math.max(5, parseInt(e.target.value, 10) || 120);
+        e.target.value = val;
+        SprintStore.set({ sessionMin: val });
+      });
+    }
+
+    const loadBtn = document.getElementById('btn-sprint-open-load');
+    if (loadBtn) {
+      loadBtn.addEventListener('click', () => openModal('modal-sprint-load'));
+    }
+
+    const queueBtn = document.getElementById('btn-sprint-open-queue');
+    if (queueBtn) {
+      queueBtn.addEventListener('click', () => openModal('modal-sprint-queue'));
+    }
+
+    const startBtn = document.getElementById('btn-sprint-start');
+    if (startBtn) {
+      startBtn.addEventListener('click', () => SprintEngine.start());
+    }
+
+    // Subscribe to store changes: call render only on structural/phase change
+    SprintStore.subscribe((state, patch, meta) => {
+      if (meta && meta.isStructural) {
+        SprintUI.render();
+      }
+    });
+  },
+
+  open() {
+    ViewRouter.switchTo('focus');
+    switchSub('focusTabs', 'focus', 'sprint');
+  },
+
+  close() {
+    const overlay = document.getElementById('sprint-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    SprintStore.set({ phase: 'idle' });
+  },
+
+  render() {
+    this.init();
+    const state = SprintStore.get();
+
+    // 1. Session min input
+    const minInput = document.getElementById('sprint-session-min');
+    if (minInput && document.activeElement !== minInput) {
+      minInput.value = state.sessionMin || 120;
+    }
+
+    // 2. T-minus status block
+    const tminusEl = document.getElementById('sprint-session-tminus');
+    if (tminusEl) {
+      const sm = state.sessionMin || 120;
+      const totalSec = sm * 60;
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      tminusEl.textContent = `T-${pad(h)}:${pad(m)}:${pad(s)}`;
+    }
+
+    // 3. Queue count button
+    const queueBtnCount = document.getElementById('sprint-queue-btn-count');
+    const queue = state.queue || [];
+    if (queueBtnCount) {
+      queueBtnCount.textContent = String(queue.length);
+    }
+
+    // 4. Start sprint button state
+    const startBtn = document.getElementById('btn-sprint-start');
+    if (startBtn) {
+      const hasTasks = queue.some(t => t.status === 'queued' || t.status === 'active');
+      startBtn.disabled = !hasTasks;
+      startBtn.title = hasTasks ? 'Start sprint session' : 'Load tasks first to start';
+    }
+
+    // 5. Preparation status indicator
+    const prepStatus = document.getElementById('sprint-prep-status');
+    if (prepStatus) {
+      prepStatus.textContent = state.phase ? state.phase.toUpperCase() : 'STANDBY';
+    }
+  },
+
   tickDisplay(msLeft) {}
 };
 
@@ -6061,6 +6153,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try { initSettingsHandlers();       } catch(e) { console.error('[Init:settings]',e); }
   try { DayPlanner.init();            } catch(e) { console.error('[Init:dayplanner]',e); }
   try { VoiceInput.init();            } catch(e) { console.error('[Init:voice]',e); }
+  try { SprintUI.init();              } catch(e) { console.error('[Init:sprint]',e); }
   try { initGlobalEvents();           } catch(e) { console.error('[Init:events]',e); }
   try { updateCrystalChips();         } catch(e) { console.error('[Init:crystals]',e); }
   // Must run AFTER StateManager.load() (already the case above) so it reads

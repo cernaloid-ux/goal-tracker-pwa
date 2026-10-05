@@ -519,7 +519,77 @@
         </div>
 
         <!-- FOCUS: SPRINT -->
-        <div id="focus-sprint" class="subview hidden flex-1"></div>
+        <div id="focus-sprint" class="subview hidden flex-1">
+          <div class="max-w-2xl mx-auto w-full p-4 sm:p-6 flex flex-col gap-6" style="box-sizing: border-box;">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                  <h2 class="text-lg sm:text-xl font-bold tracking-wider uppercase text-white font-mono" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">SPRINT CONTROL</h2>
+                </div>
+                <p class="text-white/50 text-xs sm:text-sm mt-1">5-minute SpaceX-style time-boxing</p>
+              </div>
+              <div class="text-right">
+                <span class="text-xs text-white/40 uppercase tracking-widest block font-mono">STATUS</span>
+                <span id="sprint-prep-status" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-white/10 text-white/80">STANDBY</span>
+              </div>
+            </div>
+
+            <!-- Session length config & T-Minus block -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="p-4 rounded-2xl bg-[#12151b] border border-white/10 flex flex-col justify-between">
+                <label for="sprint-session-min" class="text-xs uppercase tracking-wider text-white/60 font-semibold mb-2 block">Session length, min</label>
+                <div class="flex items-center gap-3">
+                  <input type="number" id="sprint-session-min" step="5" min="5" value="120" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white font-mono text-base focus:outline-none focus:border-white/30" style="font-size: 16px; min-height: 48px;">
+                  <span class="text-sm text-white/40 font-mono">min</span>
+                </div>
+              </div>
+
+              <div class="p-4 rounded-2xl bg-[#12151b] border border-white/10 flex flex-col justify-between">
+                <span class="text-xs uppercase tracking-wider text-white/60 font-semibold block mb-2">T-минус до конца сессии</span>
+                <div class="flex items-baseline gap-2">
+                  <span id="sprint-session-tminus" class="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">T-02:00:00</span>
+                  <span class="text-xs text-white/40 font-mono">target</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button id="btn-sprint-open-load" type="button" class="w-full rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+                <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                <span>Load tasks (JSON)</span>
+              </button>
+              <button id="btn-sprint-open-queue" type="button" class="w-full rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+                <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                <span>Queue (<span id="sprint-queue-btn-count">0</span>)</span>
+              </button>
+              <button id="btn-sprint-start" type="button" class="w-full rounded-xl bg-white text-black text-sm font-bold flex items-center justify-center gap-2 px-4 hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all" style="min-height: 48px;" disabled>
+                <span>▶ Start sprint</span>
+              </button>
+            </div>
+
+            <!-- JSON format hint -->
+            <div class="p-4 rounded-2xl bg-[#12151b] border border-white/10">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs uppercase tracking-wider text-white/60 font-semibold font-mono">JSON Task Schema</span>
+                <span class="text-[11px] text-white/40 font-mono">5 min blocks</span>
+              </div>
+              <p class="text-xs text-white/60 mb-2.5 leading-relaxed">
+                Paste array of tasks or upload .json. Supported fields: <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">title</code> (required), <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">tag</code>, <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">notes</code>, <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">estMin</code>.
+              </p>
+              <pre class="bg-black/50 p-3 rounded-xl text-xs font-mono text-white/70 overflow-x-auto border border-white/5">[
+  {
+    "title": "Build telemetry header",
+    "tag": "Dev",
+    "notes": "SpaceX style typography",
+    "estMin": 5
+  }
+]</pre>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ===== VIEW 3 : CALENDAR ===== -->
