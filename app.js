@@ -3896,7 +3896,46 @@ const ProfileRenderer = {
 
     this._renderMacroList();
     this._renderPurchaseHistory();
+    this._renderTrophyCase();
     updateCrystalChips();
+  },
+
+  _renderTrophyCase() {
+    const trophyGrid = document.getElementById('trophy-case-grid');
+    const trophyBadge = document.getElementById('trophy-count-badge');
+    if (!trophyGrid) return;
+
+    const st = StateManager.get();
+    const achievements = st.achievements || {};
+    const unlockedCount = ACHIEVEMENTS.filter(a => !!achievements[a.id]).length;
+    if (trophyBadge) trophyBadge.textContent = `${unlockedCount} / ${ACHIEVEMENTS.length}`;
+
+    trophyGrid.innerHTML = ACHIEVEMENTS.map(ach => {
+      const unlockedAt = achievements[ach.id];
+      if (unlockedAt) {
+        const d = new Date(unlockedAt);
+        const dStr = !isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Unlocked';
+        return `
+          <div class="rounded-2xl p-3 flex flex-col items-center text-center justify-between" style="background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.35);min-height:115px;">
+            <div class="text-3xl mb-1">${ach.emoji}</div>
+            <div class="min-w-0 w-full">
+              <p class="font-semibold text-xs truncate" title="${esc(ach.title)}">${esc(ach.title)}</p>
+              <p class="text-[10px] text-white/50 truncate" title="${esc(ach.desc)}">${esc(ach.desc)}</p>
+            </div>
+            <span class="text-[9px] font-semibold text-accent mt-2 px-2 py-0.5 rounded-full" style="background:rgba(255,204,0,.2);color:#FFCC00;">Unlocked ${dStr}</span>
+          </div>`;
+      } else {
+        return `
+          <div class="rounded-2xl p-3 flex flex-col items-center text-center justify-between" style="background:rgba(255,255,255,.02);border:1px dashed rgba(255,255,255,.12);opacity:.45;min-height:115px;">
+            <div class="text-3xl mb-1" style="filter:grayscale(1);">${ach.emoji}</div>
+            <div class="min-w-0 w-full">
+              <p class="font-semibold text-xs truncate text-white/80" title="${esc(ach.title)}">${esc(ach.title)}</p>
+              <p class="text-[10px] text-white/40 truncate" title="${esc(ach.desc)}">${esc(ach.desc)}</p>
+            </div>
+            <span class="text-[9px] text-white/40 mt-2 px-2 py-0.5 rounded-full bg-white/5">Locked</span>
+          </div>`;
+      }
+    }).join('');
   },
 
   _renderMacroList() {
