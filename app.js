@@ -3871,6 +3871,7 @@ const InsightsRenderer = {
     root.innerHTML = `
       ${this.renderHeatmap(history)}
       ${this.renderFocusDonut(history)}
+      ${this.renderHourlyProductivity(history)}
     `;
 
     root.querySelectorAll('[data-action="toggle-focus-days"]').forEach(btn => {
@@ -4027,6 +4028,65 @@ const InsightsRenderer = {
             <span style="color:#FFCC00;">💡</span>
             <span>Используй таймер, чтобы видеть время</span>
           </div>` : ''}
+      </div>`;
+  },
+
+  renderHourlyProductivity(history) {
+    const counts = new Array(24).fill(0);
+    (history || []).forEach(h => {
+      const d = new Date(h.completedAt);
+      if (!isNaN(d.getTime())) {
+        counts[d.getHours()]++;
+      }
+    });
+
+    let maxCount = 0;
+    let goldenHour = 10;
+    for (let i = 0; i < 24; i++) {
+      if (counts[i] > maxCount) {
+        maxCount = counts[i];
+        goldenHour = i;
+      }
+    }
+
+    const nextHour = (goldenHour + 1) % 24;
+    const goldenStr = maxCount > 0
+      ? `Твой золотой час: ${pad(goldenHour)}:00–${pad(nextHour)}:00`
+      : 'Выполняй задачи, чтобы найти свой золотой час';
+
+    const barW = 8;
+    const gap = 4;
+    const svgW = 24 * (barW + gap);
+    const svgH = 65;
+    const maxBarH = 45;
+
+    let bars = '';
+    for (let i = 0; i < 24; i++) {
+      const cnt = counts[i];
+      const h = maxCount > 0 ? Math.max(3, Math.round((cnt / maxCount) * maxBarH)) : 2;
+      const x = i * (barW + gap);
+      const y = maxBarH - h + 5;
+      const isGold = i === goldenHour && maxCount > 0;
+      const fill = isGold ? '#FF3B30' : (cnt > 0 ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)');
+      bars += `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" fill="${fill}"><title>${pad(i)}:00–${pad((i+1)%24)}:00 : ${cnt} tasks</title></rect>`;
+    }
+
+    return `
+      <div class="rounded-2xl p-4" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap;">
+          <p class="text-xs font-semibold uppercase tracking-wider text-white/60">Productivity by Hour</p>
+          <span class="text-xs font-medium text-accent" style="color:#FFCC00;">⭐ ${esc(goldenStr)}</span>
+        </div>
+        <div style="overflow-x:auto;padding-bottom:2px;" class="hide-scrollbar">
+          <svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-width:${svgW}px;height:${svgH}px;display:block;">
+            ${bars}
+            <text x="2" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">00:00</text>
+            <text x="${6 * (barW+gap)}" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">06:00</text>
+            <text x="${12 * (barW+gap)}" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">12:00</text>
+            <text x="${18 * (barW+gap)}" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">18:00</text>
+            <text x="${svgW - 24}" y="${svgH - 2}" font-size="8" fill="rgba(255,255,255,0.3)">23:00</text>
+          </svg>
+        </div>
       </div>`;
   }
 };
