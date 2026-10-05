@@ -6037,11 +6037,10 @@ const SprintUI = {
 
     // Queue drawer actions
     document.getElementById('btn-sprint-flush-queue')?.addEventListener('click', () => {
-      if (confirm('Flush entire sprint queue?')) {
-        if (confirm('Are you absolutely sure? All tasks will be cleared.')) {
-          SprintQueue.clear();
-        }
-      }
+      SprintQueue.clear();
+    });
+    document.getElementById('btn-sprint-restore-queue')?.addEventListener('click', () => {
+      SprintQueue.restoreBackup();
     });
 
     // Overflow & Finished screen bindings
@@ -7364,7 +7363,76 @@ const SprintQueue = {
     showToast(`Loaded ${validTasks.length} tasks (${skippedCount} skipped)`);
     return true;
   },
-  clear() { showToast('SprintQueue.clear() stub'); },
+  clear() {
+    const state = SprintStore.get();
+    const isRunning = ['running', 'paused'].includes(state.phase);
+
+    if (isRunning) {
+      if (!confirm('A sprint session is currently active! Active task will be removed. Flush entire queue?')) {
+        return false;
+      }
+    } else {
+      if (!confirm('Flush entire queue?')) {
+        return false;
+      }
+    }
+
+    if (!confirm('This cannot be undone. Flush?')) {
+      return false;
+    }
+
+    // Save backup to localStorage 'nova-sprint-backup' before clearing
+    try {
+      localStorage.setItem('nova-sprint-backup', JSON.stringify(state.queue || []));
+    } catch (e) {
+      console.warn('[SprintQueue] Backup error:', e);
+    }
+
+    SprintStore.set({
+      queue: [],
+      activeId: null
+    });
+
+    showToast('Queue flushed. Backup saved.');
+
+    // If session was active and queue is now empty, invoke advance/overflow logic
+    if (isRunning) {
+      SprintEngine._advance();
+    }
+    return true;
+  },
+
+  restoreBackup() {
+    let backup = null;
+    try {
+      const raw = localStorage.getItem('nova-sprint-backup');
+      if (raw) backup = JSON.parse(raw);
+    } catch (e) {
+      console.warn('[SprintQueue] Restore backup error:', e);
+    }
+
+    if (!Array.isArray(backup) || backup.length === 0) {
+      showToast('No flushed queue backup found');
+      return false;
+    }
+
+    const state = SprintStore.get();
+    const isSessionActive = ['running', 'paused', 'overflow', 'blocker'].includes(state.phase);
+    let mode = 'append';
+    if (!isSessionActive && (state.queue || []).length > 0) {
+      const doReplace = confirm('Replace current queue with backup? OK = replace, Cancel = append');
+      mode = doReplace ? 'replace' : 'append';
+    }
+
+    const finalQueue = (mode === 'replace') ? backup : [...(state.queue || []), ...backup];
+    SprintStore.set({ queue: finalQueue });
+    showToast(`Restored ${backup.length} tasks from backup`);
+
+    if (state.phase === 'overflow') {
+      SprintEngine._advance();
+    }
+    return true;
+  },
   view() {
     return SprintStore.get().queue || [];
   },
