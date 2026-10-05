@@ -4080,12 +4080,18 @@ const NLP = {
 
 function buildGoalFromDraft(it, tagsState = []) {
   let scheduledAt = null;
+  let allDay = false;
+  let isEvent = (it.kind === 'event');
   if (it.date) {
-    if (it.time) {
-      const [sh, sm] = it.time.split(':').map(Number);
-      scheduledAt = new Date(`${it.date}T${pad(isNaN(sh)?9:sh)}:${pad(isNaN(sm)?0:sm)}:00`).getTime();
+    const [dy, dm, dd] = it.date.split('-').map(Number);
+    if (!it.time) {
+      scheduledAt = new Date(dy, dm - 1, dd, 23, 59, 0, 0).getTime();
+      allDay = true;
+      isEvent = false;
     } else {
-      scheduledAt = new Date(`${it.date}T09:00:00`).getTime();
+      const [sh, sm] = it.time.split(':').map(Number);
+      scheduledAt = new Date(dy, dm - 1, dd, isNaN(sh) ? 9 : sh, isNaN(sm) ? 0 : sm, 0, 0).getTime();
+      isEvent = (it.kind === 'event');
     }
   }
 
@@ -4127,8 +4133,8 @@ function buildGoalFromDraft(it, tagsState = []) {
     priority: prio,
     scheduledAt,
     duration_min: durMin,
-    isEvent: it.kind === 'event',
-    allDay: false,
+    isEvent,
+    allDay: (allDay && !isEvent),
     isProject: false,
     parentId: null,
     recurrence: it.recurrence || null,
