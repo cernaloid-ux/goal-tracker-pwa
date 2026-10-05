@@ -7365,17 +7365,101 @@ const SprintQueue = {
     return true;
   },
   clear() { showToast('SprintQueue.clear() stub'); },
-  view() { return SprintStore.get().queue; },
-  next(preferNotTag) {
-    const q = SprintStore.get().queue || [];
-    if (preferNotTag) {
-      const diff = q.find(t => t.status === 'queued' && t.tag !== preferNotTag);
-      if (diff) return diff;
-    }
-    return q.find(t => t.status === 'queued') || null;
+  view() {
+    return SprintStore.get().queue || [];
   },
-  unfreeze(id) { showToast('SprintQueue.unfreeze() stub: ' + id); },
-  addTasks(arr) { showToast('SprintQueue.addTasks() stub'); }
+
+  next(preferNotTag) {
+    const state = SprintStore.get();
+    const q = state.queue || [];
+    let selected = null;
+
+    if (preferNotTag) {
+      selected = q.find(t => t.status === 'queued' && t.tag !== preferNotTag);
+      if (!selected) {
+        selected = q.find(t => t.status === 'queued') || null;
+        if (selected) {
+          showToast('No other category, same tag');
+        }
+      }
+    } else {
+      selected = q.find(t => t.status === 'queued') || null;
+    }
+
+    if (!selected) return null;
+
+    const newQueue = q.map(t => {
+      if (t.id === selected.id) {
+        return { ...t, status: 'active' };
+      }
+      return t;
+    });
+
+    SprintStore.set({
+      activeId: selected.id,
+      queue: newQueue
+    });
+
+    return { ...selected, status: 'active' };
+  },
+
+  unfreeze(id) {
+    if (!id) return;
+    const state = SprintStore.get();
+    const queue = state.queue || [];
+    const task = queue.find(t => t.id === id);
+    if (!task) return;
+    if (task.status !== 'frozen') return;
+
+    const unfreezed = { ...task, status: 'queued', reason: null, frozenAt: null };
+    const remaining = queue.filter(t => t.id !== id);
+    const newQueue = [...remaining, unfreezed];
+
+    SprintStore.set({ queue: newQueue });
+    showToast(`Unfrozen: "${task.title.slice(0, 28)}"`);
+  },
+
+  addTasks(arr) {
+    if (!Array.isArray(arr) || arr.length === 0) return;
+    const state = SprintStore.get();
+    const currentQueue = state.queue || [];
+    const existingIds = new Set(currentQueue.map(t => t.id));
+    const toAdd = [];
+    let skipped = 0;
+
+    arr.forEach((item) => {
+      if (!item || typeof item !== 'object') { skipped++; return; }
+      const rawTitle = typeof item.title === 'string' ? item.title.trim() : '';
+      if (!rawTitle) { skipped++; return; }
+      let id = (typeof item.id === 'string' && item.id.trim()) ? item.id.trim() : null;
+      if (!id) {
+        id = 'sp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      }
+      if (existingIds.has(id)) {
+        skipped++;
+        return;
+      }
+      existingIds.add(id);
+
+      toAdd.push({
+        id,
+        title: rawTitle.slice(0, 140),
+        tag: (typeof item.tag === 'string' && item.tag.trim()) ? item.tag.trim().toLowerCase().slice(0, 24) : 'general',
+        notes: typeof item.notes === 'string' ? item.notes.slice(0, 500) : '',
+        estMin: (typeof item.estMin === 'number' && !isNaN(item.estMin)) ? item.estMin : 5,
+        status: 'queued',
+        sourceGoalId: item.sourceGoalId || null,
+        reason: null,
+        doneAt: null,
+        frozenAt: null
+      });
+    });
+
+    if (toAdd.length > 0) {
+      SprintStore.set({ queue: [...currentQueue, ...toAdd] });
+      showToast(`Added ${toAdd.length} task${toAdd.length > 1 ? 's' : ''}`);
+    }
+  }
 };
 
 const SprintCalendar = {
