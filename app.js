@@ -6971,8 +6971,143 @@ const SprintEngine = {
     SprintUI.tickDisplay(newMsLeft);
     showToast(`+5 min added (${2 - newExtendCount} extensions left)`);
   },
-  done() { showToast('SprintEngine.done() stub'); },
-  blocker(reason) { showToast('SprintEngine.blocker() stub: ' + (reason || '')); },
+  done() {
+    const state = SprintStore.get();
+    const allowed = ['running', 'paused', 'blocker', 'overflow'].includes(state.phase);
+    if (!allowed) {
+      return;
+    }
+
+    const now = Date.now();
+    let completedTask = null;
+    const queue = (state.queue || []).map(t => {
+      if (t.id === state.activeId) {
+        completedTask = { ...t, status: 'done', doneAt: now };
+        return completedTask;
+      }
+      return t;
+    });
+
+    const stats = state.stats || { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 };
+    const newStats = {
+      ...stats,
+      done: (stats.done || 0) + 1
+    };
+
+    if (completedTask && typeof SprintCalendar !== 'undefined' && SprintCalendar.logBlock) {
+      try {
+        SprintCalendar.logBlock(completedTask, state.taskStartedAt || now, now);
+      } catch (e) {
+        console.warn('[SprintEngine] logBlock error:', e);
+      }
+    }
+
+    SprintStore.set({
+      queue,
+      stats: newStats
+    });
+
+    this._advance();
+  },
+
+  blocker(reason) {
+    const state = SprintStore.get();
+    const allowed = ['running', 'paused'].includes(state.phase);
+    if (!allowed) {
+      return;
+    }
+
+    const cleanReason = (reason && typeof reason === 'string' && reason.trim()) ? reason.trim() : 'Blocker';
+    const now = Date.now();
+    let frozenTag = null;
+    const queue = (state.queue || []).map(t => {
+      if (t.id === state.activeId) {
+        frozenTag = t.tag;
+        return { ...t, status: 'frozen', frozenAt: now, reason: cleanReason };
+      }
+      return t;
+    });
+
+    const stats = state.stats || { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 };
+    const newStats = {
+      ...stats,
+      frozen: (stats.frozen || 0) + 1
+    };
+
+    SprintStore.set({
+      queue,
+      stats: newStats
+    });
+
+    this._advance(frozenTag);
+  },
+
+  _advance(preferNotTag) {
+    this._stopAudio();
+    this._clearHoldTimeout();
+
+    const state = SprintStore.get();
+    const now = Date.now();
+    const sessionLeft = Math.max(0, (state.sessionEndsAt || now) - now);
+
+    if (sessionLeft <= 0) {
+      this.finish();
+      return;
+    }
+
+    let nextTask = SprintQueue.next(preferNotTag);
+    if (!nextTask && preferNotTag) {
+      nextTask = SprintQueue.next();
+    }
+
+    if (!nextTask) {
+      if (sessionLeft >= 60000) {
+        this._stopTickInterval();
+        this._scheduleEndTimeout(null);
+        SprintStore.set({
+          phase: 'overflow',
+          activeId: null
+        });
+        SprintUI.render();
+      } else {
+        this.finish();
+      }
+      return;
+    }
+
+    if (sessionLeft < 30000) {
+      this.finish();
+      return;
+    }
+
+    const queue = (state.queue || []).map(t => {
+      if (t.id === nextTask.id) {
+        return { ...t, status: 'active' };
+      }
+      return t;
+    });
+
+    const taskDurationMs = Math.min(300000, sessionLeft);
+    this._soundFlags = { oneMin: false, countdown: false, finishAlert: false };
+
+    SprintStore.set({
+      phase: 'running',
+      activeId: nextTask.id,
+      queue,
+      taskStartedAt: now,
+      taskDurationMs,
+      elapsedBeforePauseMs: 0,
+      pausedAt: null,
+      pauseCount: 0,
+      extendCount: 0,
+      lastTickAt: now
+    });
+
+    this._startTickInterval();
+    this._scheduleEndTimeout(taskDurationMs);
+    SprintUI.render();
+    SprintUI.tickDisplay(taskDurationMs);
+  },
   finish() { showToast('SprintEngine.finish() stub'); },
   restoreOnLoad() {}
 };
