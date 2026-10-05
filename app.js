@@ -6441,10 +6441,73 @@ const SprintEngine = {
   _checkSoundTriggers(msLeft) {},
   _accumulateContinuous(now) {},
   playSound(type) {},
-  _unlockAudio() {},
-  _stopAudio() {},
-  _requestWakeLock() {},
-  _releaseWakeLock() {},
+  async _requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator && !this._wakeLockSentinel) {
+        this._wakeLockSentinel = await navigator.wakeLock.request('screen');
+        this._wakeLockSentinel.addEventListener('release', () => {
+          this._wakeLockSentinel = null;
+        });
+      }
+    } catch (err) {
+      console.warn('[SprintEngine] WakeLock error:', err);
+    }
+  },
+
+  _releaseWakeLock() {
+    try {
+      if (this._wakeLockSentinel) {
+        this._wakeLockSentinel.release();
+        this._wakeLockSentinel = null;
+      }
+    } catch (err) {
+      console.warn('[SprintEngine] WakeLock release error:', err);
+    }
+  },
+
+  _unlockAudio() {
+    try {
+      if (!this._audio1Min) {
+        this._audio1Min = new Audio('/audio/1min_left.mp3');
+        this._audio1Min.preload = 'auto';
+      }
+      if (!this._audioCountdown) {
+        this._audioCountdown = new Audio('/audio/countdown.mp3');
+        this._audioCountdown.preload = 'auto';
+      }
+      this._audio1Min.volume = 0;
+      this._audioCountdown.volume = 0;
+      const p1 = this._audio1Min.play();
+      if (p1 && p1.then) {
+        p1.then(() => {
+          if (this._audio1Min) {
+            this._audio1Min.pause();
+            this._audio1Min.currentTime = 0;
+            this._audio1Min.volume = 1;
+          }
+        }).catch(() => {});
+      }
+      const p2 = this._audioCountdown.play();
+      if (p2 && p2.then) {
+        p2.then(() => {
+          if (this._audioCountdown) {
+            this._audioCountdown.pause();
+            this._audioCountdown.currentTime = 0;
+            this._audioCountdown.volume = 1;
+          }
+        }).catch(() => {});
+      }
+      if (!this._webAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) this._webAudioCtx = new AudioCtx();
+      }
+      if (this._webAudioCtx && this._webAudioCtx.state === 'suspended') {
+        this._webAudioCtx.resume().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('[SprintEngine] unlockAudio error:', e);
+    }
+  },
 
   _bindVisibility() {
     if (this._visibilityBound) return;
@@ -6497,7 +6560,73 @@ const SprintEngine = {
     });
   },
 
-  start() { showToast('SprintEngine.start() stub'); },
+  start() {
+    const state = SprintStore.get();
+    const queue = state.queue || [];
+    const queuedTasks = queue.filter(t => t.status === 'queued');
+
+    // 1. Checks: queue not empty, sessionMin >= 5
+    if (queuedTasks.length === 0) {
+      showToast('Queue is empty — load tasks first');
+      return;
+    }
+    const sessionMin = Math.max(5, state.sessionMin || 120);
+
+    const now = Date.now();
+    const sessionStartedAt = now;
+    const sessionEndsAt = now + (sessionMin * 60000);
+    const sessionLeft = sessionEndsAt - now;
+
+    if (sessionLeft < 30000) {
+      showToast('Session time too short (<30s)');
+      this.finish();
+      return;
+    }
+
+    // 2. Fetch first queued task
+    const task = SprintQueue.next() || queuedTasks[0];
+    if (!task) {
+      showToast('No queued tasks available');
+      return;
+    }
+    task.status = 'active';
+
+    // 3. Task duration: min(300000, remaining session)
+    const taskDurationMs = Math.min(300000, sessionLeft);
+
+    // 4. Reset task-specific flags
+    this._soundFlags = { oneMin: false, countdown: false, finishAlert: false };
+
+    SprintStore.set({
+      phase: 'running',
+      sessionMin,
+      sessionStartedAt,
+      sessionEndsAt,
+      activeId: task.id,
+      queue: [...queue],
+      taskStartedAt: now,
+      taskDurationMs,
+      elapsedBeforePauseMs: 0,
+      pausedAt: null,
+      pauseCount: 0,
+      extendCount: 0,
+      continuousMs: 0,
+      lastTickAt: now
+    });
+
+    // 5. Unlock audio on click gesture
+    this._unlockAudio();
+
+    // 6. Request screen Wake Lock
+    this._requestWakeLock();
+
+    // 7. Bind visibility listener and show overlay via SprintUI
+    this._bindVisibility();
+    SprintUI.render();
+    this._startTickInterval();
+    this._scheduleEndTimeout(taskDurationMs);
+    SprintUI.tickDisplay(taskDurationMs);
+  },
   pause() { showToast('SprintEngine.pause() stub'); },
   resume() { showToast('SprintEngine.resume() stub'); },
   extend() { showToast('SprintEngine.extend() stub'); },
@@ -6511,7 +6640,14 @@ const SprintQueue = {
   load(jsonText) { showToast('SprintQueue.load() stub'); },
   clear() { showToast('SprintQueue.clear() stub'); },
   view() { return SprintStore.get().queue; },
-  next(preferNotTag) { return null; },
+  next(preferNotTag) {
+    const q = SprintStore.get().queue || [];
+    if (preferNotTag) {
+      const diff = q.find(t => t.status === 'queued' && t.tag !== preferNotTag);
+      if (diff) return diff;
+    }
+    return q.find(t => t.status === 'queued') || null;
+  },
   unfreeze(id) { showToast('SprintQueue.unfreeze() stub: ' + id); },
   addTasks(arr) { showToast('SprintQueue.addTasks() stub'); }
 };
