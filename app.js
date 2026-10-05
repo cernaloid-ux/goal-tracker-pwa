@@ -6331,19 +6331,29 @@ const SprintUI = {
       telemetryEl.textContent = `SESSION ${tMinusStr} | DONE ${doneN} | FROZEN ${frozenN} | 💎 ${gems}`;
     }
 
-    // 5. "+5 MIN" button unlock state: unlocks at <= 01:00 (60000 ms)
+    // 5. "+5 MIN" button unlock state: unlocks at <= 01:00 (60000 ms) and extendCount < 2
     const extendBtn = document.getElementById('btn-sprint-extend');
     if (extendBtn) {
-      const isUnlocked = totalSec <= 60 && state.phase === 'running';
+      const extendCount = state.extendCount || 0;
+      const isUnlocked = totalSec <= 60 && extendCount < 2 && state.phase === 'running';
       extendBtn.disabled = !isUnlocked;
       if (isUnlocked) {
         extendBtn.classList.remove('opacity-40', 'cursor-not-allowed');
         extendBtn.classList.add('hover:bg-white/10', 'text-white');
-        extendBtn.title = 'Add +5 minutes to current task';
       } else {
         extendBtn.classList.add('opacity-40', 'cursor-not-allowed');
         extendBtn.classList.remove('hover:bg-white/10', 'text-white');
-        extendBtn.title = 'unlocks at 01:00';
+      }
+
+      const subLabel = extendBtn.querySelector('span:last-child');
+      if (subLabel) {
+        if (extendCount >= 2) {
+          subLabel.textContent = 'max 2 extensions';
+        } else if (totalSec <= 60) {
+          subLabel.textContent = `extensions left: ${2 - extendCount}`;
+        } else {
+          subLabel.textContent = 'unlocks at 01:00';
+        }
       }
     }
   }
@@ -6629,7 +6639,50 @@ const SprintEngine = {
   },
   pause() { showToast('SprintEngine.pause() stub'); },
   resume() { showToast('SprintEngine.resume() stub'); },
-  extend() { showToast('SprintEngine.extend() stub'); },
+  extend() {
+    const state = SprintStore.get();
+    if (state.phase !== 'running') {
+      showToast('Extension only allowed while running');
+      return;
+    }
+    const msLeft = this.getMsLeft();
+    if (msLeft > 60000) {
+      showToast('Unlocks at 01:00');
+      return;
+    }
+    if ((state.extendCount || 0) >= 2) {
+      showToast('Max 2 extensions');
+      return;
+    }
+
+    const now = Date.now();
+    const sessionLeft = Math.max(0, (state.sessionEndsAt || now) - now);
+    const elapsed = (state.elapsedBeforePauseMs || 0) + (now - (state.taskStartedAt || now));
+    const maxAllowed = elapsed + sessionLeft;
+    const newDuration = Math.min((state.taskDurationMs || 300000) + 300000, maxAllowed);
+
+    if (newDuration <= (state.taskDurationMs || 300000)) {
+      showToast('Cannot extend past session end');
+      return;
+    }
+
+    const newExtendCount = (state.extendCount || 0) + 1;
+
+    // Reset sound flags so 01:00 and 00:10 alerts can fire again
+    this._soundFlags.oneMin = false;
+    this._soundFlags.countdown = false;
+    this._soundFlags.finishAlert = false;
+
+    SprintStore.set({
+      taskDurationMs: newDuration,
+      extendCount: newExtendCount
+    });
+
+    const newMsLeft = this.getMsLeft();
+    this._scheduleEndTimeout(newMsLeft);
+    SprintUI.tickDisplay(newMsLeft);
+    showToast(`+5 min added (${2 - newExtendCount} extensions left)`);
+  },
   done() { showToast('SprintEngine.done() stub'); },
   blocker(reason) { showToast('SprintEngine.blocker() stub: ' + (reason || '')); },
   finish() { showToast('SprintEngine.finish() stub'); },
