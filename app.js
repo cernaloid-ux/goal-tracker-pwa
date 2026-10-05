@@ -4982,6 +4982,14 @@ function renderSettingsPanel() {
   if (pauseInp) pauseInp.value = pSettings.pauseMin;
   if (maxHInp) maxHInp.value = pSettings.maxWorkHours;
   if (gapInp) gapInp.value = pSettings.gapMin;
+
+  const gcalClientInp = document.getElementById('sprint-gcal-client-id');
+  if (gcalClientInp) gcalClientInp.value = localStorage.getItem('nova-gcal-client-id') || '';
+  const gcalCalInp = document.getElementById('sprint-gcal-cal-id');
+  if (gcalCalInp) gcalCalInp.value = localStorage.getItem('nova-gcal-cal-id') || 'primary';
+  if (typeof SprintCalendar !== 'undefined' && SprintCalendar.updateUIStatus) {
+    SprintCalendar.updateUIStatus();
+  }
 }
 
 function initSettingsHandlers() {
@@ -5003,6 +5011,14 @@ function initSettingsHandlers() {
       gapMin: isNaN(gapVal) ? 10 : Math.max(0, Math.min(60, gapVal))
     });
 
+    const gcalClientVal = document.getElementById('sprint-gcal-client-id')?.value.trim();
+    if (gcalClientVal !== undefined) localStorage.setItem('nova-gcal-client-id', gcalClientVal);
+    const gcalCalVal = document.getElementById('sprint-gcal-cal-id')?.value.trim() || 'primary';
+    if (gcalCalVal !== undefined) localStorage.setItem('nova-gcal-cal-id', gcalCalVal);
+    if (typeof SprintCalendar !== 'undefined' && SprintCalendar.updateUIStatus) {
+      SprintCalendar.updateUIStatus();
+    }
+
     StateManager.patch({
       profileName: nameVal || 'You',
       tgToken: document.getElementById('settings-tg-token')?.value.trim()||'',
@@ -5017,6 +5033,16 @@ function initSettingsHandlers() {
     if (StateManager.get('currentView')==='profile') ProfileRenderer.render();
     if (StateManager.get('currentView')==='calendar') CalendarController.render();
     showToast('✅ Settings saved');
+  });
+
+  document.getElementById('btn-sprint-gcal-connect')?.addEventListener('click', () => {
+    const clientInp = document.getElementById('sprint-gcal-client-id');
+    const calInp = document.getElementById('sprint-gcal-cal-id');
+    if (clientInp) localStorage.setItem('nova-gcal-client-id', clientInp.value.trim());
+    if (calInp) localStorage.setItem('nova-gcal-cal-id', calInp.value.trim() || 'primary');
+    if (typeof SprintCalendar !== 'undefined' && SprintCalendar.connect) {
+      SprintCalendar.connect();
+    }
   });
   document.getElementById('btn-add-tag')?.addEventListener('click', ()=>{
     const nameInp=document.getElementById('new-tag-name'); const name=nameInp?.value.trim(); if(!name) return;
@@ -7597,10 +7623,302 @@ const SprintQueue = {
 };
 
 const SprintCalendar = {
-  connect() { showToast('SprintCalendar.connect() stub'); },
-  logBlock(task, startMs, endMs) {},
-  flushPending() {}
+  _accessToken: null,
+  _tokenExpiresAt: 0,
+  _tokenClient: null,
+  _scriptLoading: false,
+  _offlineToastShown: false,
+
+  _getSentIds() {
+    try {
+      const raw = localStorage.getItem('nova-gcal-sent');
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      return new Set();
+    }
+  },
+
+  _markSent(id) {
+    if (!id) return;
+    try {
+      const raw = localStorage.getItem('nova-gcal-sent');
+      const arr = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(arr) ? arr : [];
+      if (!list.includes(id)) {
+        list.push(id);
+        const trimmed = list.slice(-500);
+        localStorage.setItem('nova-gcal-sent', JSON.stringify(trimmed));
+      }
+    } catch (e) {
+      console.warn('[SprintCalendar] markSent error:', e);
+    }
+  },
+
+  _updateUIStatus(text) {
+    const statusEl = document.getElementById('sprint-gcal-status');
+    if (!statusEl) return;
+    if (text) {
+      statusEl.textContent = text;
+      if (text === 'Connected') {
+        statusEl.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+      } else {
+        statusEl.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-white/60';
+      }
+      return;
+    }
+    const clientId = (localStorage.getItem('nova-gcal-client-id') || '').trim();
+    if (!clientId) {
+      statusEl.textContent = 'Disabled';
+      statusEl.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/5 text-white/40';
+      return;
+    }
+    const now = Date.now();
+    if (this._accessToken && this._tokenExpiresAt > now) {
+      const minLeft = Math.round((this._tokenExpiresAt - now) / 60000);
+      statusEl.textContent = `Connected (${minLeft}m)`;
+      statusEl.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+    } else {
+      statusEl.textContent = 'Disconnected';
+      statusEl.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-white/60';
+    }
+  },
+
+  updateUIStatus() {
+    this._updateUIStatus();
+  },
+
+  connect() {
+    const clientId = (localStorage.getItem('nova-gcal-client-id') || '').trim();
+    if (!clientId) {
+      showToast('Please enter Google OAuth Client ID');
+      return;
+    }
+
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+      this._requestToken(false);
+      return;
+    }
+
+    if (!this._scriptLoading) {
+      this._scriptLoading = true;
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.onload = () => {
+        this._scriptLoading = false;
+        this._requestToken(false);
+      };
+      script.onerror = () => {
+        this._scriptLoading = false;
+        showToast('Failed to load Google Identity Services');
+        this._updateUIStatus('Load failed');
+      };
+      document.head.appendChild(script);
+    }
+  },
+
+  _requestToken(silent = false) {
+    const clientId = (localStorage.getItem('nova-gcal-client-id') || '').trim();
+    if (!clientId) return;
+
+    try {
+      this._tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/calendar.events',
+        callback: (resp) => {
+          if (resp.error) {
+            console.warn('[SprintCalendar] OAuth error:', resp);
+            this._updateUIStatus('Error: ' + resp.error);
+            return;
+          }
+          if (resp.access_token) {
+            this._accessToken = resp.access_token;
+            const expiresIn = parseInt(resp.expires_in, 10) || 3600;
+            this._tokenExpiresAt = Date.now() + (expiresIn * 1000);
+            this._updateUIStatus();
+            showToast('Google Calendar connected');
+            this.flushPending();
+          }
+        }
+      });
+      this._tokenClient.requestAccessToken({ prompt: silent ? '' : undefined });
+    } catch (e) {
+      console.warn('[SprintCalendar] initTokenClient error:', e);
+      this._updateUIStatus('Connect error');
+    }
+  },
+
+  _enqueuePending(task, startMs, endMs) {
+    try {
+      const state = SprintStore.get();
+      const cal = state.cal || { pending: [] };
+      const pending = Array.isArray(cal.pending) ? [...cal.pending] : [];
+      if (pending.some(p => p.task && p.task.id === task.id && p.startMs === startMs)) {
+        return;
+      }
+      pending.push({
+        task: {
+          id: task.id,
+          title: task.title,
+          tag: task.tag || 'general',
+          notes: task.notes || ''
+        },
+        startMs,
+        endMs,
+        tries: 0
+      });
+      SprintStore.set({ cal: { ...cal, pending } });
+    } catch (e) {
+      console.warn('[SprintCalendar] enqueuePending error:', e);
+    }
+  },
+
+  _notifyOfflineOnce() {
+    if (!this._offlineToastShown) {
+      this._offlineToastShown = true;
+      showToast('Calendar offline - will retry');
+    }
+  },
+
+  logBlock(task, startMs, endMs) {
+    try {
+      const clientId = (localStorage.getItem('nova-gcal-client-id') || '').trim();
+      if (!clientId) {
+        // Disabled mode: silently return, do not accumulate blocks
+        return;
+      }
+
+      if (!task || !task.id) return;
+
+      const sentIds = this._getSentIds();
+      if (sentIds.has(task.id)) return;
+
+      const now = Date.now();
+      const hasValidToken = this._accessToken && (this._tokenExpiresAt > now + 30000);
+
+      if (!hasValidToken) {
+        if (this._tokenClient) {
+          this._requestToken(true);
+        }
+        this._enqueuePending(task, startMs, endMs);
+        this._notifyOfflineOnce();
+        return;
+      }
+
+      const calId = localStorage.getItem('nova-gcal-cal-id') || 'primary';
+      const url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calId) + '/events';
+      const body = JSON.stringify({
+        summary: '🚀 ' + task.title,
+        description: 'Nova OS Sprint | tag: ' + (task.tag || 'general') + (task.notes ? '\n' + task.notes : ''),
+        start: { dateTime: new Date(startMs).toISOString() },
+        end: { dateTime: new Date(endMs).toISOString() },
+        colorId: '11',
+        extendedProperties: {
+          private: { novaSprintId: String(task.id) }
+        }
+      });
+
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + this._accessToken,
+          'Content-Type': 'application/json'
+        },
+        body
+      }).then(res => {
+        if (res.ok) {
+          this._markSent(task.id);
+        } else if (res.status === 401) {
+          this._accessToken = null;
+          this._tokenExpiresAt = 0;
+          if (this._tokenClient) {
+            this._requestToken(true);
+          }
+          this._enqueuePending(task, startMs, endMs);
+        } else {
+          this._enqueuePending(task, startMs, endMs);
+          this._notifyOfflineOnce();
+        }
+      }).catch(() => {
+        this._enqueuePending(task, startMs, endMs);
+        this._notifyOfflineOnce();
+      });
+    } catch (e) {
+      console.warn('[SprintCalendar] logBlock error:', e);
+    }
+  },
+
+  flushPending() {
+    try {
+      const clientId = (localStorage.getItem('nova-gcal-client-id') || '').trim();
+      if (!clientId) return;
+
+      const now = Date.now();
+      const hasValidToken = this._accessToken && (this._tokenExpiresAt > now + 30000);
+      if (!hasValidToken) return;
+
+      const state = SprintStore.get();
+      const cal = state.cal || { pending: [] };
+      const pending = Array.isArray(cal.pending) ? [...cal.pending] : [];
+      if (pending.length === 0) return;
+
+      const calId = localStorage.getItem('nova-gcal-cal-id') || 'primary';
+      const url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calId) + '/events';
+      const sentIds = this._getSentIds();
+
+      pending.forEach(item => {
+        if (!item || !item.task) return;
+        if (sentIds.has(item.task.id)) return;
+
+        if ((item.tries || 0) >= 5) {
+          console.warn('[SprintCalendar] Discarded calendar event after 5 retries:', item.task.title);
+          return;
+        }
+
+        const body = JSON.stringify({
+          summary: '🚀 ' + item.task.title,
+          description: 'Nova OS Sprint | tag: ' + (item.task.tag || 'general') + (item.task.notes ? '\n' + item.task.notes : ''),
+          start: { dateTime: new Date(item.startMs).toISOString() },
+          end: { dateTime: new Date(item.endMs).toISOString() },
+          colorId: '11',
+          extendedProperties: {
+            private: { novaSprintId: String(item.task.id) }
+          }
+        });
+
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + this._accessToken,
+            'Content-Type': 'application/json'
+          },
+          body
+        }).then(res => {
+          if (res.ok) {
+            this._markSent(item.task.id);
+            const curState = SprintStore.get();
+            const curCal = curState.cal || { pending: [] };
+            const updated = (curCal.pending || []).filter(p => p.task && p.task.id !== item.task.id);
+            SprintStore.set({ cal: { ...curCal, pending: updated } });
+          } else {
+            item.tries = (item.tries || 0) + 1;
+          }
+        }).catch(() => {
+          item.tries = (item.tries || 0) + 1;
+        });
+      });
+    } catch (e) {
+      console.warn('[SprintCalendar] flushPending error:', e);
+    }
+  }
 };
+
+window.addEventListener('online', () => {
+  if (typeof SprintCalendar !== 'undefined' && SprintCalendar.flushPending) {
+    SprintCalendar.flushPending();
+  }
+});
 
 /* ═══════════════════════════════════════════════════════════
    GLOBAL EVENTS
@@ -7676,6 +7994,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try { VoiceInput.init();            } catch(e) { console.error('[Init:voice]',e); }
   try { SprintUI.init();              } catch(e) { console.error('[Init:sprint]',e); }
   try { SprintEngine.restoreOnLoad(); } catch(e) { console.error('[Init:sprint-restore]',e); }
+  try { SprintCalendar.flushPending(); } catch(e) { console.error('[Init:sprint-cal]',e); }
   try { initGlobalEvents();           } catch(e) { console.error('[Init:events]',e); }
   try { updateCrystalChips();         } catch(e) { console.error('[Init:crystals]',e); }
   // Must run AFTER StateManager.load() (already the case above) so it reads

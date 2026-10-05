@@ -1023,6 +1023,39 @@
           </div>
         </div>
 
+        <!-- SPRINT / GOOGLE CALENDAR -->
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm text-white/50 uppercase tracking-wider font-semibold">Sprint / Google Calendar</p>
+            <span id="sprint-gcal-status" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-white/60">Disconnected</span>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label for="sprint-gcal-client-id" class="text-xs text-white/50 mb-1 block">Google OAuth Client ID</label>
+              <input id="sprint-gcal-client-id" type="text" class="field" placeholder="xxxx.apps.googleusercontent.com" style="width:100%; box-sizing:border-box; font-size:14px;">
+            </div>
+
+            <div>
+              <label for="sprint-gcal-cal-id" class="text-xs text-white/50 mb-1 block">Calendar ID</label>
+              <input id="sprint-gcal-cal-id" type="text" class="field" placeholder="primary" value="primary" style="width:100%; box-sizing:border-box; font-size:14px;">
+            </div>
+
+            <div class="flex gap-2 items-center pt-1">
+              <button type="button" id="btn-sprint-gcal-connect" class="flex-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs sm:text-sm font-semibold py-2.5 px-3 transition-colors flex items-center justify-center gap-2" style="min-height: 44px;">
+                <span>📅 Connect Google Calendar</span>
+              </button>
+            </div>
+
+            <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 text-[11px] font-mono text-white/60 leading-relaxed space-y-1">
+              <p>1. Google Cloud → APIs & Services → Enable Google Calendar API</p>
+              <p>2. Create OAuth Client ID (Web Application) with authorized origins:</p>
+              <p class="text-sky-400/90 break-all select-all">https://cernavation.vercel.app and http://localhost</p>
+              <p>3. Paste Client ID above and click Connect.</p>
+            </div>
+          </div>
+        </div>
+
         <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
           <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Tags</p>
           <div id="tags-manager" style="margin-bottom:10px;"></div>
