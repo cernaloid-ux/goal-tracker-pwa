@@ -4420,6 +4420,101 @@ const DayPlanner = {
     // Sort descending by score
     candidates.sort((a, b) => b.score - a.score);
     return candidates;
+  },
+
+  getDayWindow(targetDateKey = dateKey()) {
+    const st = StateManager.get();
+    const sleepSettings = st.sleepSettings || {};
+    const waketime = sleepSettings.waketime || '07:00';
+    const bedtime = sleepSettings.bedtime || '23:00';
+
+    const [ty, tm, td] = targetDateKey.split('-').map(Number);
+    const [wh, wm] = waketime.split(':').map(Number);
+    const [bh, bm] = bedtime.split(':').map(Number);
+
+    const wakeMs = new Date(ty, tm - 1, td, isNaN(wh) ? 7 : wh, isNaN(wm) ? 0 : wm, 0, 0).getTime();
+    let bedMs = new Date(ty, tm - 1, td, isNaN(bh) ? 23 : bh, isNaN(bm) ? 0 : bm, 0, 0).getTime();
+    if (bedMs <= wakeMs) {
+      bedMs += 86400000;
+    }
+
+    let winStart = wakeMs + 30 * 60000; // wake + 30m
+    const winEnd = bedMs - 60 * 60000;  // bedtime - 60m
+
+    // If target day is today, start at next 10-minute mark after current time
+    if (targetDateKey === dateKey()) {
+      const now = Date.now();
+      const next10m = Math.ceil(now / (10 * 60000)) * (10 * 60000);
+      winStart = Math.max(winStart, next10m);
+    }
+
+    return { winStart, winEnd };
+  },
+
+  getBusyIntervals(targetDateKey = dateKey()) {
+    const st = StateManager.get();
+    const goals = st.goals || [];
+    const [ty, tm, td] = targetDateKey.split('-').map(Number);
+    const dayStart = new Date(ty, tm - 1, td, 0, 0, 0, 0).getTime();
+    const dayEnd = new Date(ty, tm - 1, td, 23, 59, 59, 999).getTime();
+
+    const busy = [];
+
+    // Real events
+    goals.forEach(g => {
+      if (!g.done && g.isEvent && g.scheduledAt) {
+        if (dateKey(g.scheduledAt) === targetDateKey) {
+          const s = g.scheduledAt;
+          const durMs = (parseInt(g.duration_min, 10) || DEFAULT_TIMER_MIN) * 60000;
+          busy.push({ s, e: s + durMs });
+        }
+      }
+    });
+
+    // Ghost occurrences
+    if (typeof getGhostOccurrences === 'function') {
+      const ghosts = getGhostOccurrences(dayStart, dayEnd);
+      ghosts.forEach(gh => {
+        const s = gh.scheduledAt;
+        const durMs = (parseInt(gh.duration_min, 10) || DEFAULT_TIMER_MIN) * 60000;
+        busy.push({ s, e: s + durMs });
+      });
+    }
+
+    // Sort by start time
+    busy.sort((a, b) => a.s - b.s);
+
+    // Merge overlapping busy intervals
+    const merged = [];
+    busy.forEach(b => {
+      if (!merged.length) {
+        merged.push({ s: b.s, e: b.e });
+      } else {
+        const last = merged[merged.length - 1];
+        if (b.s <= last.e) {
+          last.e = Math.max(last.e, b.e);
+        } else {
+          merged.push({ s: b.s, e: b.e });
+        }
+      }
+    });
+
+    return merged;
+  },
+
+  findFreeSlots(winStart, winEnd, busy, gapMs = 10 * 60000) {
+    const free = [];
+    let cur = winStart;
+    busy.forEach(b => {
+      if (b.s - gapMs > cur) {
+        free.push({ s: cur, e: b.s - gapMs });
+      }
+      cur = Math.max(cur, b.e + gapMs);
+    });
+    if (winEnd > cur) {
+      free.push({ s: cur, e: winEnd });
+    }
+    return free.filter(slot => slot.e - slot.s >= 15 * 60000);
   }
 };
 
