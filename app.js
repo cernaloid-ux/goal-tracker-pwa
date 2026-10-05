@@ -6448,9 +6448,103 @@ const SprintEngine = {
     SprintUI.tickDisplay(0);
   },
 
-  _checkSoundTriggers(msLeft) {},
+  _checkSoundTriggers(msLeft) {
+    if (msLeft <= 60000 && !this._soundFlags.oneMin) {
+      this._soundFlags.oneMin = true;
+      this.playSound('1min');
+    }
+    if (msLeft <= 10000 && !this._soundFlags.countdown) {
+      this._soundFlags.countdown = true;
+      this.playSound('countdown');
+    }
+  },
+
   _accumulateContinuous(now) {},
-  playSound(type) {},
+
+  playSound(type) {
+    try {
+      if (type === '1min') {
+        navigator.vibrate?.([200, 100, 200]);
+        if (!this._audio1Min) {
+          this._audio1Min = new Audio('/audio/1min_left.mp3');
+          this._audio1Min.preload = 'auto';
+        }
+        this._audio1Min.volume = 1;
+        this._audio1Min.currentTime = 0;
+        const p = this._audio1Min.play();
+        if (p && p.catch) {
+          p.catch(() => {
+            this._playWebAudioBeeps(880, 0.15, 3, 0.25);
+          });
+        }
+      } else if (type === 'countdown') {
+        if (!this._audioCountdown) {
+          this._audioCountdown = new Audio('/audio/countdown.mp3');
+          this._audioCountdown.preload = 'auto';
+        }
+        this._audioCountdown.volume = 1;
+        this._audioCountdown.currentTime = 0;
+        const p = this._audioCountdown.play();
+        if (p && p.catch) {
+          p.catch(() => {
+            this._playWebAudioBeeps(880, 0.1, 10, 1.0);
+          });
+        }
+      } else if (type === 'finish') {
+        navigator.vibrate?.([200, 100, 200]);
+        this._playWebAudioBeeps(440, 0.3, 1, 0.3);
+      }
+    } catch (e) {
+      console.warn('[SprintEngine] playSound error:', e);
+      if (type === '1min') this._playWebAudioBeeps(880, 0.15, 3, 0.25);
+      else if (type === 'countdown') this._playWebAudioBeeps(880, 0.1, 10, 1.0);
+    }
+  },
+
+  _playWebAudioBeeps(freq, duration, count, interval) {
+    try {
+      if (!this._webAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) this._webAudioCtx = new AudioCtx();
+      }
+      if (!this._webAudioCtx) return;
+      if (this._webAudioCtx.state === 'suspended') {
+        this._webAudioCtx.resume().catch(() => {});
+      }
+      const ctx = this._webAudioCtx;
+      const now = ctx.currentTime;
+      for (let i = 0; i < count; i++) {
+        const start = now + (i * interval);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.2, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+      }
+    } catch (e) {
+      console.warn('[SprintEngine] WebAudio beeps error:', e);
+    }
+  },
+
+  _stopAudio() {
+    try {
+      if (this._audio1Min) {
+        this._audio1Min.pause();
+        this._audio1Min.currentTime = 0;
+      }
+      if (this._audioCountdown) {
+        this._audioCountdown.pause();
+        this._audioCountdown.currentTime = 0;
+      }
+    } catch (e) {
+      console.warn('[SprintEngine] stopAudio error:', e);
+    }
+  },
   async _requestWakeLock() {
     try {
       if ('wakeLock' in navigator && !this._wakeLockSentinel) {
