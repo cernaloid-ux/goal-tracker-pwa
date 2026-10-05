@@ -4515,6 +4515,168 @@ const DayPlanner = {
       free.push({ s: cur, e: winEnd });
     }
     return free.filter(slot => slot.e - slot.s >= 15 * 60000);
+  },
+
+  getSettings() {
+    try {
+      const raw = localStorage.getItem('nova-planner');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          pauseMin: Number(parsed.pauseMin) || 15,
+          maxWorkHours: Number(parsed.maxWorkHours) || 6,
+          gapMin: Number(parsed.gapMin) || 10
+        };
+      }
+    } catch (e) {}
+    return { pauseMin: 15, maxWorkHours: 6, gapMin: 10 };
+  },
+
+  saveSettings(settings) {
+    try {
+      const cur = this.getSettings();
+      const updated = { ...cur, ...settings };
+      localStorage.setItem('nova-planner', JSON.stringify(updated));
+    } catch (e) {}
+  },
+
+  computePlan(targetDateKey = dateKey(), shuffleMode = 'morning') {
+    this._targetDateKey = targetDateKey;
+    this._shuffleMode = shuffleMode;
+    const settings = this.getSettings();
+    const pauseMs = (settings.pauseMin || 15) * 60000;
+    const gapMs = (settings.gapMin || 10) * 60000;
+    const maxWorkMs = (settings.maxWorkHours || 6) * 3600000;
+
+    const candidates = this.getCandidates(targetDateKey);
+    const { winStart, winEnd } = this.getDayWindow(targetDateKey);
+    const busy = this.getBusyIntervals(targetDateKey);
+    const rawFreeSlots = this.findFreeSlots(winStart, winEnd, busy, gapMs);
+
+    // Expand candidates: split tasks > 120m into parts
+    const expandedTasks = [];
+    candidates.forEach(cand => {
+      const dur = cand.durationMin;
+      if (dur > 120) {
+        const numParts = Math.ceil(dur / 120);
+        const base = Math.floor(dur / numParts);
+        const rem = dur % numParts;
+        for (let i = 0; i < numParts; i++) {
+          const pDur = base + (i < rem ? 1 : 0);
+          expandedTasks.push({
+            ...cand,
+            partIndex: i + 1,
+            totalParts: numParts,
+            partTitle: `${cand.goal.title} (Part ${i + 1}/${numParts})`,
+            durationMin: pDur
+          });
+        }
+      } else {
+        expandedTasks.push({
+          ...cand,
+          partIndex: 1,
+          totalParts: 1,
+          partTitle: cand.goal.title,
+          durationMin: dur
+        });
+      }
+    });
+
+    const placed = [];
+    const unplaced = [];
+
+    // Filter tasks that fit within maxWorkHours limit
+    let accumMs = 0;
+    const tasksWithinBudget = [];
+    for (const t of expandedTasks) {
+      const durMs = t.durationMin * 60000;
+      if (accumMs + durMs <= maxWorkMs) {
+        accumMs += durMs;
+        tasksWithinBudget.push(t);
+      } else {
+        unplaced.push({
+          candidate: t,
+          reason: 'hit_limit',
+          reasonText: `Превышен лимит ${settings.maxWorkHours}ч работы`
+        });
+      }
+    }
+
+    // Shuffle mode: 'morning' places highest score first (morning), 'evening' places highest score in later slots
+    const taskQueue = [...tasksWithinBudget];
+    if (shuffleMode === 'evening') {
+      taskQueue.reverse();
+    }
+
+    // First-fit placement into slots
+    const slots = rawFreeSlots.map(s => ({
+      start: s.s,
+      end: s.e,
+      cur: s.s,
+      consecutiveWorkMs: 0
+    }));
+
+    taskQueue.forEach(cand => {
+      const durMs = cand.durationMin * 60000;
+      let slotFound = false;
+
+      for (let sIdx = 0; sIdx < slots.length; sIdx++) {
+        const sl = slots[sIdx];
+        const taskStart = sl.cur;
+        const taskEnd = taskStart + durMs;
+
+        if (taskEnd <= sl.end) {
+          slotFound = true;
+          placed.push({
+            id: 'plan_' + Math.random().toString(36).slice(2, 9),
+            goalId: cand.goal.id,
+            goal: cand.goal,
+            partIndex: cand.partIndex,
+            totalParts: cand.totalParts,
+            title: cand.partTitle,
+            cat: cand.goal.cat || 'other',
+            priority: cand.goal.priority || 'mid',
+            durationMin: cand.durationMin,
+            slot: { s: taskStart, e: taskEnd },
+            startStr: fmtTime(taskStart),
+            endStr: fmtTime(taskEnd),
+            accepted: false
+          });
+
+          sl.consecutiveWorkMs += durMs;
+          sl.cur = taskEnd;
+
+          // Rule 90/15: if consecutive work in slot reaches 90m, insert pause; else standard gap
+          if (sl.consecutiveWorkMs >= 90 * 60000) {
+            sl.cur += pauseMs;
+            sl.consecutiveWorkMs = 0;
+          } else {
+            sl.cur += gapMs;
+          }
+          break;
+        }
+      }
+
+      if (!slotFound) {
+        unplaced.push({
+          candidate: cand,
+          reason: 'no_slot',
+          reasonText: 'Нет свободного слота'
+        });
+      }
+    });
+
+    placed.sort((a, b) => a.slot.s - b.slot.s);
+
+    this._previewPlan = placed;
+    this._unplaced = unplaced;
+
+    return {
+      plan: placed,
+      unplaced,
+      totalScheduledMin: placed.reduce((sum, p) => sum + p.durationMin, 0),
+      freeSlotsCount: rawFreeSlots.length
+    };
   }
 };
 
