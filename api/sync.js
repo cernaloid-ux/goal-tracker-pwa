@@ -34,6 +34,8 @@ function sanitizeState(body, clientUserId) {
     userId:    returnUserId,
     gems:      safeNum(body.gems,0),
     streak:    safeObj(body.streak,{days:0,lastDate:'',doneToday:false}),
+    dailyBoss: safeObj(body.dailyBoss, { date: '', id: null }),
+    achievements: safeObj(body.achievements, {}),
     goals: safeArr(body.goals,MAX_GOALS).map(g=>({
       id:           String(g.id||'').slice(0,32),
       title:        String(g.title||'').slice(0,500),
@@ -68,6 +70,8 @@ function sanitizeState(body, clientUserId) {
       completedAt: safeNum(h.completedAt,Date.now()),
       elapsed_ms:  safeNum(h.elapsed_ms,0),
       gems:        safeNum(h.gems,1),
+      bossBonus:   safeNum(h.bossBonus,0),
+      comboBonus:  safeNum(h.comboBonus,0),
       color:       String(h.color||'#0A84FF').slice(0,10),
       cat:         String(h.cat||'business').slice(0,20),
     })),

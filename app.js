@@ -389,6 +389,8 @@ const StateManager = (() => {
     activeTaskId:null, editingTaskId:null, editingRoutineId:null, detailTaskId:null,
     storeFilter:'all', storeDraft:{}, expandedMacros:{},
     dimRecurring: false,
+    dailyBoss: { date: '', id: null },
+    achievements: {},
   };
   const listeners = [];
 
@@ -449,9 +451,12 @@ const StateManager = (() => {
         localStorage.setItem('nova-updatedAt', '0');
         localStorage.setItem('nova-sync-v2', '1');
       }
+      const dailyBoss = tryParse('nova-daily-boss', { date: '', id: null });
+      const achievements = tryParse('nova-achievements', {});
       state = { ...state, goals:rawForMigration.goals, history:h, purchases:p, gems, streak, tags,
         pomoConfig:pomo, sleepSettings:sleep, routines, profileName,
-        tgToken, tgChatId, webhookUrl, storeDraft:draft, dimRecurring, activeTaskId };
+        tgToken, tgChatId, webhookUrl, storeDraft:draft, dimRecurring, activeTaskId,
+        dailyBoss, achievements };
     } catch(e) {
       console.error('[StateManager load]', e);
       // Guarantee critical arrays are always arrays even if parse failed
@@ -481,6 +486,8 @@ const StateManager = (() => {
       localStorage.setItem('nova-webhook',  state.webhookUrl||'');
       localStorage.setItem('nova-updatedAt', String(Date.now()));
       localStorage.setItem('nova-dim-recurring', state.dimRecurring ? '1' : '0');
+      localStorage.setItem('nova-daily-boss', JSON.stringify(state.dailyBoss || { date: '', id: null }));
+      localStorage.setItem('nova-achievements', JSON.stringify(state.achievements || {}));
     } catch(e) { console.error('[StateManager save]', e); }
   }
 
@@ -585,6 +592,8 @@ const SyncManager = (() => {
           tags: s.tags,
           routines: s.routines,
           sleepSettings: s.sleepSettings,
+          dailyBoss: s.dailyBoss,
+          achievements: s.achievements,
         }),
       });
       if (res.status === 401) {
@@ -630,6 +639,8 @@ const SyncManager = (() => {
     if (Array.isArray(data.tags))        patch.tags        = data.tags;
     if (Array.isArray(data.routines))    patch.routines    = data.routines;
     if (data.sleepSettings && typeof data.sleepSettings === 'object') patch.sleepSettings = data.sleepSettings;
+    if (data.dailyBoss && typeof data.dailyBoss === 'object') patch.dailyBoss = data.dailyBoss;
+    if (data.achievements && typeof data.achievements === 'object') patch.achievements = data.achievements;
     // Single deferred render — StateManager.patch() notifies listeners synchronously;
     // refreshEverything() is the authoritative full repaint, deferred so DOM isn't
     // hammered twice in the same frame.
@@ -985,6 +996,72 @@ function renderCategoryFilters() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   BOSS CONFETTI (B4.1 — Lightweight Canvas Animation)
+═══════════════════════════════════════════════════════════ */
+function launchBossConfetti() {
+  if (document.documentElement.classList.contains('lite')) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:99999;';
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = window.innerWidth, h = window.innerHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { canvas.remove(); return; }
+    ctx.scale(dpr, dpr);
+
+    const colors = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#AF52DE'];
+    const particles = [];
+    for (let i = 0; i < 35; i++) {
+      particles.push({
+        x: w * 0.5 + (Math.random() - 0.5) * 120,
+        y: h * 0.35 + (Math.random() - 0.5) * 60,
+        vx: (Math.random() - 0.5) * 8,
+        vy: -Math.random() * 6 - 3,
+        size: Math.random() * 5 + 4,
+        color: colors[i % colors.length],
+        alpha: 1,
+        rotation: Math.random() * 360,
+        rotSpeed: (Math.random() - 0.5) * 10
+      });
+    }
+
+    const startTime = Date.now();
+    const duration = 1500;
+
+    function frame() {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > duration) {
+        canvas.remove();
+        return;
+      }
+      ctx.clearRect(0, 0, w, h);
+      const progress = elapsed / duration;
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.25;
+        p.rotation += p.rotSpeed;
+        p.alpha = Math.max(0, 1 - progress);
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.7);
+        ctx.restore();
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  } catch (_) { /* fallback silent */ }
+}
+
+/* ═══════════════════════════════════════════════════════════
    TASK CONTROLLER
 ═══════════════════════════════════════════════════════════ */
 const TaskController = {
@@ -1107,12 +1184,115 @@ const TaskController = {
       sub.textContent = `${todayDone} done · ${pendingToday} due today`;
     }
 
-    if (!list.length) {
-      listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-title">${taskFilter==='done'?'No completed tasks':'No tasks here'}</div><div class="empty-sub">${taskFilter==='done'?'':'Tap New Task to add one'}</div></div>`;
+    const activeBoss = (st.dailyBoss && st.dailyBoss.date === tKey && st.dailyBoss.id) ? goals.find(x => x.id === st.dailyBoss.id) : null;
+    let renderedList = list;
+    if (activeBoss && !activeBoss.done && taskFilter !== 'done') {
+      renderedList = renderedList.filter(x => x.id !== activeBoss.id);
+    }
+
+    listEl.innerHTML = '';
+    if (taskFilter !== 'done') {
+      const bossSec = this._buildBossSection(goals, st.dailyBoss);
+      if (bossSec) listEl.appendChild(bossSec);
+    }
+
+    if (!renderedList.length && (!activeBoss || activeBoss.done || taskFilter === 'done')) {
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'empty-state';
+      emptyDiv.innerHTML = `<div class="empty-icon">✨</div><div class="empty-title">${taskFilter==='done'?'No completed tasks':'No tasks here'}</div><div class="empty-sub">${taskFilter==='done'?'':'Tap New Task to add one'}</div>`;
+      listEl.appendChild(emptyDiv);
       return;
     }
-    listEl.innerHTML='';
-    list.forEach(g=>listEl.appendChild(this._buildCard(g)));
+
+    renderedList.forEach(g=>listEl.appendChild(this._buildCard(g)));
+  },
+
+  _buildBossSection(goals, dailyBoss) {
+    const isToday = dailyBoss && dailyBoss.date === dateKey() && dailyBoss.id;
+    const bossTask = isToday ? goals.find(x => x.id === dailyBoss.id) : null;
+
+    if (bossTask) {
+      if (bossTask.done) {
+        const sec = document.createElement('div');
+        sec.className = 'rounded-2xl p-4 mb-3';
+        sec.style.cssText = 'background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.3);box-shadow:0 4px 16px rgba(255,204,0,.08);';
+        sec.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+              <span style="font-size:22px;flex:none;">👑</span>
+              <div style="min-width:0;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#FFCC00;text-transform:uppercase;">Boss Defeated!</span>
+                  <span style="font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(255,204,0,.2);color:#FFCC00;">+3 💎</span>
+                </div>
+                <p style="font-size:13px;font-weight:500;text-decoration:line-through;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(bossTask.title)}</p>
+              </div>
+            </div>
+            <button class="glass-soft glass-hover text-xs rounded-xl px-2.5 py-1 text-white/50" data-action="clear-boss" style="flex:none;">Clear</button>
+          </div>`;
+        sec.querySelector('[data-action="clear-boss"]')?.addEventListener('click', () => {
+          StateManager.set('dailyBoss', { date: '', id: null });
+          SyncManager.scheduleSync();
+          this.render();
+        });
+        return sec;
+      }
+
+      const wrap = document.createElement('div');
+      wrap.className = 'mb-4';
+      wrap.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;padding:0 4px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#FFCC00;text-transform:uppercase;">👑 Boss of the Day</span>
+            <span style="font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(255,204,0,.2);color:#FFCC00;">+3 💎 reward</span>
+          </div>
+          <button class="glass-soft glass-hover text-xs rounded-xl px-2 py-0.5 text-white/50" data-action="clear-boss">Change</button>
+        </div>`;
+      const bossCard = this._buildCard(bossTask);
+      bossCard.style.border = '1px solid rgba(255,204,0,0.5)';
+      bossCard.style.boxShadow = '0 4px 18px rgba(255,204,0,0.15)';
+      wrap.appendChild(bossCard);
+      wrap.querySelector('[data-action="clear-boss"]')?.addEventListener('click', () => {
+        StateManager.set('dailyBoss', { date: '', id: null });
+        SyncManager.scheduleSync();
+        this.render();
+      });
+      return wrap;
+    }
+
+    const sec = document.createElement('div');
+    sec.className = 'glass-soft rounded-2xl p-3 mb-3';
+    sec.style.cssText = 'border:1px dashed rgba(255,204,0,.25);background:rgba(255,204,0,.03);';
+    sec.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span style="font-size:18px;flex:none;">👑</span>
+          <div style="min-width:0;">
+            <p style="font-size:12px;font-weight:600;color:#fff;">Boss of the Day</p>
+            <p style="font-size:11px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Conquer 1 big task (+3 💎)</p>
+          </div>
+        </div>
+        <button class="glass-soft glass-hover text-xs font-semibold rounded-xl px-3 py-1.5" data-action="pick-suggested" style="color:#FFCC00;border:1px solid rgba(255,204,0,.35);flex:none;">Pick suggested</button>
+      </div>`;
+    sec.querySelector('[data-action="pick-suggested"]')?.addEventListener('click', () => {
+      const pool = goals.filter(g => !g.done && !g.isProject);
+      pool.sort((a,b) => {
+        const p = { high: 0, mid: 1, low: 2 };
+        const pd = (p[a.priority] ?? 1) - (p[b.priority] ?? 1);
+        if (pd !== 0) return pd;
+        const aT = a.scheduledAt || Infinity, bT = b.scheduledAt || Infinity;
+        return aT - bT;
+      });
+      if (pool.length) {
+        StateManager.set('dailyBoss', { date: dateKey(), id: pool[0].id });
+        SyncManager.scheduleSync();
+        showToast(`👑 Boss of the Day: "${pool[0].title}"`);
+        this.render();
+      } else {
+        showToast('No unfinished tasks available');
+      }
+    });
+    return sec;
   },
 
   renderForDay(dayKey, dateLabel) {
@@ -1141,6 +1321,8 @@ const TaskController = {
   _buildCard(g) {
     const card = document.createElement('div');
     const color=catColor(g), cat=catInfo(g);
+    const st = StateManager.get();
+    const isCurrentBoss = !!(st.dailyBoss && st.dailyBoss.date === dateKey() && st.dailyBoss.id === g.id);
     card.className = 'glass-soft glass-hover rounded-2xl p-4' + (g.done ? ' opacity-50' : '');
     card.dataset.id=g.id;
     const prio={high:'🔴',mid:'🟡',low:'⚪'}[g.priority]||'🟡';
@@ -1168,12 +1350,26 @@ const TaskController = {
           ${(!g.done&&elapsed>0)?`<div style="height:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px;"><div style="height:100%;width:${pct}%;background:${color};border-radius:999px;"></div></div>`:''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;flex:none;">
+          <button class="glass-soft glass-hover rounded-lg" data-action="boss" style="width:30px;height:30px;font-size:13px;${isCurrentBoss?'color:#FFCC00;border:1px solid rgba(255,204,0,.45);background:rgba(255,204,0,.15);':'color:rgba(255,255,255,.35);'}" title="${isCurrentBoss?'Remove as Boss':'Set as Boss of the Day'}">⭐</button>
           <button class="glass-soft glass-hover rounded-lg" data-action="timer" style="width:30px;height:30px;font-size:13px;">⏱</button>
           <button class="glass-soft glass-hover rounded-lg" data-action="edit" style="width:30px;height:30px;font-size:13px;">✎</button>
           <button class="glass-soft glass-hover rounded-lg" data-action="delete" style="width:30px;height:30px;font-size:13px;color:#ff8f88;">🗑</button>
         </div>
       </div>`;
 
+    card.querySelector('[data-action="boss"]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      const curBoss = StateManager.get('dailyBoss');
+      if (curBoss && curBoss.date === dateKey() && curBoss.id === g.id) {
+        StateManager.set('dailyBoss', { date: '', id: null });
+        showToast('⭐ Boss removed');
+      } else {
+        StateManager.set('dailyBoss', { date: dateKey(), id: g.id });
+        showToast('👑 Set as Boss of the Day!');
+      }
+      this.render();
+      SyncManager.scheduleSync();
+    });
     card.querySelector('[data-action="check"]')?.addEventListener('click',e=>{ e.stopPropagation(); this.complete(g.id); });
     card.querySelector('[data-action="timer"]')?.addEventListener('click',e=>{ e.stopPropagation(); TimerController.setGoal(g.id); ViewRouter.switchTo('focus'); });
     card.querySelector('[data-action="edit"]')?.addEventListener('click',e=>{ e.stopPropagation(); this.openModal(g.id); });
@@ -1205,7 +1401,8 @@ const TaskController = {
     if (wasDone) {
       // Задачу СНЯЛИ с выполнения — реверсим экономику.
       const hIdx = st.history.findIndex(h => h.goalId === g.id);
-      const revert = hIdx > -1 ? (st.history[hIdx].gems || 0) : (catEarnsGems(g.cat) ? 1 : 0);
+      const hEntry = hIdx > -1 ? st.history[hIdx] : null;
+      const revert = hEntry ? ((hEntry.gems || 0) + (hEntry.bossBonus || 0) + (hEntry.comboBonus || 0)) : (catEarnsGems(g.cat) ? 1 : 0);
       const history = hIdx > -1 ? st.history.filter((_, i) => i !== hIdx) : st.history;
       // A12: revoke project bonus if project is no longer fully complete
       const bonus = settleProjectRewards(g);
@@ -1238,10 +1435,13 @@ const TaskController = {
     const earnsGems = catEarnsGems(g.cat);
     const gemsEarned = earnsGems ? 1 : 0; // РЕБАЛАНС: 1 кристалл за задачу (было 3)
 
-    const history=[{ id:'h_'+Date.now().toString(36)+rnd(), goalId:g.id, title:g.title, cat:g.cat, color:catColor(g), completedAt:Date.now(), elapsed_ms:Math.max(0,Math.round(elapsedSec*1000)), gems:gemsEarned, tags:[...(g.tags||[])] }, ...st.history];
+    const isBoss = !!(st.dailyBoss && st.dailyBoss.date === dateKey() && st.dailyBoss.id === g.id);
+    const bossBonus = isBoss ? 3 : 0;
+
+    const history=[{ id:'h_'+Date.now().toString(36)+rnd(), goalId:g.id, title:g.title, cat:g.cat, color:catColor(g), completedAt:Date.now(), elapsed_ms:Math.max(0,Math.round(elapsedSec*1000)), gems:gemsEarned, bossBonus, comboBonus:0, tags:[...(g.tags||[])] }, ...st.history];
     // A12: settle any parent-project reward bonuses (pays gemsReward when all leaves done)
     const bonus = settleProjectRewards(g);
-    const gems=st.gems+gemsEarned+bonus;
+    const gems=st.gems+gemsEarned+bossBonus+bonus;
 
     let streak={...st.streak}; const today=dateKey();
     if(streak.lastDate===today) { streak.doneToday=true; }
@@ -1251,6 +1451,11 @@ const TaskController = {
     StateManager.patch({ goals:st.goals, history, gems, streak });
     SyncManager.scheduleSync();
     updateCrystalChips();
+
+    if (isBoss) {
+      showPopup('boss-defeat','👑','Boss defeated!','+3 crystals bonus!');
+      launchBossConfetti();
+    }
 
     if (earnsGems) {
       showPopup('gem','💎',`+${gemsEarned} Crystal${gemsEarned>1?'s':''}! (${gems} total)`,`"${g.title.substring(0,28)}"`);
