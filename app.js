@@ -6008,6 +6008,26 @@ const SprintUI = {
       }
     });
 
+    // Modal Load tasks bindings
+    document.getElementById('sprint-load-file')?.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const text = evt.target?.result;
+        const ta = document.getElementById('sprint-load-textarea');
+        if (ta && typeof text === 'string') ta.value = text;
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById('btn-sprint-load-confirm')?.addEventListener('click', () => {
+      const ta = document.getElementById('sprint-load-textarea');
+      const val = ta ? ta.value : '';
+      SprintQueue.load(val);
+      closeModal('modal-sprint-load');
+    });
+
     // Subscribe to store changes: call render only on structural/phase change
     SprintStore.subscribe((state, patch, meta) => {
       if (meta && meta.isStructural) {

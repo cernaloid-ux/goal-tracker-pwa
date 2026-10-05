@@ -1159,6 +1159,57 @@
     </div>
   </div>
 
+  <!-- ============ SPRINT LOAD TASKS MODAL ============ -->
+  <div id="modal-sprint-load" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-load"></div>
+    <div class="modal-card rounded-3xl p-4 sm:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" style="background:#12151b; border:1px solid rgba(255,255,255,0.1); box-sizing:border-box;">
+      <div class="flex items-center justify-between mb-4 gap-3">
+        <h2 class="text-lg sm:text-xl font-bold font-mono text-white tracking-wider uppercase">Load Tasks</h2>
+        <button data-close="modal-sprint-load" aria-label="Close" class="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/70 flex-none" style="min-height: 48px; min-width: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-4">
+        <div>
+          <label for="sprint-load-textarea" class="text-xs uppercase tracking-wider text-white/60 font-semibold mb-1.5 block">Paste JSON</label>
+          <textarea id="sprint-load-textarea" placeholder='[&#10;  {"title": "Implement auth middleware", "tag": "Dev", "estMin": 5}&#10;]' class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white font-mono text-sm focus:outline-none focus:border-white/30" style="font-size:16px; min-height:140px; box-sizing:border-box; width:100%; min-width:0;"></textarea>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <input type="file" id="sprint-load-file" accept="application/json" class="hidden">
+          <label for="sprint-load-file" class="cursor-pointer rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 py-3 transition-colors flex-1" style="min-height: 48px;">
+            <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            <span>Choose file (JSON)</span>
+          </label>
+        </div>
+
+        <!-- Example format block -->
+        <div class="p-3 rounded-xl bg-black/50 border border-white/5 text-xs font-mono text-white/60 overflow-x-auto">
+          <span class="text-white/40 block mb-1 font-semibold uppercase text-[10px] tracking-wider">Example Schema:</span>
+          <pre class="text-white/80 leading-relaxed">[
+  {
+    "title": "Design SpaceX telemetry header",
+    "tag": "Design",
+    "estMin": 5,
+    "notes": "Include font-mono tabular-nums"
+  }
+]</pre>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="flex items-center gap-3 mt-2">
+          <button type="button" data-close="modal-sprint-load" class="flex-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm font-semibold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Cancel
+          </button>
+          <button type="button" id="btn-sprint-load-confirm" class="flex-1 rounded-xl bg-white hover:bg-white/90 text-black text-sm font-bold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Load
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ SPRINT FULLSCREEN OVERLAY ============ -->
   <div id="sprint-overlay" class="hidden fixed inset-0 flex-col items-center justify-between text-white overflow-y-auto select-none" style="position:fixed;inset:0;z-index:9990;background:#05070b;padding-top:calc(max(env(safe-area-inset-top,0px),16px)+10px);padding-bottom:calc(max(env(safe-area-inset-bottom,0px),16px)+10px);padding-left:max(env(safe-area-inset-left,0px),16px);padding-right:max(env(safe-area-inset-right,0px),16px);box-sizing:border-box;">
     <!-- Telemetry bar -->
