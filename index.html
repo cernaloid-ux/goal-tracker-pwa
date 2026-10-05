@@ -250,7 +250,19 @@
       }
       #sidebar .hidden.md\:flex,
       #sidebar #collapseBtn { display: none !important; }
-      main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important; }
+      main {
+        padding-top: calc(max(env(safe-area-inset-top, 0px), 16px) + 14px) !important;
+        padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+      }
+      .modal {
+        padding-top: calc(max(env(safe-area-inset-top, 0px), 16px) + 8px);
+      }
+      #toast-stack {
+        top: calc(max(env(safe-area-inset-top, 0px), 16px) + 10px) !important;
+      }
+      #alarm-stack {
+        top: calc(max(env(safe-area-inset-top, 0px), 16px) + 10px) !important;
+      }
 
       /* 2.1 — Запрет обрезки текста через truncate на мобильных */
       .tasklabel, .truncate, #td-title, #taskModalTitle, #routineModalTitle, #macroModalTitle {
