@@ -761,6 +761,7 @@ function switchSub(containerId, prefix, sub) {
     if (sub === 'history') FocusHistoryRenderer.render();
     if (sub === 'shop') StoreController.render();
     if (sub === 'timer') { TimerController.renderGoalCard(); TimerController.tick(); TimerController.renderSpheres(); }
+    if (sub === 'sprint') SprintUI.render();
   }
   if (prefix === 'cal') {
     StateManager.set('calView', sub);
@@ -5856,6 +5857,136 @@ const DictationController = {
     const count = newGoals.length;
     showToastWithUndo(`✅ Добавлено ${count} ${count === 1 ? 'дело' : (count < 5 ? 'дела' : 'дел')}`);
   },
+};
+
+/* ═══════════════════════════════════════════════════════════
+   SPRINT MODULE (5-min Time-Boxing SpaceX Style)
+═══════════════════════════════════════════════════════════ */
+const SPRINT_DEFAULT = {
+  phase: 'idle', // idle|setup|running|paused|blocker|overflow|finished
+  sessionMin: 120,
+  sessionStartedAt: null,
+  sessionEndsAt: null,
+  queue: [], // [{id,title,tag,notes,estMin,status,reason,doneAt,frozenAt}] status: queued|active|done|frozen
+  activeId: null,
+  taskStartedAt: null,
+  taskDurationMs: 300000,
+  elapsedBeforePauseMs: 0,
+  pausedAt: null,
+  pauseCount: 0,
+  extendCount: 0,
+  continuousMs: 0,
+  lastTickAt: null,
+  rewardedBlocks: 0,
+  stats: { done: 0, frozen: 0, pausesPaid: 0, crystalsSpent: 0, crystalsEarned: 0 },
+  cal: { pending: [], connected: false }
+};
+
+const SprintStore = {
+  _state: null,
+  _listeners: new Set(),
+  _load() {
+    try {
+      const raw = localStorage.getItem('nova-sprint');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return Object.assign({}, SPRINT_DEFAULT, parsed, {
+            stats: Object.assign({}, SPRINT_DEFAULT.stats, parsed.stats || {}),
+            cal: Object.assign({}, SPRINT_DEFAULT.cal, parsed.cal || {}),
+            queue: Array.isArray(parsed.queue) ? parsed.queue : []
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[SprintStore] Stored state corrupted, fallback to default:', e);
+    }
+    return JSON.parse(JSON.stringify(SPRINT_DEFAULT));
+  },
+  get() {
+    if (!this._state) this._state = this._load();
+    return this._state;
+  },
+  set(patch) {
+    if (!this._state) this._state = this._load();
+    const oldPhase = this._state.phase;
+    const oldQueueLen = this._state.queue ? this._state.queue.length : 0;
+    const oldActiveId = this._state.activeId;
+    const oldStats = JSON.stringify(this._state.stats);
+
+    this._state = Object.assign({}, this._state, patch);
+    if (patch.stats) {
+      this._state.stats = Object.assign({}, SPRINT_DEFAULT.stats, patch.stats);
+    }
+    if (patch.cal) {
+      this._state.cal = Object.assign({}, SPRINT_DEFAULT.cal, patch.cal);
+    }
+    try {
+      localStorage.setItem('nova-sprint', JSON.stringify(this._state));
+    } catch (e) {
+      console.error('[SprintStore] Failed to save localStorage:', e);
+    }
+
+    const phaseChanged = patch.phase !== undefined && patch.phase !== oldPhase;
+    const queueChanged = patch.queue !== undefined || (this._state.queue && this._state.queue.length !== oldQueueLen);
+    const activeChanged = patch.activeId !== undefined && patch.activeId !== oldActiveId;
+    const statsChanged = patch.stats !== undefined && JSON.stringify(this._state.stats) !== oldStats;
+    const isStructural = phaseChanged || queueChanged || activeChanged || statsChanged;
+
+    this._listeners.forEach(fn => {
+      try { fn(this._state, patch, { isStructural }); } catch (err) { console.error('[SprintStore listener err]', err); }
+    });
+    return this._state;
+  },
+  subscribe(fn) {
+    this._listeners.add(fn);
+    return () => this._listeners.delete(fn);
+  },
+  reset() {
+    this._state = JSON.parse(JSON.stringify(SPRINT_DEFAULT));
+    try {
+      localStorage.setItem('nova-sprint', JSON.stringify(this._state));
+    } catch (e) {
+      console.error('[SprintStore] Failed to reset localStorage:', e);
+    }
+    this._listeners.forEach(fn => {
+      try { fn(this._state, {}, { isStructural: true }); } catch (err) { console.error('[SprintStore listener err]', err); }
+    });
+    return this._state;
+  }
+};
+
+const SprintUI = {
+  open() {},
+  close() {},
+  render() {},
+  tickDisplay(msLeft) {}
+};
+
+const SprintEngine = {
+  start() { showToast('SprintEngine.start() stub'); },
+  pause() { showToast('SprintEngine.pause() stub'); },
+  resume() { showToast('SprintEngine.resume() stub'); },
+  extend() { showToast('SprintEngine.extend() stub'); },
+  done() { showToast('SprintEngine.done() stub'); },
+  blocker(reason) { showToast('SprintEngine.blocker() stub: ' + (reason || '')); },
+  finish() { showToast('SprintEngine.finish() stub'); },
+  restoreOnLoad() {}
+};
+
+const SprintQueue = {
+  load(jsonText) { showToast('SprintQueue.load() stub'); },
+  clear() { showToast('SprintQueue.clear() stub'); },
+  view() { return SprintStore.get().queue; },
+  next(preferNotTag) { return null; },
+  unfreeze(id) { showToast('SprintQueue.unfreeze() stub: ' + id); },
+  addTasks(arr) { showToast('SprintQueue.addTasks() stub'); }
+};
+
+const SprintCalendar = {
+  connect() { showToast('SprintCalendar.connect() stub'); },
+  logBlock(task, startMs, endMs) {},
+  flushPending() {}
 };
 
 /* ═══════════════════════════════════════════════════════════
