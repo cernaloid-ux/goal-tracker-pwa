@@ -1192,6 +1192,8 @@ const TaskController = {
 
     listEl.innerHTML = '';
     if (taskFilter !== 'done') {
+      const reviewBanner = this._buildWeeklyReviewBanner(st.history);
+      if (reviewBanner) listEl.appendChild(reviewBanner);
       const bossSec = this._buildBossSection(goals, st.dailyBoss);
       if (bossSec) listEl.appendChild(bossSec);
     }
@@ -1205,6 +1207,90 @@ const TaskController = {
     }
 
     renderedList.forEach(g=>listEl.appendChild(this._buildCard(g)));
+  },
+
+  _buildWeeklyReviewBanner(history) {
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sun, 1 = Mon
+    const hours = now.getHours();
+
+    const isSundayEvening = (day === 0 && hours >= 18);
+    const isMondayMorning = (day === 1 && hours <= 12);
+    if (!isSundayEvening && !isMondayMorning) return null;
+
+    const dayOfWeek = (day + 6) % 7;
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+    const weekKey = dateKey(monday.getTime());
+
+    if (localStorage.getItem('nova-last-review') === weekKey) return null;
+
+    const weekCompletions = (history || []).filter(h => now.getTime() - h.completedAt <= 7 * 86400000);
+
+    const sortedWins = [...weekCompletions].sort((a,b) => {
+      const msA = a.elapsed_ms || 0, msB = b.elapsed_ms || 0;
+      if (msA !== msB) return msB - msA;
+      return (b.gems || 0) - (a.gems || 0);
+    });
+    const topWins = sortedWins.slice(0, 3);
+
+    const catCounts = { business: 0, health: 0, study: 0, life: 0 };
+    weekCompletions.forEach(h => {
+      const cat = ['business', 'health', 'study', 'life'].includes(h.cat) ? h.cat : (h.cat === 'creative' ? 'life' : 'business');
+      catCounts[cat] = (catCounts[cat] || 0) + 1;
+    });
+
+    let minCount = Infinity, laggingCat = 'health';
+    for (const [cat, cnt] of Object.entries(catCounts)) {
+      if (cnt < minCount) {
+        minCount = cnt;
+        laggingCat = cat;
+      }
+    }
+    const laggingLabel = (CATS[laggingCat] || CATS.health).label;
+
+    const winsHtml = topWins.length
+      ? topWins.map((w, idx) => {
+          const mins = Math.round((w.elapsed_ms || 0) / 60000);
+          const dur = mins > 0 ? ` (${mins}m)` : '';
+          return `<div class="flex items-center gap-2 text-xs text-white/80"><span>${['🥇','🥈','🥉'][idx]}</span><span class="truncate font-medium">${esc(w.title)}</span><span class="text-white/40 flex-none">${dur}</span></div>`;
+        }).join('')
+      : `<div class="text-xs text-white/40">No completed tasks recorded this week</div>`;
+
+    const banner = document.createElement('div');
+    banner.className = 'rounded-2xl p-4 mb-4';
+    banner.style.cssText = 'background:rgba(10,132,255,.08);border:1px solid rgba(10,132,255,.3);box-shadow:0 4px 18px rgba(10,132,255,.08);';
+    banner.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">📋</span>
+          <div>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-blue-400">Weekly Review</h4>
+            <p class="text-[11px] text-white/50">Your week in review &amp; focus check</p>
+          </div>
+        </div>
+        <button data-action="close-review" class="w-7 h-7 glass-soft glass-hover rounded-lg flex items-center justify-center text-white/50 hover:text-white" title="Dismiss Review">✕</button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <p class="text-[11px] font-semibold text-white/40 uppercase mb-1.5">Top Wins of the Week</p>
+          <div class="space-y-1.5">
+            ${winsHtml}
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
+          <span class="text-white/50">Needs attention:</span>
+          <span class="font-medium text-amber-400">⚠️ ${esc(laggingLabel)} (${catCounts[laggingCat]} done)</span>
+        </div>
+      </div>`;
+
+    banner.querySelector('[data-action="close-review"]')?.addEventListener('click', () => {
+      localStorage.setItem('nova-last-review', weekKey);
+      banner.remove();
+    });
+
+    return banner;
   },
 
   _buildBossSection(goals, dailyBoss) {
