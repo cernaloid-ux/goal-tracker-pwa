@@ -6593,6 +6593,13 @@ const SprintEngine = {
         navigator.vibrate?.([200, 100, 200]);
         if (!this._audio1Min) {
           this._audio1Min = new Audio('/audio/1min_left.mp3');
+          this._audio1Min.addEventListener('error', () => {
+            if (this._audio1Min && !this._audio1Min._fallbackTried) {
+              this._audio1Min._fallbackTried = true;
+              this._audio1Min.src = '/audio/1%20left.m4a';
+              this._audio1Min.load();
+            }
+          });
           this._audio1Min.preload = 'auto';
         }
         this._audio1Min.volume = 1;
@@ -6600,12 +6607,28 @@ const SprintEngine = {
         const p = this._audio1Min.play();
         if (p && p.catch) {
           p.catch(() => {
-            this._playWebAudioBeeps(880, 0.15, 3, 0.25);
+            if (this._audio1Min && !this._audio1Min._fallbackTried) {
+              this._audio1Min._fallbackTried = true;
+              this._audio1Min.src = '/audio/1%20left.m4a';
+              const pRetry = this._audio1Min.play();
+              if (pRetry && pRetry.catch) {
+                pRetry.catch(() => this._playWebAudioBeeps(880, 0.15, 3, 0.25));
+              }
+            } else {
+              this._playWebAudioBeeps(880, 0.15, 3, 0.25);
+            }
           });
         }
       } else if (type === 'countdown') {
         if (!this._audioCountdown) {
           this._audioCountdown = new Audio('/audio/countdown.mp3');
+          this._audioCountdown.addEventListener('error', () => {
+            if (this._audioCountdown && !this._audioCountdown._fallbackTried) {
+              this._audioCountdown._fallbackTried = true;
+              this._audioCountdown.src = '/audio/10-0.m4a';
+              this._audioCountdown.load();
+            }
+          });
           this._audioCountdown.preload = 'auto';
         }
         this._audioCountdown.volume = 1;
@@ -6613,7 +6636,16 @@ const SprintEngine = {
         const p = this._audioCountdown.play();
         if (p && p.catch) {
           p.catch(() => {
-            this._playWebAudioBeeps(880, 0.1, 10, 1.0);
+            if (this._audioCountdown && !this._audioCountdown._fallbackTried) {
+              this._audioCountdown._fallbackTried = true;
+              this._audioCountdown.src = '/audio/10-0.m4a';
+              const pRetry = this._audioCountdown.play();
+              if (pRetry && pRetry.catch) {
+                pRetry.catch(() => this._playWebAudioBeeps(880, 0.1, 10, 1.0));
+              }
+            } else {
+              this._playWebAudioBeeps(880, 0.1, 10, 1.0);
+            }
           });
         }
       } else if (type === 'finish') {
