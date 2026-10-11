@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1C1C1E" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Nova OS — Productivity</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            base: '#1C1C1E',
+            surface: '#2C2C2E',
+            accent: '#FF3B30',
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Inter', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    .app-shell{height:100vh;height:100dvh;width:100%;max-width:100vw;overflow-x:hidden;}
+    :root { color-scheme: dark; }
+    html, body { height: 100%; }
+    html { max-width: 100vw; overflow-x: hidden; }
+    body {
+      background:
+        radial-gradient(1100px 560px at 12% -12%, rgba(255,59,48,0.16), transparent 58%),
+        radial-gradient(900px 520px at 100% 6%, rgba(255,59,48,0.06), transparent 55%),
+        #1C1C1E;
+      background-attachment: fixed;
+      overscroll-behavior: none;
+      overflow-x: hidden;
+    }
+    .glass {
+      background: rgba(60, 60, 66, 0.30);
+      backdrop-filter: blur(26px) saturate(150%);
+      -webkit-backdrop-filter: blur(26px) saturate(150%);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 24px 48px -24px rgba(0,0,0,0.7);
+    }
+    .glass-soft {
+      background: rgba(70, 70, 76, 0.18);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+    .glass-hover { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease, background .25s ease; }
+    .glass-hover:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255,59,48,0.45);
+      box-shadow: 0 0 0 1px rgba(255,59,48,0.22), 0 26px 52px -20px rgba(255,59,48,0.30), inset 0 1px 0 rgba(255,255,255,0.08);
+      background: rgba(80,80,86,0.30);
+    }
+    .accent-grad { background: linear-gradient(145deg,#FF3B30,#b71f16); }
+    .accent-glow { box-shadow: 0 0 22px rgba(255,59,48,0.55), 0 0 60px rgba(255,59,48,0.22); }
+    .tag { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 500; background: rgba(255,59,48,0.14); color: #ff8f88; border: 1px solid rgba(255,59,48,0.22); }
+    .tag-grey { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.08); }
+    .tag-mini { font-size:9px; padding:2px 6px; border-radius:999px; font-weight:500; line-height:1.4; }
+    .cal-event-time { font-size:10px; color:rgba(255,255,255,.45); font-variant-numeric:tabular-nums; }
+    .task-group-header { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:rgba(255,255,255,.35); margin:14px 0 8px; display:flex; align-items:center; gap:8px; }
+    .task-group-header:first-child { margin-top:0; }
+    .task-group-count { font-size:10px; padding:1px 7px; border-radius:999px; background:rgba(255,255,255,.08); color:rgba(255,255,255,.5); font-weight:600; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,59,48,0.4); }
+    .view, .subview { animation: fade .4s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .nav-item.active { background: rgba(255,59,48,0.16); border-color: rgba(255,59,48,0.5); color: #fff; }
+    .nav-item.active .nav-ic { color: #FF3B30; }
+    .subtab.active { color: #fff; background: rgba(255,59,48,0.18); border-color: rgba(255,59,48,0.5); }
+    .chk { appearance: none; -webkit-appearance: none; width: 22px; height: 22px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.04); cursor: pointer; position: relative; transition: all .2s; flex: none; }
+    .chk:hover { border-color: rgba(255,59,48,0.6); }
+    .chk:checked { background: #FF3B30; border-color: #FF3B30; box-shadow: 0 0 14px rgba(255,59,48,0.6); }
+    .chk:checked::after { content: ''; position: absolute; left: 7px; top: 3px; width: 6px; height: 11px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+    .chk:checked + .tasklabel { text-decoration: line-through; opacity: 0.45; }
+    .toggle { width: 52px; height: 30px; border-radius: 999px; background: rgba(120,120,128,0.32); position: relative; cursor: pointer; transition: background .3s; flex: none; }
+    .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 999px; background: #fff; transition: transform .3s; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+    .toggle.on { background: #FF3B30; }
+    .toggle.on::after { transform: translateX(22px); }
+    input[type=range] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.12); outline: none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 999px; background: #FF3B30; cursor: pointer; box-shadow: 0 0 14px rgba(255,59,48,0.6); }
+    .field { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 12px 14px; color: #fff; font-size: 14px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    .field:focus { border-color: rgba(255,59,48,0.6); box-shadow: 0 0 0 3px rgba(255,59,48,0.15); }
+    .field::placeholder { color: rgba(255,255,255,0.3); }
+    .modal-backdrop { background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    .modal-card { animation: pop .3s cubic-bezier(.2,.9,.3,1.2); overflow-x: hidden; max-width: 100%; }
+    .modal-card * { min-width: 0; }
+    .modal-card .field, .modal-card select.field, .modal-card textarea.field { width: 100%; max-width: 100%; box-sizing: border-box; }
+    .field[type="date"], .field[type="time"], .field[type="datetime-local"], input[type="date"].field, input[type="time"].field {
+      -webkit-appearance: none; appearance: none; width: 100%; max-width: 100%; min-width: 0; min-height: 46px; display: block; box-sizing: border-box; text-align: left;
+    }
+    input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; min-width: 0; margin: 0; }
+    @keyframes pop { from { opacity:0; transform: scale(.94) translateY(10px);} to {opacity:1; transform: scale(1) translateY(0);} }
+    .drag-hint { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0 6px, transparent 6px 12px); }
+    .heat { width: 6px; height: 6px; border-radius: 999px; }
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 16px; opacity:.55; text-align:center; }
+    .empty-icon { font-size:32px; margin-bottom:10px; }
+    .empty-title { font-weight:600; font-size:14px; }
+    .empty-sub { color:rgba(255,255,255,.4); font-size:12px; margin-top:4px; }
+    .expand-chevron { transition: transform 200ms ease; }
+    .expand-chevron.open { transform: rotate(90deg); }
+
+    /* ═══ TREE-VIEW: icon buttons ═══ */
+    .node-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      opacity: .45;
+      transition: opacity .15s ease;
+      flex: none;
+    }
+    [data-macro-card]:hover .node-actions,
+    .node-actions:focus-within { opacity: 1; }
+
+    .node-icon-btn {
+      width: 28px; height: 28px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,.5);
+      background: transparent; border: none; cursor: pointer;
+      transition: color .15s ease, background .15s ease, transform .1s ease;
+      flex: none;
+    }
+    .node-icon-btn svg { width: 15px; height: 15px; }
+    .node-icon-btn:hover { color: #fff; background: rgba(255,59,48,.18); transform: translateY(-1px); }
+    .node-icon-btn:active { transform: translateY(0); }
+
+    /* ═══ TREE-VIEW: smooth accordion (no JS height calc needed) ═══ */
+    .node-children-wrap {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 300ms cubic-bezier(.4,0,.2,1);
+    }
+    .node-children-wrap.open { grid-template-rows: 1fr; }
+    .node-children-inner { overflow: hidden; }
+    .node-children-inner > .space-y-2 { padding-top: 12px; }
+
+    /* ═══ TREE-VIEW: connecting lines for nested nodes (depth > 0) ═══ */
+    .tree-node {
+      position: relative;
+      padding-left: 20px;
+    }
+    .tree-node::before {
+      content: '';
+      position: absolute;
+      top: -10px; bottom: 14px; left: 6px;
+      width: 1px;
+      background: linear-gradient(to bottom, rgba(255,59,48,.22), rgba(255,255,255,.06));
+    }
+    .tree-node::after {
+      content: '';
+      position: absolute;
+      top: 20px; left: 6px;
+      width: 12px; height: 1px;
+      background: rgba(255,255,255,.08);
+    }
+
+    /* ═══ Inline Quick-Add input (Notion-style) ═══ */
+    .inline-quick-add {
+      width: 100%;
+      background: rgba(255,59,48,.06);
+      border: 1px dashed rgba(255,59,48,.45);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #fff;
+      outline: none;
+      margin-bottom: 8px;
+      animation: quickAddIn .15s ease;
+    }
+    .inline-quick-add::placeholder { color: rgba(255,255,255,.3); }
+    .inline-quick-add:focus { border-color: rgba(255,59,48,.85); background: rgba(255,59,48,.1); }
+    @keyframes quickAddIn { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform: translateY(0); } }
+    .color-dot { transition: border-color .2s, box-shadow .2s; }
+    .dragging-active { box-shadow: 0 12px 28px -6px rgba(255,59,48,.5) !important; transform: scale(1.03) !important; z-index: 100 !important; transition: box-shadow .15s, transform .15s; }
+    .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+    /* ═══════════════════════════════════════════════════════════
+       MOBILE RESPONSIVE LAYER (≤767px)
+       — Sidebar collapses into a fixed bottom tab bar. All 6 items
+         (5 nav + Settings) live in one grid row of equal-width
+         columns, so nothing is squished or oversized.
+       — Glassmorphism blur is reduced for GPU-weak phones.
+       — Main content gets bottom clearance for the tab bar so the
+         last row of content is never hidden behind it.
+       Nothing here changes the desktop (≥768px) appearance.
+    ═══════════════════════════════════════════════════════════ */
+    @media (max-width: 767px) {
+      /* Предотвращение автозума iOS в поля ввода */
+      input, select, textarea { font-size: 16px !important; }
+
+      /* ── MOBILE CRASH FIX: все тяжёлые GPU-эффекты отключены ── */
+      /* fixed-фон пережёвывает GPU на iOS — переключаем на scroll */
+      body { background-attachment: scroll; }
+
+      /* Непрозрачные фоны вместо backdrop-filter (главная причина OOM на iPhone) */
+      .glass {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(44,44,46,.92) !important;
+      }
+      .glass-soft {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(60,60,66,.85) !important;
+      }
+      .modal-backdrop {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(0,0,0,0.72) !important;
+      }
+      #sidebar {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(28,28,30,.97) !important;
+      }
+
+      /* Анимации вида вызывают перерисовки — убираем */
+      .view, .subview {
+        animation: none !important;
+        padding-bottom: 1.5rem;
+      }
+
+      /* transform при hover — не нужен и дорог на touch-устройствах */
+      .glass-hover { transition: background .15s ease, border-color .15s ease; }
+      .glass-hover:hover { transform: none !important; }
+
+      /* lite mode — полное отключение для режима recovery */
+      .lite * {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        animation: none !important;
+        transition: none !important;
+      }
+
+      #sidebar {
+        width: 100% !important;
+        display: grid !important;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        align-items: stretch;
+        gap: 4px;
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+        border-top: 1px solid rgba(255,255,255,.08);
+        z-index: 9000 !important;
+      }
+      #sidebar #navList { display: contents; }
+      #sidebar #navList > button,
+      #sidebar > #btn-open-settings {
+        width: 100%;
+        min-width: 0;
+        flex: none;
+      }
+      #sidebar .hidden.md\:flex,
+      #sidebar #collapseBtn { display: none !important; }
+      main {
+        padding-top: calc(max(env(safe-area-inset-top, 0px), 16px) + 14px) !important;
+        padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+      }
+      .modal {
+        padding-top: calc(max(env(safe-area-inset-top, 0px), 16px) + 8px);
+      }
+      #toast-stack {
+        top: calc(max(env(safe-area-inset-top, 0px), 16px) + 10px) !important;
+      }
+      #alarm-stack {
+        top: calc(max(env(safe-area-inset-top, 0px), 16px) + 10px) !important;
+      }
+
+      /* 2.1 — Запрет обрезки текста через truncate на мобильных */
+      .tasklabel, .truncate, #td-title, #taskModalTitle, #routineModalTitle, #macroModalTitle {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        word-break: break-word !important;
+        overflow-wrap: anywhere;
+      }
+      /* flex-родители получают min-width:0 чтобы текст мог переноситься */
+      #task-list [data-task-row] > div,
+      .glass-soft [style*="flex:1"] { min-width: 0; }
+      /* 2.2 — Мелкий шрифт времени в ячейках календаря + перенос навигации */
+      .cal-event-time { font-size: 9px; }
+      #calendar-header-title { font-size: 16px; }
+      #view-calendar header .flex.items-center.gap-3 { flex-wrap: wrap; row-gap: 8px; }
+      #event-time-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 12px !important;
+      }
+      #event-time-fields > * {
+        min-width: 0 !important;
+      }
+    }
+    /* lite-mode класс работает глобально (не только на мобильных) */
+    html.lite * {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      animation: none !important;
+      transition: none !important;
+    }
+    /* ===== SPRINT MODULE SPACEX STYLING (S1.8) ===== */
+    .sprint-trans {
+      transition: opacity 150ms ease;
+    }
+    #sprint-overlay, #modal-sprint-load, #modal-sprint-queue {
+      transition: opacity 150ms ease;
+    }
+    #focus-sprint input, #focus-sprint textarea,
+    #modal-sprint-load input, #modal-sprint-load textarea {
+      font-size: 16px !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #sprint-overlay, #modal-sprint-load, #modal-sprint-queue, .sprint-trans, .sprint-trans * {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="text-white/90 font-sans antialiased overflow-hidden">
+
+  <div class="flex h-screen w-screen app-shell">
+
+    <!-- ============ LEFT SIDEBAR (desktop) / BOTTOM TAB BAR (mobile) ============ -->
+    <aside id="sidebar" class="glass fixed md:relative inset-x-0 bottom-0 md:inset-auto m-0 md:m-3 rounded-t-3xl md:rounded-3xl flex flex-row md:flex-col items-center md:items-stretch py-2 md:py-6 px-2 md:px-3 transition-all duration-300 z-40 md:z-auto flex-none" style="width: 240px;">
+      <div class="hidden md:flex items-center gap-3 mb-8 px-2">
+        <div class="w-11 h-11 rounded-2xl accent-grad accent-glow flex items-center justify-center flex-none">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l2.5 6H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5L12 3Z"/></svg>
+        </div>
+        <div class="logo-text leading-tight">
+          <p class="font-bold text-lg tracking-tight">Nova<span class="text-accent"> OS</span></p>
+          <p class="text-[11px] text-white/35 -mt-0.5">Productivity</p>
+        </div>
+      </div>
+
+      <nav class="flex flex-row md:flex-col gap-1 md:gap-2 w-full flex-1 justify-around md:justify-start items-stretch min-w-0" id="navList">
+        <button data-view="tasks" id="nav-tasks" class="nav-item active glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Tasks">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9 2 2 4-4"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Tasks</span>
+        </button>
+        <button data-view="focus" id="nav-focus" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Focus">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path stroke-linecap="round" d="M12 9v4l2 2M9 3h6"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Focus</span>
+        </button>
+        <button data-view="calendar" id="nav-calendar" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Calendar">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M3 9h18M8 3v4M16 3v4"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Calendar</span>
+        </button>
+        <button data-view="sleep" id="nav-sleep" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Sleep &amp; Routines">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Sleep &amp; Routines</span>
+        </button>
+        <button data-view="profile" id="nav-profile" class="nav-item glass-soft glass-hover rounded-xl md:rounded-2xl py-2 md:py-3 flex flex-col md:flex-row items-center gap-0.5 md:gap-3 px-1 md:px-3 text-white/60 flex-1 md:flex-none min-w-0" title="Profile">
+          <svg class="nav-ic w-5 h-5 md:w-6 md:h-6 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <span class="navlabel hidden md:inline text-[10px] md:text-sm font-medium whitespace-nowrap truncate">Profile</span>
+        </button>
+      </nav>
+
+      <div class="hidden md:flex glass-soft rounded-2xl px-3 py-3 items-center gap-3 mb-3">
+        <svg class="w-5 h-5 text-accent flex-none" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg>
+        <div class="navlabel leading-tight whitespace-nowrap">
+          <p id="sidebar-gems" class="text-sm font-semibold">0</p>
+          <p class="text-[11px] text-white/40 -mt-0.5">Crystals</p>
+        </div>
+      </div>
+
+      <button id="collapseBtn" class="hidden md:flex w-full glass-soft glass-hover rounded-xl py-2.5 items-center justify-center gap-2 text-white/50 mb-2" title="Collapse sidebar">
+        <svg id="collapseIcon" class="w-5 h-5 transition-transform rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <span class="navlabel text-xs font-medium">Collapse</span>
+      </button>
+
+      <button id="btn-open-settings" class="md:w-full glass-soft glass-hover rounded-xl py-2 md:py-2.5 flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2 text-white/50 flex-1 md:flex-none min-w-0" title="Settings">
+        <svg class="w-5 h-5 flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <span class="navlabel hidden md:inline text-[10px] md:text-xs font-medium truncate">Settings</span>
+      </button>
+    </aside>
+        <!-- ============ MAIN ============ -->
+    <main class="flex-1 overflow-y-auto p-3 md:p-3 pr-3 md:pr-4 pb-28 md:pb-3">
+
+      <!-- ===== VIEW 1 : TASKS ===== -->
+      <section id="view-tasks" class="view flex flex-col lg:flex-row gap-4 h-full">
+        <div class="flex-1 min-w-0">
+          <header class="flex items-center justify-between mb-4 md:mb-6 flex-wrap gap-3">
+            <div class="min-w-0">
+              <p class="text-white/40 text-sm">Good to see you,</p>
+              <h1 id="profile-name-header" class="text-2xl md:text-3xl font-bold tracking-tight truncate max-w-[60vw] md:max-w-none">—</h1>
+            </div>
+            <div class="flex items-center gap-2 md:gap-3 flex-wrap">
+              <button id="btn-new-task" class="glass-hover accent-grad accent-glow rounded-2xl px-4 py-2.5 md:px-5 md:py-3 text-sm font-semibold flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+                New Task
+              </button>
+              <button id="btn-new-macro" class="glass-soft glass-hover rounded-2xl px-4 py-2.5 md:px-5 md:py-3 text-sm font-semibold flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+                New Project
+              </button>
+              <button id="btn-plan-day-tasks" class="glass-soft glass-hover rounded-2xl px-3.5 py-2.5 md:px-4 md:py-3 text-sm font-semibold flex items-center gap-1.5" title="Plan my day" style="color:#FF9F0A;">
+                <span>✨</span>
+                <span>Plan</span>
+              </button>
+              <button id="tasks-gems-chip" type="button" class="glass-soft glass-hover rounded-2xl px-3 py-2 md:px-3.5 md:py-2.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer text-white/90" title="Crystals in wallet">
+                <span class="text-accent">💎</span>
+                <span id="tasks-gems">0</span>
+              </button>
+              <button id="btn-open-voice" class="w-11 h-11 md:w-12 md:h-12 glass glass-hover rounded-full flex items-center justify-center flex-none" title="Voice input" aria-label="Voice input">
+                <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <!-- Live projects (macro goals) -->
+          <div id="projects-container" class="space-y-4 mb-4">
+            <!-- rendered by JS: project cards (macro goal -> sprint -> tasks) -->
+          </div>
+
+          <!-- Task list panel -->
+          <div class="glass rounded-3xl p-4 md:p-6">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px;">
+              <h2 class="text-xl font-bold">My Tasks</h2>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div id="task-filter-ctrl" class="max-w-full overflow-x-auto" style="display:flex;gap:4px;background:rgba(255,255,255,.05);border-radius:12px;padding:3px;">
+                  <button class="seg-btn glass-hover active" data-filter="today" style="font-size:12px;padding:6px 12px;border-radius:9px;background:rgba(255,59,48,.18);color:#fff;white-space:nowrap;">Today</button>
+                  <button class="seg-btn glass-hover" data-filter="tomorrow" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Tomorrow</button>
+                  <button class="seg-btn glass-hover" data-filter="week" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Week</button>
+                  <button class="seg-btn glass-hover" data-filter="all" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">All</button>
+                  <button class="seg-btn glass-hover" data-filter="done" style="font-size:12px;padding:6px 12px;border-radius:9px;color:rgba(255,255,255,.5);white-space:nowrap;">Done</button>
+                </div>
+                <button id="btn-search-toggle" aria-label="Search" class="glass-soft glass-hover rounded-lg" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);">🔍</button>
+                <button id="btn-sort" class="glass-soft glass-hover rounded-lg text-xs font-medium" style="padding:7px 12px;color:rgba(255,255,255,.6);">⇅ Date</button>
+              </div>
+            </div>
+            <div id="search-wrap" style="display:none;margin-bottom:10px;">
+              <input id="search-input" class="field" placeholder="Search tasks…">
+            </div>
+            <div id="tag-filter-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+            <p id="tasks-view-subtitle" class="text-white/40 text-xs" style="margin-bottom:10px;"></p>
+            <div id="task-list" class="space-y-3"></div>
+          </div>
+        </div>
+
+        <!-- Right filter sidebar -->
+        <aside class="glass rounded-3xl p-5 w-64 flex-none hidden lg:block">
+          <h3 class="font-semibold mb-4 text-sm text-white/50 uppercase tracking-wider">Categories</h3>
+          <div id="category-filter-list" class="space-y-2 mb-6"></div>
+          <h3 class="font-semibold mb-4 text-sm text-white/50 uppercase tracking-wider">Deadlines</h3>
+          <div id="deadline-filter-list" class="space-y-2"></div>
+        </aside>
+      </section>
+
+      <!-- ===== VIEW 2 : FOCUS ===== -->
+      <section id="view-focus" class="view hidden h-full flex-col">
+        <header class="glass rounded-2xl px-3 py-2 md:px-5 md:py-3 flex items-center justify-between mb-4 md:mb-5 flex-wrap gap-3">
+          <div class="flex items-center gap-2 overflow-x-auto max-w-full" id="focusTabs">
+            <button data-sub="timer" class="subtab active glass-soft rounded-xl px-4 py-2 text-sm font-medium border border-transparent whitespace-nowrap">Timer</button>
+            <button data-sub="sprint" class="subtab glass-soft rounded-xl px-4 py-2 text-sm text-white/50 border border-transparent whitespace-nowrap">Sprint</button>
+            <button data-sub="history" class="subtab glass-soft rounded-xl px-4 py-2 text-sm text-white/50 border border-transparent whitespace-nowrap">History</button>
+            <button data-sub="shop" class="subtab glass-soft rounded-xl px-4 py-2 text-sm text-white/50 border border-transparent whitespace-nowrap">Shop</button>
+          </div>
+          <div class="flex items-center gap-2 md:gap-3 flex-wrap">
+            <div class="glass-soft rounded-xl px-3 py-2 md:px-4 flex items-center gap-2 text-sm"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg><span id="focus-gems" class="font-semibold">0</span> <span class="text-white/40">Crystals</span></div>
+            <div class="glass-soft rounded-xl px-3 py-2 md:px-4 flex items-center gap-2 text-sm"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2s6 5 6 11a6 6 0 0 1-12 0c0-2 1-3 1-3s1 2 2 2c0-3 3-4 3-7Z"/></svg><span id="focus-streak" class="font-semibold">0</span> <span class="text-white/40">day streak</span></div>
+          </div>
+        </header>
+
+        <!-- FOCUS: TIMER -->
+        <div id="focus-timer" class="subview flex-1 flex gap-4 md:gap-5 flex-col xl:flex-row">
+          <div class="flex-1 glass rounded-3xl flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden">
+            <div class="absolute inset-0 opacity-40" style="background:radial-gradient(circle at center, rgba(255,59,48,0.22), transparent 62%)"></div>
+            <div class="relative w-full max-w-[340px]">
+              <svg width="100%" height="100%" viewBox="0 0 340 340" class="drop-shadow-2xl">
+                <circle cx="170" cy="170" r="150" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="18"/>
+                <circle id="timer-ring-progress" cx="170" cy="170" r="150" fill="none" stroke="#FF3B30" stroke-width="18" stroke-linecap="round" stroke-dasharray="942.48" stroke-dashoffset="942.48" transform="rotate(-90 170 170)" style="filter: drop-shadow(0 0 14px rgba(255,59,48,0.85))"/>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-4 md:px-8">
+                <span id="timer-time-text" class="text-4xl md:text-6xl font-bold tabular-nums tracking-tight">60:00</span>
+                <span id="timer-task-name" class="text-white/60 mt-2 font-medium truncate max-w-full">No task selected</span>
+                <div id="timer-task-tags" class="flex gap-2 mt-3 flex-wrap justify-center"></div>
+                <div class="flex gap-2 mt-5 flex-wrap justify-center">
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-5m" data-action="add-minutes" data-minutes="5">+5m</button>
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-10m" data-action="add-minutes" data-minutes="10">+10m</button>
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-20m" data-action="add-minutes" data-minutes="20">+20m</button>
+                  <button class="glass-soft glass-hover rounded-lg px-3 py-1.5 text-xs font-medium" id="btn-add-30m" data-action="add-minutes" data-minutes="30">+30m</button>
+                </div>
+                <div class="flex gap-2 md:gap-3 mt-4 flex-wrap justify-center">
+                  <button id="btn-timer-toggle" class="glass-hover accent-grad accent-glow rounded-xl px-4 md:px-5 py-2 text-sm font-semibold flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/></svg><span id="btn-timer-toggle-label">Start</span></button>
+                  <button id="btn-timer-restart" data-action="timer-restart" class="glass-soft glass-hover rounded-xl px-4 md:px-5 py-2 text-sm font-medium text-white/70 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0 1 14-3M20 15a8 8 0 0 1-14 3"/></svg>Restart</button>
+                  <button id="btn-timer-delete" data-action="timer-delete" class="glass-soft glass-hover rounded-xl px-4 md:px-5 py-2 text-sm font-medium text-white/70 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7"/></svg>Delete</button>
+                </div>
+                <button id="btn-timer-pick-task" data-action="pick-task" class="mt-3 text-xs text-white/40 hover:text-white/70 underline underline-offset-2">Choose a different task</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Grand spheres -->
+          <div class="w-full xl:w-80 flex flex-col gap-3 md:gap-4 flex-none">
+            <div class="glass glass-hover rounded-3xl p-4 md:p-5 flex items-center gap-4" id="sphere-current-goal">
+              <div class="relative w-16 h-16 md:w-20 md:h-20 flex-none">
+                <svg width="100%" height="100%" viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/><circle id="sphere-current-ring" cx="40" cy="40" r="32" fill="none" stroke="#FF3B30" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 40 40)" style="filter:drop-shadow(0 0 8px rgba(255,59,48,0.7))"/></svg>
+                <span id="sphere-current-pct" class="absolute inset-0 flex items-center justify-center text-sm font-bold">0%</span>
+              </div>
+              <div class="min-w-0"><p class="font-semibold">Current Goal</p><p id="sphere-current-label" class="text-white/40 text-sm truncate">None selected</p></div>
+            </div>
+            <div class="glass glass-hover rounded-3xl p-4 md:p-5 flex items-center gap-4">
+              <div class="relative w-16 h-16 md:w-20 md:h-20 flex-none">
+                <svg width="100%" height="100%" viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/><circle id="sphere-goals-ring" cx="40" cy="40" r="32" fill="none" stroke="#FF3B30" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 40 40)" style="filter:drop-shadow(0 0 8px rgba(255,59,48,0.7))"/></svg>
+                <span id="sphere-goals-pct" class="absolute inset-0 flex items-center justify-center text-sm font-bold">0%</span>
+              </div>
+              <div class="min-w-0"><p class="font-semibold">Big Goals</p><p id="sphere-goals-label" class="text-white/40 text-sm truncate">0 of 0 completed</p></div>
+            </div>
+            <div class="glass glass-hover rounded-3xl p-4 md:p-5 flex items-center gap-4">
+              <div class="relative w-16 h-16 md:w-20 md:h-20 flex-none" id="sphere-streak-glow">
+                <svg width="100%" height="100%" viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/><circle id="sphere-streak-ring" cx="40" cy="40" r="32" fill="none" stroke="#FF3B30" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 40 40)" style="filter:drop-shadow(0 0 8px rgba(255,59,48,0.7))"/></svg>
+                <span id="sphere-streak-count" class="absolute inset-0 flex items-center justify-center text-lg font-bold">0</span>
+              </div>
+              <div class="min-w-0"><p class="font-semibold">Streak</p><p id="sphere-streak-best" class="text-white/40 text-sm truncate">Personal best: 0 days</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FOCUS: HISTORY -->
+        <div id="focus-history" class="subview hidden flex-1">
+          <div id="focus-history-list" class="grid gap-3"></div>
+        </div>
+
+        <!-- FOCUS: SHOP -->
+        <div id="focus-shop" class="subview hidden flex-1">
+          <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div><h2 class="text-xl font-bold">Reward Shop</h2><p class="text-white/40 text-sm">Spend crystals earned from Business &amp; Sport tasks</p></div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="glass-soft rounded-xl px-4 py-2 flex items-center gap-2 text-sm"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg><span id="shop-gems" class="font-semibold">0</span></div>
+              <button id="btn-cart" class="glass-soft glass-hover rounded-xl px-4 py-2 text-sm font-medium flex items-center gap-2">🛒 Cart <span id="cart-count" class="hidden"></span></button>
+              <button id="btn-purchases" class="glass-soft glass-hover rounded-xl px-4 py-2 text-sm font-medium flex items-center gap-2">🧾 History</button>
+            </div>
+          </div>
+          <div id="store-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </div>
+
+        <!-- FOCUS: SPRINT -->
+        <div id="focus-sprint" class="subview hidden flex-1">
+          <div class="max-w-2xl mx-auto w-full p-4 sm:p-6 flex flex-col gap-6" style="box-sizing: border-box;">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                  <h2 class="text-lg sm:text-xl font-bold tracking-wider uppercase text-white font-mono" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">SPRINT CONTROL</h2>
+                </div>
+                <p class="text-white/50 text-xs sm:text-sm mt-1">5-minute SpaceX-style time-boxing</p>
+              </div>
+              <div class="text-right">
+                <span class="text-xs text-white/40 uppercase tracking-widest block font-mono">STATUS</span>
+                <span id="sprint-prep-status" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-white/10 text-white/80">STANDBY</span>
+              </div>
+            </div>
+
+            <!-- Session length config & T-Minus block -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="p-4 rounded-2xl bg-[#12151b] border border-white/10 flex flex-col justify-between">
+                <label for="sprint-session-min" class="text-xs uppercase tracking-wider text-white/60 font-semibold mb-2 block">Session length, min</label>
+                <div class="flex items-center gap-3">
+                  <input type="number" id="sprint-session-min" step="5" min="5" value="120" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white font-mono text-base focus:outline-none focus:border-white/30" style="font-size: 16px; min-height: 48px;">
+                  <span class="text-sm text-white/40 font-mono">min</span>
+                </div>
+              </div>
+
+              <div class="p-4 rounded-2xl bg-[#12151b] border border-white/10 flex flex-col justify-between">
+                <span class="text-xs uppercase tracking-wider text-white/60 font-semibold block mb-2">T-минус до конца сессии</span>
+                <div class="flex items-baseline gap-2">
+                  <span id="sprint-session-tminus" class="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">T-02:00:00</span>
+                  <span class="text-xs text-white/40 font-mono">target</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button id="btn-sprint-open-load" type="button" class="w-full rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+                <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                <span>Load tasks (JSON)</span>
+              </button>
+              <button id="btn-sprint-open-queue" type="button" class="w-full rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+                <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                <span>Queue (<span id="sprint-queue-btn-count">0</span>)</span>
+              </button>
+              <button id="btn-sprint-start" type="button" class="w-full rounded-xl bg-white text-black text-sm font-bold flex items-center justify-center gap-2 px-4 hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all" style="min-height: 48px;" disabled>
+                <span>▶ Start sprint</span>
+              </button>
+            </div>
+
+            <!-- JSON format hint -->
+            <div class="p-4 rounded-2xl bg-[#12151b] border border-white/10">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs uppercase tracking-wider text-white/60 font-semibold font-mono">JSON Task Schema</span>
+                <span class="text-[11px] text-white/40 font-mono">5 min blocks</span>
+              </div>
+              <p class="text-xs text-white/60 mb-2.5 leading-relaxed">
+                Paste array of tasks or upload .json. Supported fields: <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">title</code> (required), <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">tag</code>, <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">notes</code>, <code class="text-white/80 bg-white/5 px-1 py-0.5 rounded font-mono">estMin</code>.
+              </p>
+              <pre class="bg-black/50 p-3 rounded-xl text-xs font-mono text-white/70 overflow-x-auto border border-white/5">[
+  {
+    "title": "Build telemetry header",
+    "tag": "Dev",
+    "notes": "SpaceX style typography",
+    "estMin": 5
+  }
+]</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== VIEW 3 : CALENDAR ===== -->
+      <section id="view-calendar" class="view hidden h-full flex-col">
+        <header class="flex items-center justify-between mb-4 md:mb-5 flex-wrap gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <h1 id="calendar-header-title" class="text-xl md:text-2xl font-bold truncate max-w-[50vw] md:max-w-none">—</h1>
+            <div class="flex gap-1 flex-none">
+              <button id="cal-prev" data-action="cal-prev" aria-label="Previous" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 19l-7-7 7-7"/></svg></button>
+              <button id="cal-next" data-action="cal-next" aria-label="Next" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg></button>
+              <button id="cal-today" data-action="cal-today" class="glass-soft glass-hover rounded-lg px-3 text-xs font-medium text-white/60">Today</button>
+              <button id="btn-undo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Undo (⌘Z)" disabled>↩</button>
+              <button id="btn-redo" class="icon-btn w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center" title="Redo (⌘⇧Z)" disabled>↪</button>
+              <button id="btn-cal-voice" aria-label="Voice input" class="w-8 h-8 glass-soft glass-hover rounded-lg flex items-center justify-center text-accent" title="Voice Input">🎤</button>
+              <button id="btn-plan-day-cal" class="glass-soft glass-hover rounded-lg px-2.5 py-1 text-xs font-semibold flex items-center gap-1" title="Plan my day" style="color:#FF9F0A;">
+                <span>✨</span> <span>Plan</span>
+              </button>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-1 flex gap-1 max-w-full overflow-x-auto" id="calTabs">
+            <button data-cal="day" class="subtab active glass-soft rounded-lg px-4 py-1.5 text-sm border border-transparent whitespace-nowrap">Day</button>
+            <button data-cal="week" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Week</button>
+            <button data-cal="month" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Month</button>
+            <button data-cal="year" class="subtab glass-soft rounded-lg px-4 py-1.5 text-sm text-white/50 border border-transparent whitespace-nowrap">Year</button>
+          </div>
+        </header>
+
+        <!-- CAL: DAY -->
+        <div id="cal-day" class="subview glass rounded-3xl p-4 md:p-5 flex-1 overflow-y-auto">
+          <div id="dayAllDayStrip" class="flex flex-wrap gap-2 pb-3 mb-2" style="border-bottom:1px solid rgba(255,255,255,.08);min-height:0;"></div>
+          <div class="relative pb-16 md:pb-0" id="dayGrid"></div>
+        </div>
+
+        <!-- CAL: WEEK — horizontal scroll on mobile so the 7-day grid never gets crushed -->
+        <div id="cal-week" class="subview hidden glass rounded-3xl p-4 md:p-5 flex-1 overflow-hidden flex flex-col">
+          <div class="flex-1 overflow-y-auto overflow-x-auto">
+            <div id="weekGrid" class="relative min-w-[640px] md:min-w-0 pb-16 md:pb-0"></div>
+          </div>
+        </div>
+
+        <!-- CAL: MONTH — horizontal scroll on mobile so the 7-column grid never gets crushed -->
+        <div id="cal-month" class="subview hidden glass rounded-3xl p-4 md:p-5 flex-1 flex flex-col overflow-x-auto">
+          <div class="min-w-[560px] md:min-w-0 flex flex-col flex-1 pb-16 md:pb-0">
+            <div class="grid grid-cols-7 gap-2 mb-2 flex-none">
+              <div class="text-center text-xs text-white/40 font-medium">Mon</div><div class="text-center text-xs text-white/40 font-medium">Tue</div><div class="text-center text-xs text-white/40 font-medium">Wed</div><div class="text-center text-xs text-white/40 font-medium">Thu</div><div class="text-center text-xs text-white/40 font-medium">Fri</div><div class="text-center text-xs text-white/40 font-medium">Sat</div><div class="text-center text-xs text-white/40 font-medium">Sun</div>
+            </div>
+            <div id="monthGrid" class="grid grid-cols-7 gap-2 flex-1"></div>
+          </div>
+        </div>
+
+        <!-- CAL: YEAR -->
+        <div id="cal-year" class="subview hidden flex-1 overflow-y-auto">
+          <div id="yearGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-16 md:pb-0"></div>
+        </div>
+      </section>
+
+      <!-- ===== VIEW 4 : SLEEP & ROUTINES ===== -->
+      <section id="view-sleep" class="view hidden h-full">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 h-full">
+          <!-- Sleep controls -->
+          <div class="xl:col-span-2 flex flex-col gap-4">
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <h2 class="text-xl font-bold mb-1">Sleep Schedule</h2>
+              <p class="text-white/40 text-sm mb-6">Tonight you should sleep <span id="sleep-duration-label" class="text-accent font-semibold">—</span></p>
+              <div class="flex items-center justify-around mb-8 flex-wrap gap-4">
+                <div class="text-center"><div class="w-16 h-16 rounded-2xl accent-grad flex items-center justify-center mx-auto mb-2"><svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></div><p id="sleep-bedtime-big" class="text-2xl font-bold tabular-nums">23:00</p><p class="text-white/40 text-xs">Bedtime</p></div>
+                <div class="w-px h-16 bg-white/10"></div>
+                <div class="text-center"><div class="w-16 h-16 rounded-2xl glass-soft flex items-center justify-center mx-auto mb-2"><svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="13" r="6"/><path stroke-linecap="round" d="M12 2v2M4.9 5 6 6M19.1 5 18 6"/></svg></div><p id="sleep-waketime-big" class="text-2xl font-bold tabular-nums">07:00</p><p class="text-white/40 text-xs">Wake-up</p></div>
+              </div>
+              <div class="space-y-6">
+                <div><div class="flex justify-between text-sm mb-2"><span class="text-white/60">Bedtime</span><span id="sleep-bedtime-slider-label" class="tabular-nums text-white/40">23:00</span></div><input id="sleep-bedtime-slider" type="range" min="0" max="143" step="1" value="138" data-action="bedtime-slider"></div>
+                <div><div class="flex justify-between text-sm mb-2"><span class="text-white/60">Wake-up</span><span id="sleep-waketime-slider-label" class="tabular-nums text-white/40">07:00</span></div><input id="sleep-waketime-slider" type="range" min="0" max="143" step="1" value="42" data-action="waketime-slider"></div>
+              </div>
+              <div class="mt-6 flex items-center justify-between glass-soft rounded-2xl px-4 py-3 flex-wrap gap-3">
+                <div class="flex items-center gap-3 min-w-0"><svg class="w-5 h-5 text-accent flex-none" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14V11a6 6 0 1 0-12 0v3a2 2 0 0 1-.6 1.4L4 17h5m6 0v1a3 3 0 1 1-6 0v-1m6 0H9"/></svg><div class="min-w-0"><p class="text-sm font-medium">Soft Alarm</p><p class="text-white/40 text-xs">Gentle wake within 30m window</p></div></div>
+                <div id="toggle-soft-alarm" class="toggle" data-toggle data-action="toggle-soft-alarm"></div>
+              </div>
+            </div>
+
+            <!-- Sleep quality strip -->
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <div class="flex items-center justify-between mb-4"><h3 class="font-semibold">Last 7 nights</h3><span id="sleep-avg-label" class="text-accent text-sm font-semibold">Avg —</span></div>
+              <div id="sleep-week-bars" class="flex items-end justify-between gap-2 h-28"></div>
+            </div>
+          </div>
+
+          <!-- Routines -->
+          <div class="glass rounded-3xl p-4 md:p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-xl font-bold">Routines</h2>
+              <button id="btn-add-routine" class="glass-hover accent-grad rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>Add</button>
+            </div>
+            <div id="routines-list" class="space-y-3 flex-1 overflow-y-auto"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== VIEW 5 : PROFILE ===== -->
+      <section id="view-profile" class="view hidden h-full">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <!-- Profile header + stats -->
+          <div class="xl:col-span-2 flex flex-col gap-4">
+            <div class="glass rounded-3xl p-4 md:p-6 flex items-center gap-4 md:gap-5 flex-wrap">
+              <div id="profile-avatar" class="w-16 h-16 md:w-20 md:h-20 rounded-3xl accent-grad accent-glow flex items-center justify-center flex-none text-2xl md:text-3xl font-bold">—</div>
+              <div class="flex-1 min-w-0">
+                <h1 id="profile-name" class="text-xl md:text-2xl font-bold truncate">—</h1>
+                <p id="profile-level" class="text-white/40 text-sm">—</p>
+                <div class="mt-2 h-2 rounded-full bg-white/10 overflow-hidden w-full max-w-56"><div id="profile-level-bar" class="h-full accent-grad rounded-full" style="width:0%"></div></div>
+              </div>
+              <button id="btn-profile-open-shop" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 flex-none"><svg class="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2 4 8l8 14 8-14-8-6Z"/></svg>Open Shop</button>
+            </div>
+
+            <!-- Big stats -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Total Created</p><p id="stat-total-created" class="text-2xl md:text-3xl font-bold tabular-nums">0</p></div>
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Progress</p><p id="stat-progress" class="text-2xl md:text-3xl font-bold tabular-nums text-accent">0%</p></div>
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Success Rate</p><p id="stat-success-rate" class="text-2xl md:text-3xl font-bold tabular-nums">0%</p></div>
+              <div class="glass glass-hover rounded-3xl p-4 md:p-5"><p class="text-white/40 text-xs mb-1">Streak</p><p id="stat-streak" class="text-2xl md:text-3xl font-bold tabular-nums flex items-center gap-1.5">0</p></div>
+            </div>
+
+            <!-- Big Goals tracking -->
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Big Goals</h3>
+                <button id="btn-add-macro" class="glass-soft glass-hover rounded-lg text-xs font-medium" style="padding:6px 12px;color:rgba(255,255,255,.6);">+ Add Goal</button>
+              </div>
+              <div id="macro-goals-list" class="space-y-4"></div>
+            </div>
+
+            <!-- Trophy Case (B4.4) -->
+            <div class="glass rounded-3xl p-4 md:p-6">
+              <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-semibold">Trophy Case</h3>
+                  <span id="trophy-count-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-white/10 text-white/70 font-medium">0 / 12</span>
+                </div>
+              </div>
+              <div id="trophy-case-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+            </div>
+
+            <!-- Insights & Weekly Analytics (B3) -->
+            <div class="glass rounded-3xl p-4 md:p-6" id="insights-card">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold flex items-center gap-2">
+                  <span>📊 Insights &amp; Analytics</span>
+                </h3>
+              </div>
+              <div id="insights-root" class="space-y-6"></div>
+            </div>
+          </div>
+
+          <!-- Purchase history -->
+          <div class="glass rounded-3xl p-4 md:p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-5">
+              <h3 class="font-semibold">Purchase History</h3>
+              <button id="btn-profile-see-shop" class="text-accent text-sm font-medium flex items-center gap-1 glass-soft glass-hover rounded-lg px-2.5 py-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg></button>
+            </div>
+            <div id="profile-purchase-history" class="space-y-3 flex-1 overflow-y-auto"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+    <!-- ============ TASK MODAL ============ -->
+  <div id="taskModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="taskModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="taskModalTitle" class="text-xl font-bold truncate">New Task</h2>
+        <button data-close="taskModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <div id="type-ctrl" style="display:flex;gap:8px;">
+            <button type="button" class="seg-btn glass-hover" data-type="task" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">✅ Task</button>
+            <button type="button" class="seg-btn glass-hover" data-type="event" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">📅 Event</button>
+          </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="task-title-input" class="field" placeholder="e.g. Design onboarding flow"><p id="nlp-hint" class="text-xs text-white/35 hidden" style="margin-top:4px;"></p></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Date</label><input id="task-date-input" type="date" class="field"></div>
+        <div id="event-time-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label id="task-time-from-label" class="text-sm text-white/50 mb-1.5 block">Time from</label><input id="task-time-from-input" type="time" class="field"></div>
+          <div id="task-time-to-wrap"><div><label class="text-sm text-white/50 mb-1.5 block">Time to</label><input id="task-time-to-input" type="time" class="field"></div></div>
+        </div>
+        <div id="event-recurrence-section" class="glass-soft rounded-2xl p-4 space-y-3 hidden">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-medium">Repeat</span>
+            <div id="task-recurrence-toggle" class="toggle" data-toggle></div>
+          </div>
+          <div id="task-recurrence-body" class="space-y-3 hidden">
+            <div id="task-recurrence-days-row" class="flex gap-2 flex-wrap"></div>
+            <div><label class="text-sm text-white/50 mb-1.5 block">Repeat until</label>
+              <input id="task-recurrence-until-input" type="date" class="field"></div>
+          </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Category</label>
+          <div id="task-category-row" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Custom Color</label>
+          <div id="task-color-row" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Tags</label>
+          <div id="task-tags-row" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Parent (Project/Folder)</label>
+          <select id="task-parent-select" class="field"><option value="">None</option></select>
+        </div>
+        <div>
+          <label class="text-sm text-white/50 mb-1.5 block">Priority</label>
+          <div id="priority-ctrl" style="display:flex;gap:8px;">
+            <button type="button" class="seg-btn glass-hover" data-priority="high" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">🔴 High</button>
+            <button type="button" class="seg-btn glass-hover" data-priority="mid" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">🟡 Mid</button>
+            <button type="button" class="seg-btn glass-hover" data-priority="low" style="flex:1;padding:8px;border-radius:12px;font-size:12px;">⚪ Low</button>
+          </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Focus duration (min)</label>
+          <input id="task-duration-input" type="number" min="5" step="5" class="field" placeholder="60">
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Notes</label><textarea id="task-notes-input" rows="3" class="field" style="resize:none;" placeholder="Additional details…"></textarea></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Subtasks</label><div id="subtask-input-list"></div><button type="button" id="btn-add-subtask" class="glass-soft glass-hover rounded-lg text-xs" style="padding:6px 12px;color:rgba(255,255,255,.6);">+ Add subtask</button></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Budget</label>
+          <div class="relative"><span class="absolute left-4 top-1/2 -translate-y-1/2 text-white/40">$</span><input id="task-budget-input" class="field pl-8" placeholder="0.00" type="number"></div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Location</label>
+          <input id="task-location-input" class="field" placeholder="e.g. Room 204, Zoom, Coffee Shop">
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Remind me</label>
+          <div id="task-reminders-row" class="flex flex-wrap gap-2"></div>
+        </div>
+        <button type="button" id="btn-delete-task" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium hidden" style="color:#ff8f88;" data-action="delete-task">🗑 Delete Task</button>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button id="btn-task-cancel" data-close="taskModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-task-save" data-action="save-task" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Create Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TASK DETAIL MODAL ============ -->
+  <div id="taskDetailModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="taskDetailModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="td-title" class="text-xl font-bold truncate max-w-[75%]">Task Details</h2>
+        <button data-close="taskDetailModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="task-detail-body"></div>
+      <div class="flex flex-wrap gap-3 mt-6">
+        <button id="btn-td-edit" data-action="detail-edit" class="flex-1 min-w-[90px] glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Edit</button>
+        <button id="btn-td-timer" data-action="detail-timer" class="flex-1 min-w-[90px] glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Timer</button>
+        <button id="btn-td-done" data-action="detail-complete" class="flex-1 min-w-[90px] accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Complete</button>
+      </div>
+      <button id="btn-td-delete" data-action="detail-delete" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium mt-3" style="color:#ff8f88;">🗑 Delete Task</button>
+    </div>
+  </div>
+
+  <!-- ============ ROUTINE MODAL ============ -->
+  <div id="routineModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="routineModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="routineModalTitle" class="text-xl font-bold truncate">New Routine</h2>
+        <button data-close="routineModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
+        <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="routine-title-input" class="field" placeholder="e.g. Evening wind down"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Trigger Time</label><input id="routine-time-input" type="time" class="field" value="22:30"></div>
+        <div class="glass-soft rounded-2xl p-4 space-y-3">
+          <p class="text-sm font-semibold mb-1">Actions</p>
+          <div id="routine-actions-list" class="space-y-3"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input id="routine-new-action-input" class="field" placeholder="Add a custom action…" style="flex:1;">
+            <button id="btn-routine-add-action" type="button" class="glass-soft glass-hover rounded-lg px-3 text-sm flex-none">+</button>
+          </div>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Repeat on</label>
+          <div id="routine-days-row" class="flex gap-2 flex-wrap"></div>
+        </div>
+        <div class="flex items-center justify-between glass-soft rounded-2xl px-4 py-3 flex-wrap gap-2"><span class="text-sm">Send push notification</span><div id="routine-push-toggle" class="toggle on" data-toggle></div></div>
+        <button type="button" id="btn-delete-routine" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium hidden" style="color:#ff8f88;" data-action="delete-routine">🗑 Delete Routine</button>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button data-close="routineModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-routine-save" data-action="save-routine" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Routine</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MACRO GOAL (PROJECT) MODAL ============ -->
+  <div id="macroModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="macroModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <h2 id="macroModalTitle" class="text-xl font-bold truncate">New Project</h2>
+        <button data-close="macroModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
+        <input type="hidden" id="macro-edit-id">
+        <div><label class="text-sm text-white/50 mb-1.5 block">Parent (optional)</label>
+          <select id="macro-parent-select" class="field"><option value="">— Root (no parent) —</option></select>
+        </div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Title</label><input id="macro-title" class="field" placeholder="e.g. Run a half marathon"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Deadline</label><input id="macro-deadline" type="date" class="field"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Crystal Reward</label><input id="macro-gems-reward" type="number" class="field" value="50"></div>
+
+        <button type="button" id="btn-delete-macro" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium hidden" style="color:#ff8f88;margin-top:20px;" data-action="delete-macro">🗑 Delete Project</button>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button data-close="macroModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-save-macro" data-action="save-macro" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CART MODAL ============ -->
+  <div id="cartModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="cartModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Cart</h2>
+        <button data-close="cartModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="cart-list"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:14px;font-weight:700;"><span>Total</span><span id="cart-total">0 💎</span></div>
+      <div style="margin-top:14px;">
+        <label class="text-sm text-white/50 mb-1.5 block">Why are you redeeming this? <span style="color:#ff8f88;">*</span></label>
+        <textarea id="cart-comment-input" class="field" rows="2" style="resize:none;" placeholder="e.g. Finished the sprint, earned a break"></textarea>
+        <p id="cart-comment-error" class="text-xs hidden" style="color:#ff8f88;margin-top:4px;">A short comment is required before checkout.</p>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button data-close="cartModal" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Close</button>
+        <button id="btn-checkout" data-action="checkout" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Checkout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PURCHASES MODAL ============ -->
+  <div id="purchasesModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="purchasesModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Purchase History</h2>
+        <button data-close="purchasesModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="purchases-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ GOAL PICKER MODAL ============ -->
+  <div id="goalPickerModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="goalPickerModal"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-bold">Pick a task</h2>
+        <button data-close="goalPickerModal" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="goal-picker-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS MODAL ============ -->
+  <div id="modal-settings" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-settings"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-6 gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-11 h-11 rounded-2xl accent-grad flex items-center justify-center flex-none">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          </div>
+          <h2 class="text-xl font-bold">Settings</h2>
+        </div>
+        <button data-close="modal-settings" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="space-y-4">
+        <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Profile</p>
+          <label class="text-sm text-white/50 mb-1.5 block">Display Name</label>
+          <input id="settings-profile-name" class="field" placeholder="Your name" maxlength="40">
+        </div>
+
+        <p class="text-sm text-white/50 uppercase tracking-wider font-semibold">Integrations</p>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Telegram Bot Token</label><input id="settings-tg-token" class="field" placeholder="123456789:ABCdef..."></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Telegram Chat ID</label><input id="settings-tg-chat" class="field" placeholder="e.g. -1001234567890"></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Server IP / Webhook URL</label><input id="settings-webhook" class="field" placeholder="https://nlp.mynova.dev/webhook"><p class="text-[11px] text-white/35 mt-1.5">Used for backend NLP sync of parsed tasks.</p></div>
+        <div><label class="text-sm text-white/50 mb-1.5 block">Sync Key</label><input id="settings-sync-key" type="password" class="field" placeholder="Sync key"><p class="text-[11px] text-white/35 mt-1.5">Sync key (тот же, что NOVA_SYNC_KEY в Vercel)</p></div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Calendar</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+            <div>
+              <p class="text-sm font-medium">Dim recurring events</p>
+              <p class="text-xs text-white/40" style="margin-top:2px;">Ghost events appear faded and dashed</p>
+            </div>
+            <div id="settings-dim-recurring" class="toggle" style="flex:none;"></div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">✨ Day Planner</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs text-white/50 mb-1 block">Pause (min)</label>
+              <input id="settings-planner-pause" type="number" min="5" max="60" class="field" placeholder="15">
+            </div>
+            <div>
+              <label class="text-xs text-white/50 mb-1 block">Max work (hours)</label>
+              <input id="settings-planner-maxhours" type="number" min="1" max="16" class="field" placeholder="6">
+            </div>
+            <div>
+              <label class="text-xs text-white/50 mb-1 block">Buffer gap (min)</label>
+              <input id="settings-planner-gap" type="number" min="0" max="60" class="field" placeholder="10">
+            </div>
+          </div>
+        </div>
+
+        <!-- SPRINT / GOOGLE CALENDAR -->
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm text-white/50 uppercase tracking-wider font-semibold">Sprint / Google Calendar</p>
+            <span id="sprint-gcal-status" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-white/60">Disconnected</span>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label for="sprint-gcal-client-id" class="text-xs text-white/50 mb-1 block">Google OAuth Client ID</label>
+              <input id="sprint-gcal-client-id" type="text" class="field" placeholder="xxxx.apps.googleusercontent.com" style="width:100%; box-sizing:border-box; font-size:14px;">
+            </div>
+
+            <div>
+              <label for="sprint-gcal-cal-id" class="text-xs text-white/50 mb-1 block">Calendar ID</label>
+              <input id="sprint-gcal-cal-id" type="text" class="field" placeholder="primary" value="primary" style="width:100%; box-sizing:border-box; font-size:14px;">
+            </div>
+
+            <div class="flex gap-2 items-center pt-1">
+              <button type="button" id="btn-sprint-gcal-connect" class="flex-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs sm:text-sm font-semibold py-2.5 px-3 transition-colors flex items-center justify-center gap-2" style="min-height: 44px;">
+                <span>📅 Connect Google Calendar</span>
+              </button>
+            </div>
+
+            <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 text-[11px] font-mono text-white/60 leading-relaxed space-y-1">
+              <p>1. Google Cloud → APIs & Services → Enable Google Calendar API</p>
+              <p>2. Create OAuth Client ID (Web Application) with authorized origins:</p>
+              <p class="text-sky-400/90 break-all select-all">https://cernavation.vercel.app and http://localhost</p>
+              <p>3. Paste Client ID above and click Connect.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08);">
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Tags</p>
+          <div id="tags-manager" style="margin-bottom:10px;"></div>
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+            <input id="new-tag-name" class="field" placeholder="New tag name" style="flex:1;min-width:160px;">
+            <button id="btn-add-tag" class="glass-soft glass-hover rounded-xl px-4 text-sm font-medium">Add</button>
+          </div>
+          <div id="new-tag-color-pal" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;"></div>
+
+          <p class="text-sm text-white/50 uppercase tracking-wider font-semibold" style="margin-bottom:12px;">Data</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+            <button id="btn-export-data" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-medium flex-1 min-w-[100px]">💾 Export</button>
+            <button id="btn-import-data" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-medium flex-1 min-w-[100px]">📥 Import</button>
+            <input type="file" id="import-file" accept="application/json" hidden>
+            <button id="btn-load-demo" class="glass-soft glass-hover rounded-xl px-4 py-2.5 text-sm font-medium flex-1 min-w-[100px]">🎉 Load Demo</button>
+          </div>
+          <button id="btn-reset-data" class="w-full glass-soft glass-hover rounded-xl py-2.5 text-sm font-medium" style="color:#ff8f88;">🗑 Reset All Data</button>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button data-close="modal-settings" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Cancel</button>
+        <button id="btn-save-settings" data-action="save-settings" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ DAY PLANNER MODAL ============ -->
+  <div id="modal-day-planner" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-day-planner"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-xl relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-4 gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center flex-none" style="background:rgba(255,159,10,0.2);color:#FF9F0A;">
+            <span style="font-size:20px;">✨</span>
+          </div>
+          <div class="min-w-0">
+            <h2 class="text-xl font-bold truncate">Plan My Day</h2>
+            <p id="planner-modal-subtitle" class="text-xs text-white/50 truncate">Auto-schedule tasks into free slots</p>
+          </div>
+        </div>
+        <button data-close="modal-day-planner" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center flex-none">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- Priority order & shuffle bar -->
+      <div class="flex items-center justify-between gap-2 mb-4 p-2.5 rounded-2xl glass-soft flex-wrap">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-white/60">Priority:</span>
+          <span id="planner-shuffle-label" class="text-xs font-semibold text-accent">High in Morning</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-planner-shuffle" type="button" class="glass-hover rounded-xl px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style="background:rgba(255,255,255,0.08);color:#fff;">
+            <span>🔀</span> Shuffle
+          </button>
+          <button id="btn-planner-recalculate" type="button" class="glass-hover rounded-xl px-3 py-1.5 text-xs font-semibold" style="background:rgba(255,255,255,0.08);color:#fff;">
+            <span>🔄</span> Recalculate
+          </button>
+        </div>
+      </div>
+
+      <!-- Schedule list -->
+      <div class="space-y-2 mb-4">
+        <div class="flex items-center justify-between text-xs text-white/40 uppercase tracking-wider font-semibold px-1">
+          <span>Proposed Schedule</span>
+          <span id="planner-total-time">0h 0m</span>
+        </div>
+        <div id="planner-schedule-list" class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Unplaced tasks section -->
+      <div id="planner-unplaced-wrap" class="mb-4 hidden" style="background:rgba(255,59,48,0.08);border:1px solid rgba(255,59,48,0.2);border-radius:16px;padding:12px;">
+        <div class="flex items-center justify-between text-xs font-semibold text-red-400 mb-2">
+          <span>⚠️ Unplaced Tasks (<span id="planner-unplaced-count">0</span>)</span>
+        </div>
+        <div id="planner-unplaced-list" class="space-y-1.5 text-xs text-white/70">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Bottom footer buttons -->
+      <div class="flex gap-2.5 mt-5 flex-wrap">
+        <button id="btn-planner-discard" type="button" class="flex-1 glass-soft glass-hover rounded-xl py-3 text-sm font-medium" style="min-width:110px;">
+          Discard
+        </button>
+        <button id="btn-planner-accept-all" type="button" class="flex-1 accent-grad accent-glow glass-hover rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2 text-white" style="min-width:140px;">
+          <span>✓</span> Accept All
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VOICE MODAL ============ -->
+  <div id="modal-voice" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-voice"></div>
+    <div class="modal-card glass rounded-3xl p-4 md:p-6 w-full max-w-xl relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-xl font-bold">Nova Voice</h2>
+          <div id="voice-lang-chips" class="flex gap-1 bg-white/5 p-1 rounded-xl">
+            <button type="button" data-lang="ru-RU" class="px-2 py-0.5 rounded-lg text-xs font-semibold glass-soft active">RU</button>
+            <button type="button" data-lang="ro-RO" class="px-2 py-0.5 rounded-lg text-xs font-semibold text-white/40">RO</button>
+            <button type="button" data-lang="en-US" class="px-2 py-0.5 rounded-lg text-xs font-semibold text-white/40">EN</button>
+          </div>
+        </div>
+        <button data-close="modal-voice" aria-label="Close" class="w-9 h-9 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="flex flex-col items-center text-center my-3">
+        <button id="voiceMic" type="button" aria-label="Toggle voice recording" class="w-20 h-20 rounded-full accent-grad accent-glow flex items-center justify-center mb-3 cursor-pointer transition-transform hover:scale-105 active:scale-95">
+          <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <p class="text-sm"><span class="w-2 h-2 inline-block rounded-full bg-white/40 mr-1.5 align-middle" id="voiceDot"></span><span id="voiceStatus" class="text-white/60 align-middle">Ready</span></p>
+        <button id="btn-voice-stop" type="button" class="mt-2 text-xs text-white/50 hover:text-white/80 glass-soft px-3 py-1 rounded-lg transition-colors flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span> Stop recording
+        </button>
+      </div>
+      <div class="mt-3">
+        <label class="text-xs text-white/50 mb-1 block">Transcript (editable)</label>
+        <textarea id="voiceTranscript" rows="3" class="field resize-none text-sm w-full" placeholder="Говорите... например: завтра в 10 созвон по Memernity до 11:30, потом в 15 тренировка на час"></textarea>
+        <div id="voiceInterim" class="text-xs text-white/40 mt-1 italic hidden"></div>
+      </div>
+      <div class="mt-4">
+        <button id="btn-voice-parse" type="button" data-action="voice-parse" class="w-full accent-grad accent-glow rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2">
+          <span>⚡ Parse with Nova AI</span>
+        </button>
+        <p class="text-[11px] text-white/40 text-center mt-1.5">Текст отправляется на сервер только по нажатию Parse</p>
+      </div>
+      <!-- Draft Board (B1.4) -->
+      <div id="voice-draft-section" class="mt-6 pt-4 border-t border-white/10 hidden">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-white/70">Draft Board (<span id="voice-draft-count">0</span>)</h3>
+          <button id="btn-draft-add-all" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold accent-grad">Add All to Plan</button>
+        </div>
+        <div id="voice-draft-cards" class="space-y-3"></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============ GHOST EDIT CHOICE MODAL ============ -->
+  <div id="ghostEditChoiceModal" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="ghostEditChoiceModal"></div>
+    <div class="modal-card glass rounded-3xl p-5 w-full max-w-sm relative" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold">Edit recurring event</h3>
+        <button data-close="ghostEditChoiceModal" aria-label="Close" class="w-8 h-8 glass-soft glass-hover rounded-xl flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <button id="btn-ghost-edit-this" class="glass-soft glass-hover rounded-xl py-3 text-sm font-medium">Edit only this event</button>
+        <button id="btn-ghost-edit-following" class="glass-hover accent-grad rounded-xl py-3 text-sm font-semibold">Edit all following</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SPRINT LOAD TASKS MODAL ============ -->
+  <div id="modal-sprint-load" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-load"></div>
+    <div class="modal-card rounded-3xl p-4 sm:p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" style="background:#12151b; border:1px solid rgba(255,255,255,0.1); box-sizing:border-box;">
+      <div class="flex items-center justify-between mb-4 gap-3">
+        <h2 class="text-lg sm:text-xl font-bold font-mono text-white tracking-wider uppercase">Load Tasks</h2>
+        <button data-close="modal-sprint-load" aria-label="Close" class="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/70 flex-none" style="min-height: 48px; min-width: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-4">
+        <div>
+          <label for="sprint-load-textarea" class="text-xs uppercase tracking-wider text-white/60 font-semibold mb-1.5 block">Paste JSON</label>
+          <textarea id="sprint-load-textarea" placeholder='[&#10;  {"title": "Implement auth middleware", "tag": "Dev", "estMin": 5}&#10;]' class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white font-mono text-sm focus:outline-none focus:border-white/30" style="font-size:16px; min-height:140px; box-sizing:border-box; width:100%; min-width:0;"></textarea>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <input type="file" id="sprint-load-file" accept="application/json" class="hidden">
+          <label for="sprint-load-file" class="cursor-pointer rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 py-3 transition-colors flex-1" style="min-height: 48px;">
+            <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            <span>Choose file (JSON)</span>
+          </label>
+        </div>
+
+        <!-- Example format block -->
+        <div class="p-3 rounded-xl bg-black/50 border border-white/5 text-xs font-mono text-white/60 overflow-x-auto">
+          <span class="text-white/40 block mb-1 font-semibold uppercase text-[10px] tracking-wider">Example Schema:</span>
+          <pre class="text-white/80 leading-relaxed">[
+  {
+    "title": "Design SpaceX telemetry header",
+    "tag": "Design",
+    "estMin": 5,
+    "notes": "Include font-mono tabular-nums"
+  }
+]</pre>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="flex items-center gap-3 mt-2">
+          <button type="button" data-close="modal-sprint-load" class="flex-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm font-semibold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Cancel
+          </button>
+          <button type="button" id="btn-sprint-load-confirm" class="flex-1 rounded-xl bg-white hover:bg-white/90 text-black text-sm font-bold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Load
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SPRINT BLOCKER REASON MODAL ============ -->
+  <div id="modal-sprint-blocker" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-blocker"></div>
+    <div class="modal-card rounded-3xl p-4 sm:p-6 w-full max-w-sm relative" role="dialog" aria-modal="true" style="background:#12151b; border:1px solid rgba(255,255,255,0.1); box-sizing:border-box;">
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h2 class="text-base sm:text-lg font-bold font-mono text-white tracking-wider uppercase flex items-center gap-2">
+          <span>⛔</span>
+          <span>Blocker Reason</span>
+        </h2>
+        <button data-close="modal-sprint-blocker" aria-label="Close" class="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/70 flex-none" style="min-height: 48px; min-width: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <div>
+          <textarea id="sprint-blocker-reason" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-red-500/40" style="font-size:16px; min-height:80px; box-sizing:border-box; width:100%; min-width:0;" placeholder="What's blocking this task?..."></textarea>
+        </div>
+
+        <div>
+          <span class="text-[10px] uppercase font-mono tracking-wider text-white/40 block mb-1.5">Quick reasons:</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Waiting for someone">Waiting for someone</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Need info">Need info</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Tool broken">Tool broken</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Not clear">Not clear</button>
+            <button type="button" class="sprint-blocker-chip px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs transition-colors" data-reason="Tired">Tired</button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 mt-2">
+          <button type="button" data-close="modal-sprint-blocker" class="flex-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm font-semibold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Cancel
+          </button>
+          <button type="button" id="btn-sprint-blocker-confirm" class="flex-1 rounded-xl bg-rose-600 hover:bg-rose-500 border border-rose-500 text-white text-sm font-bold flex items-center justify-center transition-colors" style="min-height: 48px;">
+            Freeze task
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SPRINT QUEUE DRAWER MODAL ============ -->
+  <div id="modal-sprint-queue" class="modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="modal-backdrop absolute inset-0" data-close="modal-sprint-queue"></div>
+    <div class="modal-card rounded-3xl p-4 sm:p-6 w-full max-w-lg relative max-h-[90vh] flex flex-col" role="dialog" aria-modal="true" style="background:#12151b; border:1px solid rgba(255,255,255,0.1); box-sizing:border-box;">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-4 gap-3 border-b border-white/10 pb-3 flex-none">
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg sm:text-xl font-bold font-mono text-white tracking-wider uppercase">Sprint Queue</h2>
+          <span id="sprint-queue-drawer-badge" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-white/10 text-white/80">0</span>
+        </div>
+        <button data-close="modal-sprint-queue" aria-label="Close" class="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/70 flex-none" style="min-height: 48px; min-width: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- Task list container (scrollable) -->
+      <div id="sprint-queue-list" class="flex-1 overflow-y-auto space-y-2 py-2 pr-1" style="min-height: 180px; max-height: 50vh;">
+        <!-- Rendered by SprintUI.renderQueue() -->
+      </div>
+
+      <!-- DANGER ZONE -->
+      <div class="mt-4 pt-3 border-t border-red-500/20 flex-none flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] uppercase tracking-wider font-mono font-bold text-red-400/80">Danger Zone</span>
+          <span class="text-[10px] text-white/40 font-mono">Irreversible</span>
+        </div>
+        <button type="button" id="btn-sprint-flush-queue" class="w-full rounded-xl bg-[#FF3B30]/15 hover:bg-[#FF3B30]/25 border border-[#FF3B30]/40 text-[#FF453A] text-sm font-bold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          <span>Flush queue</span>
+        </button>
+        <button type="button" id="btn-sprint-restore-queue" class="w-full rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 40px;">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <span>Restore last flushed queue</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SPRINT FULLSCREEN OVERLAY ============ -->
+  <div id="sprint-overlay" class="hidden fixed inset-0 flex-col items-center justify-between text-white overflow-y-auto select-none" style="position:fixed;inset:0;z-index:9990;background:#05070b;padding-top:calc(max(env(safe-area-inset-top,0px),16px)+10px);padding-bottom:calc(max(env(safe-area-inset-bottom,0px),16px)+10px);padding-left:max(env(safe-area-inset-left,0px),16px);padding-right:max(env(safe-area-inset-right,0px),16px);box-sizing:border-box;">
+    <!-- COMBAT SCREEN (running / paused / blocker) -->
+    <div id="sprint-overlay-combat" class="w-full flex-1 flex flex-col items-center justify-between">
+      <!-- Telemetry bar -->
+      <div id="sprint-telemetry" class="w-full text-center text-xs sm:text-sm tracking-wider text-white/70 py-1 flex-none" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+        SESSION T-02:00:00 | DONE 0 | FROZEN 0 | 💎 0
+      </div>
+
+      <!-- Status badge -->
+      <div class="my-1 flex-none">
+        <span id="sprint-status-badge" class="px-3 py-1 rounded text-xs font-mono font-bold tracking-widest uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+          GO
+        </span>
+      </div>
+
+      <!-- Giant Timer with SVG Ring -->
+      <div class="relative w-full max-w-[340px] aspect-square flex items-center justify-center my-auto flex-none">
+        <svg class="w-full h-full" viewBox="0 0 340 340">
+          <circle cx="170" cy="170" r="150" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="12"/>
+          <circle id="sprint-ring" cx="170" cy="170" r="150" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-dasharray="942.48" stroke-dashoffset="0" transform="rotate(-90 170 170)"/>
+        </svg>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span id="sprint-time" class="font-bold tabular-nums tracking-tighter text-white" style="font-size: clamp(72px, 24vw, 200px); line-height: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">05:00</span>
+        </div>
+      </div>
+
+      <!-- Current Single Task -->
+      <div class="w-full max-w-lg text-center flex flex-col items-center gap-1.5 px-4 my-2 flex-none">
+        <h1 id="sprint-task-title" class="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight break-words max-w-full">No active task</h1>
+        <span id="sprint-task-tag" class="px-3 py-0.5 rounded-full text-xs font-mono font-semibold bg-white/10 text-white/80 border border-white/10">Tag</span>
+      </div>
+
+      <!-- Combat Controls Row -->
+      <div class="w-full max-w-lg grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-2 flex-none" style="box-sizing: border-box;">
+        <button id="btn-sprint-done" type="button" class="col-span-2 sm:col-span-1 rounded-xl bg-[#30D158] hover:bg-[#28bd4e] text-black font-bold text-base flex items-center justify-center gap-1.5 transition-colors" style="min-height: 48px;">
+          ✓ DONE
+        </button>
+        <button id="btn-sprint-blocker" type="button" class="rounded-xl bg-[#FF3B30]/15 hover:bg-[#FF3B30]/25 border border-[#FF3B30]/40 text-[#FF453A] font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 transition-colors" style="min-height: 48px;">
+          ⛔ BLOCKER
+        </button>
+        <button id="btn-sprint-pause" type="button" class="rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-medium text-xs sm:text-sm flex items-center justify-center gap-1 transition-colors" style="min-height: 48px;">
+          ⏸ PAUSE −1💎
+        </button>
+        <button id="btn-sprint-extend" type="button" class="rounded-xl bg-white/5 border border-white/10 text-white/40 font-medium text-xs flex flex-col items-center justify-center px-1 cursor-not-allowed opacity-40 transition-colors" style="min-height: 48px;" disabled title="unlocks at 01:00">
+          <span class="font-semibold">+5 MIN</span>
+          <span class="text-[9px] text-white/40 leading-none">unlocks at 01:00</span>
+        </button>
+      </div>
+
+      <!-- Abort Session Footer -->
+      <div class="my-1 flex-none">
+        <button id="btn-sprint-abort" type="button" class="text-xs text-red-500/70 hover:text-red-400 font-mono tracking-wider uppercase py-2 px-4 transition-colors" style="min-height: 48px;">
+          Abort session
+        </button>
+      </div>
+    </div>
+
+    <!-- OVERFLOW SCREEN (queue empty before session end) -->
+    <div id="sprint-overlay-overflow" class="w-full flex-1 hidden flex-col items-center justify-center p-4 sm:p-6 max-w-md mx-auto text-center gap-6">
+      <div class="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-xl mx-auto font-mono font-bold">⚡</div>
+      <div>
+        <h2 class="text-xl sm:text-2xl font-bold font-mono tracking-wider text-white uppercase">OVERFLOW</h2>
+        <p class="text-xs sm:text-sm text-white/60 mt-1">Queue is empty, but session time remains.</p>
+      </div>
+      <div class="w-full flex flex-col gap-3">
+        <button id="btn-sprint-overflow-paste" type="button" class="w-full rounded-xl bg-white hover:bg-white/90 text-black text-sm font-bold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+          📥 Paste new JSON
+        </button>
+        <button id="btn-sprint-overflow-pull" type="button" class="w-full rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-sm font-semibold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+          ⚡ Pull open tasks from Nova
+        </button>
+        <button id="btn-sprint-overflow-end" type="button" class="w-full rounded-xl bg-[#FF3B30]/15 hover:bg-[#FF3B30]/25 border border-[#FF3B30]/40 text-[#FF453A] text-sm font-bold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+          ⏹ End session
+        </button>
+      </div>
+    </div>
+
+    <!-- FINISHED SCREEN -->
+    <div id="sprint-overlay-finished" class="w-full flex-1 hidden flex-col items-center justify-center p-4 sm:p-6 max-w-md mx-auto text-center gap-6">
+      <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xl mx-auto font-mono font-bold">✓</div>
+      <div>
+        <h2 class="text-xl sm:text-2xl font-bold font-mono tracking-wider text-white uppercase">FINISHED</h2>
+        <p class="text-xs sm:text-sm text-white/60 mt-1">Sprint session summary</p>
+      </div>
+      <div id="sprint-finished-summary" class="w-full grid grid-cols-2 gap-3 text-left">
+        <div class="p-3 rounded-xl bg-black/40 border border-white/5">
+          <span class="text-[10px] uppercase font-mono text-white/40 block">Done</span>
+          <span id="sprint-stat-done" class="text-xl font-bold font-mono text-emerald-400">0</span>
+        </div>
+        <div class="p-3 rounded-xl bg-black/40 border border-white/5">
+          <span class="text-[10px] uppercase font-mono text-white/40 block">Frozen</span>
+          <span id="sprint-stat-frozen" class="text-xl font-bold font-mono text-sky-400">0</span>
+        </div>
+        <div class="p-3 rounded-xl bg-black/40 border border-white/5">
+          <span class="text-[10px] uppercase font-mono text-white/40 block">Paid Pauses</span>
+          <span id="sprint-stat-pauses" class="text-xl font-bold font-mono text-white">0</span>
+        </div>
+        <div class="p-3 rounded-xl bg-black/40 border border-white/5">
+          <span class="text-[10px] uppercase font-mono text-white/40 block">Crystals 💎</span>
+          <span id="sprint-stat-crystals" class="text-sm font-bold font-mono text-amber-400">+0 / −0</span>
+        </div>
+        <div class="col-span-2 p-3 rounded-xl bg-black/40 border border-white/5">
+          <span class="text-[10px] uppercase font-mono text-white/40 block">Duration</span>
+          <span id="sprint-stat-duration" class="text-sm font-bold font-mono text-white">0 min</span>
+        </div>
+      </div>
+      <div class="w-full flex gap-3">
+        <button id="btn-sprint-finished-copy" type="button" class="flex-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 px-3 transition-colors" style="min-height: 48px;">
+          <svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+          <span>Copy summary</span>
+        </button>
+        <button id="btn-sprint-finished-close" type="button" class="flex-1 rounded-xl bg-white hover:bg-white/90 text-black text-sm font-bold flex items-center justify-center gap-2 px-4 transition-colors" style="min-height: 48px;">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TOAST / ALARM CONTAINERS ============ -->
+  <div id="toast-stack" style="position:fixed;top:20px;right:20px;z-index:20000;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:340px;"></div>
+  <div id="alarm-stack" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:20000;display:flex;flex-direction:column;gap:8px;"></div>
+  <div id="done-flash" style="position:fixed;inset:0;background:radial-gradient(circle at center,rgba(255,59,48,.25),transparent 60%);opacity:0;pointer-events:none;z-index:19999;transition:opacity .3s;"></div>
+
+  <!-- ============ SCRIPT ============ -->
+  <script src="app.js"></script>
+</body>
+</html>

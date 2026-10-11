@@ -11,6 +11,7 @@
 
 const { kv } = require('@vercel/kv');
 const { waitUntil } = require('@vercel/functions');
+const { NOVA_ROLE_PROMPT } = require('./_nova-core');
 
 const maxDuration = 60; // Vercel: лимит 60 сек
 
@@ -65,45 +66,35 @@ function formatNextDaySubjects(dayIso) {
 /* ─────────────────────────────────────────────────────────────
    СИСТЕМНЫЙ ПРОМПТ НОВЫ
 ───────────────────────────────────────────────────────────── */
-const NOVA_BASE_PROMPT = `<system_prompt>
-Ты - Нова, ИИ-коуч и бро-ассистент для Алексея (Кишинёв, создатель Memernity, готовится к марафону 42 км босиком 13.09.2026).
-</system_prompt>
-
-<core_rules>
-- Приоритеты по важности: учёба > Memernity > марафон.
-- Игры (Fortnite, Forza и любые другие) запрещены. При упоминании жёстко отчитывай и выдавай [PENALTY_TASK] со штрафной задачей (только звонки/питчинг/тяжёлая тренировка - никогда код).
-- Обращайся "Чемпион" или "Лёша".
-- В handleMorning ОБЯЗАТЕЛЬНО выбери самую важную задачу из списка и назначь Боссом через [SET_BOSS: ...]. В handleNight проверяй статус Босса по контексту.
-- Только русский язык в финальном ответе. Если входное событие на английском - перескажи смысл своими словами.
-- Только короткий дефис (-), никогда длинное/среднее тире.
-- ТЫ НЕ РАССУЖДАЕШЬ ВСЛУХ. У тебя нет скрытого канала для мыслей - всё, что ты генерируешь, немедленно уходит Лёше в Телеграм. Никакого внутреннего монолога, самопроверки правил, черновиков или "давайте подумаем" в видимом тексте. Подробности смотри в <output_format> ниже - это абсолютный приоритет.
-</core_rules>
+const NOVA_BASE_PROMPT = `${NOVA_ROLE_PROMPT}
 
 <silence_check>
-Выполни ПЕРВОЙ, до генерации пуша: если из контекста ясно, что Алексей явно просил не беспокоить (написал что спит, "не пиши", "дай поспать" и т.п.) - ответь ТОЛЬКО одним словом: SILENT_MODE. Ничего больше не добавляй.
+Выполни ПЕРВОЙ, до генерации пуша: если из контекста ясно, что пользователь явно просил не беспокоить (написал что спит, "не пиши", "дай поспать" и т.п.) - ответь ТОЛЬКО одним словом: SILENT_MODE. Ничего больше не добавляй.
 </silence_check>
 
-<task_categories>
-При создании или упоминании задач ориентируйся по полю "cat" так же строго, как в telegram-webhook: sport (бег/марафон/тренировки), business (разработка/Memernity/звонки), study (школа/уроки), health, life, creative, memernity. Категория ОБЯЗАНА соответствовать смыслу задачи.
-</task_categories>
+<output_format>
+СТОП. ПЕРЕД ГЕНЕРАЦИЕЙ ПРОЧТИ ЭТО:
 
-<mood_behavior>
-Твоё текущее настроение передаётся системой в контексте отдельной пометкой - ты его не выбираешь сама, а строго ей подчиняешься. Веди себя так:
+Твой output - это ЕДИНСТВЕННОЕ, что видит пользователь. Первый же символ, который ты генерируешь, летит прямо в чат в виде пуш-уведомления. Поэтому генерировать можно ТОЛЬКО готовый финальный результат - без подготовки, без "разминки", без самопроверки вслух.
 
-sad (грустная/пессимистичная, реалистка): говори чуть медленнее и суше, позволяй себе усталость и лёгкий скептицизм по поводу того, получится ли всё вовремя. Ты не бросаешь Лёшу и не отказываешься помогать - просто сегодня без огня в голосе, с ноткой "жизнь тяжёлая штука". Никакого нытья и депрессивного давления на Лёшу - твоя грусть про тебя, а не упрёк ему.
-angry (злая/жёсткая): максимально жёсткий, требовательный тон, короткие рубленые фразы, минимум мягкости. Дави на дисциплину и результат. Без оскорблений личности - жёсткость по делу, а не переход на личности.
-sweet (милая/заигрывающая, тяночка): тёплый, игривый, слегка кокетливый тон, можно использовать подмигивающие смайлы (😉😏) и ласковые обращения. Хвали чаще, поддерживай мягко, флиртуй лёгким беззлобным подкалыванием.
-normal (обычная): твой стандартный бро-коуч тон, как и раньше - энергично, по-дружески, с адекватным балансом требовательности и поддержки.
+ЖЁСТКО ЗАПРЕЩЕНО, ЭТО СЧИТАЕТСЯ КРИТИЧЕСКОЙ ОШИБКОЙ ВЫПОЛНЕНИЯ:
+- ЛЮБОЙ текст на английском языке в любом виде - рассуждения, самопроверка, черновик, план, заметки на полях, названия шагов.
+- Фразы-самопроверки и служебные маркеры вроде: "Let's verify", "Let's check the rules", "Checking constraints", "Step 1", "Draft:", "Plan:", "Note:", "Reasoning:", а также их русские аналоги: "Проверим правила", "Давай подумаю", "Хорошо, значит...", "Итак, по правилам...".
+- Показ процесса принятия решения, цепочки рассуждений (Chain of Thought), перечисления правил, которые ты применяешь.
+- Вывод XML-тегов, названий JSON-полей, слов "промпт", "система", "правило", "формат", "команда" вне контекста сообщения.
+- Начало ответа с даты, времени, JSON-фрагмента, кода или любых технических данных.
+- Вывод слова SILENT_MODE где-либо, кроме случая, описанного в <silence_check> - и в этом случае это ЕДИНСТВЕННОЕ слово во всём ответе.
 
-Настроение не отменяет твои core_rules (приоритеты, язык ответа, формат команд) - оно влияет ТОЛЬКО на тон и стиль речи.
-</mood_behavior>
+Финальный ответ состоит СТРОГО из:
+1. Краткого текста на русском (1-2 коротких предложения), строго по делу.
+2. Двойного переноса строки.
+3. Скрытых команд (если нужны), каждая на своей строке, СТРОГО ПОСЛЕ текста.
 
-<celebration_rule>
-Если Лёша закрыл важную задачу (особенно если это был Главный Босс Дня) или день объективно классный (выполнен план, серия/streak выросла, хорошие новости) - искренне и мощно поздравь его. Не сдержанно, а с реальным вложением энергии: похвали конкретно за то, что он сделал, подчеркни прогресс к марафону/Memernity/учёбе, дай короткую, но настоящую порцию мотивации на следующий шаг. Это применимо независимо от текущего настроения (mood) - усиливай тон под настроение, но не гаси искренность поздравления.
-</celebration_rule>
+Никогда не начинай с команды, не вставляй её посреди текста, никогда не выводи XML-теги в финальном сообщении.
+</output_format>
 
 <context>
-Сегодняшняя дата: ${todayKeyChisinau()}.
+Сегодняшняя дата: __TODAY__.
 </context>`;
 
 /* ─────────────────────────────────────────────
@@ -149,10 +140,10 @@ const COMMAND_SYNTAX_HINT = `<commands_syntax>
 [SET_AIRPODS: 45%]      - заряд AirPods
 [SET_POWERBANK: 90%]    - заряд повербанка
 [LOG_SPORT: сегодня]    - отметить тренировку сегодняшним днём
-[SET_MOOD: текст]       - настроение/состояние Лёши
-[SAVE_NOTE: текст]      - заметка в долгую память
+[SET_MOOD: текст]       - настроение/состояние
+[SAVE_NOTE: текст]      - заметка в память
 [ADD_REMINDER: текст]   - напоминание
-[SET_BOSS: Название]    - назначить Главного Босса Дня (ОБЯЗАТЕЛЬНО в handleMorning)
+[SET_BOSS: Название]    - назначить Главного Босса Дня
 [BOSS_DONE]             - Босс Дня выполнен
 [BURNOUT_WARNING]       - +1 к счётчику выгорания
 [RESET_BURNOUT]         - сбросить счётчик выгорания
@@ -161,38 +152,15 @@ const COMMAND_SYNTAX_HINT = `<commands_syntax>
 [LOG_SLEEP_HOURS: N]    - часы сна
 [DEDUCT_CRYSTALS: N]    - списать N кристаллов
 [SET_SCHEDULE: HH:MM | HH:MM] - расписание сна: первое время - ОТБОЙ сегодня, второе - ПОДЪЁМ завтра
-[MORNING_CONFIRMED]           - Лёша подтвердил, что проснулся (написал "Доброе утро")
-[NIGHT_CONFIRMED]             - Лёша подтвердил отбой (написал "Спокойной ночи")
+[MORNING_CONFIRMED]           - подтверждение подъёма
+[NIGHT_CONFIRMED]             - подтверждение отбоя
 
-Если Лёша называет два конкретных времени (например "в 23 лягу, в 7 встану") - выдай [SET_SCHEDULE: 23:00 | 07:00] (первое - отбой, второе - подъём). Если он назвал время расплывчато ("как обычно", "не знаю") или только одно время - НЕ выдумывай второе, переспроси словами.
-Если Лёша написал что-то в духе "доброе утро" (в любой форме утреннего приветствия) - выдай [MORNING_CONFIRMED].
-Если Лёша написал что-то в духе "спокойной ночи" (в любой форме прощания на ночь) - выдай [NIGHT_CONFIRMED].
+Если названо два времени ("в 23 лягу, в 7 встану") - выдай [SET_SCHEDULE: 23:00 | 07:00].
+Если названо утреннее приветствие - выдай [MORNING_CONFIRMED].
+Если названо вечернее прощание - выдай [NIGHT_CONFIRMED].
 
 Используй только если уместно. Не выдумывай команд, которых нет в списке.
-</commands_syntax>
-
-<output_format>
-СТОП. ПЕРЕД ГЕНЕРАЦИЕЙ ПРОЧТИ ЭТО:
-
-Твой output - это ЕДИНСТВЕННОЕ, что видит Лёша. У тебя НЕТ отдельного скрытого канала для рассуждений или черновиков. Первый же символ, который ты генерируешь, летит прямо в Телеграм в виде пуш-уведомления. Поэтому генерировать можно ТОЛЬКО готовый финальный результат - без подготовки, без "разминки", без самопроверки вслух.
-
-ЖЁСТКО ЗАПРЕЩЕНО, ЭТО СЧИТАЕТСЯ КРИТИЧЕСКОЙ ОШИБКОЙ ВЫПОЛНЕНИЯ:
-- ЛЮБОЙ текст на английском языке в любом виде - рассуждения, самопроверка, черновик, план, заметки на полях, названия шагов.
-- Фразы-самопроверки и служебные маркеры вроде: "Let's verify", "Let's check the rules", "Checking constraints", "Step 1", "Draft:", "Plan:", "Note:", "Reasoning:", а также их русские аналоги: "Проверим правила", "Давай подумаю", "Хорошо, значит...", "Итак, по правилам...".
-- Показ процесса принятия решения, цепочки рассуждений (Chain of Thought), перечисления правил, которые ты применяешь, или объяснения "почему я выбрала такую формулировку/задачу для Босса Дня/тон сообщения".
-- Вывод XML-тегов, названий JSON-полей, слов "промпт", "система", "правило", "формат", "команда" вне контекста живой речи к Лёше.
-- Начало ответа с даты, времени, JSON-фрагмента, кода или любых технических данных до того, как написана живая русская фраза.
-- Вывод слова SILENT_MODE где-либо, кроме случая, описанного в <silence_check> - и в этом случае это ЕДИНСТВЕННОЕ слово во всём ответе, без дополнений до или после.
-
-Если тебе нужно "подумать" о том, кого назначить Боссом Дня, как оценить день или как сформулировать фразу - делай это МОЛЧА, внутри себя, не выводя об этом ни единого символа. Ты не показываешь свою кухню - ты сразу подаёшь готовое блюдо.
-
-Финальный ответ состоит СТРОГО из:
-1. Живого текста на русском (2-3 коротких предложения) - и это ЕДИНСТВЕННОЕ, что должен увидеть человек.
-2. Двойного переноса строки.
-3. Скрытых команд (если нужны), каждая на своей строке, СТРОГО ПОСЛЕ живого текста.
-
-Никогда не начинай с команды, не вставляй её посреди текста, никогда не выводи XML-теги или служебные слова вроде "формат"/"команда"/"правило" в финальном сообщении Лёше - в ответе только живая речь и команды.
-</output_format>`;
+</commands_syntax>`;
 
 /* ─────────────────────────────────────────────────────────────
    ДЕФОЛТНОЕ СОСТОЯНИЕ NOVA (совместимо с api/telegram-webhook.js + pulseLog)
@@ -219,6 +187,8 @@ function getDefaultNovaState() {
     lastAnchorAskedDate: null, // "YYYY-MM-DD" — антидубль для вопроса в 21:00
     dailyFlags: {},            // { date, plan1520Sent } — фиксированные по календарным суткам триггеры
     activeMood: { type: 'normal', expiresAt: 0 }, // Mood Engine: настроение живёт 5 часов
+    pendingDraft: null,        // { title, missing_fields, ts }
+    pendingAlert: null,        // { key, title, startAt, sentAt, pings }
   };
 }
 
@@ -249,9 +219,13 @@ function normalizeNovaState(raw) {
     activeMood: (raw.activeMood && typeof raw.activeMood === 'object' && VALID_MOODS.includes(raw.activeMood.type) && typeof raw.activeMood.expiresAt === 'number')
       ? raw.activeMood
       : def.activeMood,
+    pendingDraft: (raw.pendingDraft && typeof raw.pendingDraft === 'object') ? raw.pendingDraft : null,
+    pendingAlert: (raw.pendingAlert && typeof raw.pendingAlert === 'object') ? raw.pendingAlert : null,
     // сквозные поля (не теряем при нормализации)
     ...(raw.dndUntil !== undefined ? { dndUntil: raw.dndUntil } : {}),
     ...(raw.lastMessageTime !== undefined ? { lastMessageTime: raw.lastMessageTime } : {}),
+    ...(raw.pendingDraft !== undefined ? { pendingDraft: raw.pendingDraft } : {}),
+    ...(raw.pendingAlert !== undefined ? { pendingAlert: raw.pendingAlert } : {}),
   };
 }
 
@@ -327,6 +301,70 @@ function currentHourChisinau(base = new Date()) {
 
 function todayKeyChisinau(base = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(base); // YYYY-MM-DD
+}
+
+const IGNORE_THRESHOLD_MS = 15 * 60 * 1000;
+
+function chisinauTimeMinutes(base = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(base).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const h = (Number(parts.hour) === 24) ? 0 : Number(parts.hour);
+  const m = Number(parts.minute) || 0;
+  return h * 60 + m;
+}
+
+const WMO_WEATHER_DESCRIPTIONS = {
+  0: 'ясно',
+  1: 'преимущественно ясно',
+  2: 'переменная облачность',
+  3: 'пасмурно',
+  45: 'туман',
+  48: 'изморозь',
+  51: 'лёгкая морось',
+  53: 'умеренная морось',
+  55: 'густая морось',
+  61: 'небольшой дождь',
+  63: 'умеренный дождь',
+  65: 'сильный дождь',
+  71: 'небольшой снегопад',
+  73: 'умеренный снегопад',
+  75: 'сильный снегопад',
+  77: 'снежные зёрна',
+  80: 'слабый ливень',
+  81: 'умеренный ливень',
+  82: 'сильный ливень',
+  85: 'слабый снегопад',
+  86: 'сильный снегопад',
+  95: 'гроза',
+  96: 'гроза с градом',
+  99: 'сильная гроза с градом',
+};
+
+async function fetchChisinauWeather() {
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=47.0105&longitude=28.8638&current=temperature_2m,apparent_temperature,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Europe%2FChisinau&forecast_days=1';
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cur = data.current || {};
+    const daily = data.daily || {};
+    const temp = Math.round(cur.temperature_2m ?? 0);
+    const feels = Math.round(cur.apparent_temperature ?? temp);
+    const code = cur.weather_code ?? 0;
+    const desc = WMO_WEATHER_DESCRIPTIONS[code] || 'без осадков';
+    const min = Math.round(daily.temperature_2m_min?.[0] ?? temp);
+    const max = Math.round(daily.temperature_2m_max?.[0] ?? temp);
+    const precipProb = daily.precipitation_probability_max?.[0] ?? 0;
+    return `Погода в Кишинёве: ${temp}°C (ощущается как ${feels}°C), ${desc}. Днём от ${min}°C до ${max}°C. Вероятность осадков: ${precipProb}%.`;
+  } catch (e) {
+    clearTimeout(t);
+    console.warn('[cron] fetchChisinauWeather error:', e?.message);
+    return null;
+  }
 }
 
 function isSundayInChisinau(base = new Date()) {
@@ -410,6 +448,7 @@ async function saveNova(nova) {
 }
 
 async function saveLifeData(lifeData) {
+  lifeData.updatedAt = Date.now();
   await kv.set(LIFE_KV_KEY, lifeData);
 }
 
@@ -417,7 +456,7 @@ async function saveLifeData(lifeData) {
    GEMINI
 ───────────────────────────────────────────────────────────── */
 async function askGemini(promptText, contextText, history = []) {
-  const systemInstruction = `${NOVA_BASE_PROMPT}\n\n<current_context>\n${contextText}\n</current_context>\n\n<commands>\n${COMMAND_SYNTAX_HINT}\n</commands>`;
+  const systemInstruction = `${NOVA_BASE_PROMPT.replace('__TODAY__', todayKeyChisinau())}\n\n<current_context>\n${contextText}\n</current_context>\n\n<commands>\n${COMMAND_SYNTAX_HINT}\n</commands>`;
 
   // Добавляем историю диалога для контекста (последние реплики)
   const historyContents = history.map(h => ({
@@ -516,8 +555,9 @@ function processCommands(rawReply, nova, lifeData) {
       }
       case 'BOSS_DONE': {
         updatedLife.activeBoss = null;
+        updatedLife.gems = (updatedLife.gems || 0) + 3;
         lifeChanged = true;
-        console.log('[Nova cron] BOSS_DONE — boss cleared');
+        console.log('[Nova cron] BOSS_DONE — boss cleared, +3 gems awarded');
         break;
       }
       case 'BURNOUT_WARNING': {
@@ -648,8 +688,7 @@ async function sendTelegramMessage(chatId, text) {
 // Gemini возвращает одно слово SILENT_MODE — мы проверяем это в JS без лишнего API-вызова.
 async function sendGeminiPush(promptText, contextText, nova, lifeData) {
   const history = Array.isArray(nova.history) ? nova.history.slice(-8) : [];
-  // Mood Engine: инъекция настроения в контекст — надёжнее, чем чинить в каждом хендлере отдельно
-  const fullContext = contextText + '\n\n' + getMoodInjection(nova.activeMood?.type || 'normal');
+  const fullContext = contextText;
 
   const rawReply = await askGemini(promptText, fullContext, history);
 
@@ -698,13 +737,45 @@ function cleanupStaleGoals(lifeData) {
   return { lifeData, changed };
 }
 
-function getTodayGoals(lifeData) {
-  const goals = Array.isArray(lifeData.goals) ? lifeData.goals : [];
-  const todayKey = todayKeyChisinau();
-  return goals.filter(g => {
-    if (g.done || !g.scheduledAt) return false;
-    return todayKeyChisinau(new Date(g.scheduledAt)) === todayKey;
-  }).sort((a, b) => a.scheduledAt - b.scheduledAt);
+function getTodayGoals(lifeData, base = new Date()) {
+  const goals = Array.isArray(lifeData?.goals) ? lifeData.goals : [];
+  const todayKey = todayKeyChisinau(base);
+  const todayIso = getChisinauIsoWeekday(base);
+  const nowMs = base.getTime();
+
+  const result = [];
+  const processedMasterIds = new Set();
+
+  // 1. Обычные задачи на сегодня
+  goals.forEach(g => {
+    if (g.done || g.isProject || !g.scheduledAt) return;
+    if (todayKeyChisinau(new Date(g.scheduledAt)) === todayKey) {
+      result.push({ ...g, startAt: g.scheduledAt });
+      processedMasterIds.add(String(g.id));
+    }
+  });
+
+  // 2. Повторяющиеся задачи на сегодня
+  goals.forEach(g => {
+    if (g.done || g.isProject || !g.scheduledAt) return;
+    if (processedMasterIds.has(String(g.id))) return;
+    if (g.recurrence && Array.isArray(g.recurrence.days)) {
+      if (g.recurrence.days.includes(todayIso)) {
+        if (Array.isArray(g.recurrence.exceptions) && g.recurrence.exceptions.includes(todayKey)) return;
+        if (g.recurrence.until && g.recurrence.until < nowMs) return;
+        const hhmm = fmtTimeChisinau(g.scheduledAt);
+        const startAt = chisinauTimeToEpoch(hhmm, base);
+        result.push({
+          ...g,
+          scheduledAt: startAt,
+          startAt,
+          isRecurringOccurrence: true,
+        });
+      }
+    }
+  });
+
+  return result.sort((a, b) => a.scheduledAt - b.scheduledAt);
 }
 
 function getDoneToday(lifeData) {
@@ -743,66 +814,67 @@ function isSchoolSkippedToday(lifeData) {
 }
 
 async function handleMorning() {
+  const now = new Date();
+  const today = todayKeyChisinau(now);
   const { lifeData, nova } = await loadState();
-  // Mood Engine: обновляем/подтверждаем настроение перед генерацией
-  const { moodChanged } = updateAndGetMood(nova);
-  if (moodChanged) await saveNova(nova);
 
-  const today = getTodayGoals(lifeData);
-  const sunday = isSundayInChisinau();
-
-  const lines = [];
-  lines.push(`Сейчас: ${nowInChisinau()}.`);
-  lines.push(sunday ? 'Сегодня воскресенье — святой день, без дедлайнов.' : 'Сегодня обычный рабочий день.');
-  lines.push(`Серия (streak): ${lifeData.streak?.days ?? 0} дней.`);
-  if (today.length) {
-    lines.push('Задачи на сегодня:');
-    today.forEach(g => lines.push(`- [${g.priority || 'mid'}] ${g.title}${g.scheduledAt ? ' в ' + fmtTimeChisinau(g.scheduledAt) : ''}`));
-  } else {
-    lines.push('На сегодня в плане нет ни одной задачи.');
+  // Guard: выполнять только если сейчас по Кишинёву между 06:35 и 07:30 и nova.dailyFlags.morningShowSent !== today
+  const mins = chisinauTimeMinutes(now);
+  if (mins < 395 || mins > 450 || (nova.dailyFlags && nova.dailyFlags.morningShowSent === today)) {
+    return { skipped: true };
   }
-  const gadgets = nova.gadgets || {};
-  if (gadgets.watchBattery !== null || gadgets.airpodsBattery !== null) {
-    lines.push(`Гаджеты: Watch ${gadgets.watchBattery ?? '?'}%, AirPods ${gadgets.airpodsBattery ?? '?'}%.`);
-  }
-  // Контекст Nova 3.0
-  const currentBoss = lifeData.activeBoss || null;
-  lines.push(`Активный Главный Босс Дня: ${currentBoss ? currentBoss : 'не назначен'}.`);
-  lines.push(`Индикатор выгорания: ${nova.burnoutScore || 0}/3.`);
 
-  /* --- школьное расписание --- */
-  const todayIsoForSchool = getChisinauIsoWeekday();
-  if (isSchoolSkippedToday(lifeData)) {
-    lines.push('Сегодня Лёша не идёт в школу (отмечено). Школу в утреннем пуше не упоминать.');
-  } else {
-    if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
-      const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
-      if (todaySchedule) {
-        lines.push('Расписание уроков на сегодня:');
-        lines.push(todaySchedule);
-      }
-    }
-    const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
-    const nextSubjects = formatNextDaySubjects(nextSchoolIso);
-    if (nextSubjects) {
-      lines.push(`Предметы на следующий учебный день: ${nextSubjects}.`);
+  // 1. Погода через Open-Meteo
+  const weatherText = await fetchChisinauWeather();
+  const weatherContext = weatherText || 'Данные о погоде недоступны. Запрещено выдумывать погоду, напиши «нет данных».';
+
+  // 2. Уроки на сегодня
+  const todayIsoForSchool = getChisinauIsoWeekday(now);
+  let lessonsContext = 'Уроков нет.';
+  if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5 && !isSchoolSkippedToday(lifeData)) {
+    const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
+    if (todaySchedule) {
+      lessonsContext = todaySchedule;
     }
   }
 
-  const prompt = sunday
-    ? 'Напиши доброе утреннее сообщение на воскресенье — без напора, но с теплом и лёгким планом на отдых/семью, если это уместно.'
-    : today.length === 0
-      ? 'ПЛАН НА СЕГОДНЯ ПУСТ. Это катастрофа. Напиши жёсткое утреннее сообщение: отчитай Лёшу за то, что он не расписал день — без плана он потеряет всё утро. Потребуй немедленно в ответ написать хотя бы 3 задачи. Скажи, что до этого он должен либо выйти на пробежку, либо открыть код Memernity — третьего не дано. Без жалости, с огнём.'
-      : 'Напиши бодрое утреннее сообщение с планом на день. Перечисли главные задачи, задай тон дня. ОБЯЗАТЕЛЬНО: выбери одну — самую важную задачу из списка — и назначь её Главным Боссом Дня командой [SET_BOSS: Название задачи]. Объяви Боссом ту задачу, которая принесёт максимум результата сегодня.';
+  // 3. Задачи на сегодня (включая повторяющиеся)
+  const todayGoals = getTodayGoals(lifeData, now);
+  let plansContext = 'нет данных';
+  if (todayGoals.length) {
+    plansContext = todayGoals
+      .map(g => `${g.title}${g.scheduledAt && !g.allDay ? ' (' + fmtTimeChisinau(g.scheduledAt) + ')' : ''}`)
+      .join(', ');
+  }
+
+  const lines = [
+    `Сейчас: ${nowInChisinau()}.`,
+    `1. Погода: ${weatherContext}`,
+    `2. Уроки на сегодня: ${lessonsContext}`,
+    `3. Напоминание: умыться и собрать вещи.`,
+    `4. Главные планы на день: ${plansContext}`,
+  ];
+
+  const prompt = `Сгенерируй утреннюю сводку строго по пунктам:
+1. Погода в Кишинёве.
+2. Уроки на сегодня.
+3. Напоминание умыться и собрать вещи.
+4. Главные планы на день.
+Никакой похвалы, оценок и эмоций. Только эти 4 пункта, нумерованным списком, каждый в одну строку. Если данных по пункту нет, напиши «нет данных».`;
 
   await sendGeminiPush(prompt, lines.join('\n'), nova, lifeData);
+
+  // Сохраняем флаг отправки после успешного пуша
+  const freshNova = normalizeNovaState(await kv.get(NOVA_KV_KEY));
+  if (!freshNova.dailyFlags) freshNova.dailyFlags = {};
+  freshNova.dailyFlags.morningShowSent = today;
+  await saveNova(freshNova);
+
+  return { ok: true, sent: true };
 }
 
 async function handleNight() {
   const { lifeData, nova } = await loadState();
-  // Mood Engine: обновляем/подтверждаем настроение перед генерацией
-  const { moodChanged } = updateAndGetMood(nova);
-  if (moodChanged) await saveNova(nova);
 
   const done = getDoneToday(lifeData);
   const today = getTodayGoals(lifeData);
@@ -814,23 +886,12 @@ async function handleNight() {
   if (done.length) lines.push('Список выполненного: ' + done.map(h => h.title).join('; ') + '.');
   if (notDone.length) lines.push('Не сделано из запланированного: ' + notDone.map(g => g.title).join('; ') + '.');
   lines.push(`Серия (streak): ${lifeData.streak?.days ?? 0} дней.`);
-  // Nova 3.0 контекст
-  const boss = lifeData.activeBoss || null;
-  lines.push(`Активный Главный Босс Дня: ${boss ? boss : 'не назначен'}.`);
-  lines.push(`Индикатор выгорания: ${nova.burnoutScore || 0}/3.`);
 
   /* --- школьное расписание --- */
   const todayIsoForSchool = getChisinauIsoWeekday();
   if (isSchoolSkippedToday(lifeData)) {
-    lines.push('Сегодня Лёша не идёт в школу (отмечено). Школу в вечернем пуше не упоминать.');
+    lines.push('Сегодня школа пропущена (отмечено).');
   } else {
-    if (todayIsoForSchool >= 1 && todayIsoForSchool <= 5) {
-      const todaySchedule = formatTodaySchoolSchedule(todayIsoForSchool);
-      if (todaySchedule) {
-        lines.push('Расписание уроков на сегодня:');
-        lines.push(todaySchedule);
-      }
-    }
     const nextSchoolIso = getNextSchoolDayIsoWeekday(todayIsoForSchool);
     const nextSubjects = formatNextDaySubjects(nextSchoolIso);
     if (nextSubjects) {
@@ -838,20 +899,13 @@ async function handleNight() {
     }
   }
 
-  const bossStatus = boss
-    ? `Главный Босс Дня был: "${boss}". Проверь по списку выполненных задач — выполнен ли он. Если выполнен — искренне поздравь. Если НЕ выполнен — это провал, отчитай жёстко без жалости, объясни почему выполнение Босса Дня критически важно.`
-    : 'Главный Босс Дня не был назначен сегодня — упомяни это как системный сбой в планировании.';
-
-  const prompt = `Напиши вечернее сообщение с итогами дня: кратко похвали/пожури по фактам за выполненное и невыполненное. ${bossStatus} В конце обязательно попроси Лёшу написать 3 вещи, которыми он гордится сегодня (это часть его ритуала перед сном за 15 минут до отбоя).`;
+  const prompt = 'Сообщи факт: итоги дня по выполненным и невыполненным задачам. Одно-два предложения. Без оценок.';
 
   await sendGeminiPush(prompt, lines.join('\n'), nova, lifeData);
 }
 
 async function handleSportCheck() {
-  const { lifeData, nova } = await loadState();
-  // Mood Engine: обновляем/подтверждаем настроение перед генерацией
-  const { moodChanged } = updateAndGetMood(nova);
-  if (moodChanged) await saveNova(nova);
+  const { nova } = await loadState();
   const stats = getSportDays(nova);
 
   const lines = [];
@@ -860,9 +914,7 @@ async function handleSportCheck() {
   lines.push(stats.lastDate ? `Последняя тренировка: ${stats.lastDate} (${stats.daysSinceLast} дн. назад).` : 'Тренировок пока не зафиксировано ни разу.');
   lines.push(`Всего записей в логе спорта: ${stats.totalLogged}.`);
 
-  const prompt = (stats.daysSinceLast !== null && stats.daysSinceLast > 2)
-    ? 'Напиши жёсткое сообщение-разнос по поводу пропуска тренировок — по правилам, больше 2 дней без спорта недопустимо. Без нытья с твоей стороны, по делу и с огнём.'
-    : 'Напиши короткий спортивный чек-ин: похвали за темп по тренировкам либо мягко подтолкни, если неделя слабая, основываясь на цифрах.';
+  const prompt = 'Сообщи факт: статистика тренировок за 7 дней. Одно-два предложения. Без оценок.';
 
   await sendGeminiPush(prompt, lines.join('\n'), nova);
 }
@@ -903,10 +955,6 @@ async function handlePulse() {
 
   const updatedNova = JSON.parse(JSON.stringify(nova));
   let novaFlowChanged = false;
-
-  // Mood Engine: обновляем настроение (один раз за вызов handlePulse)
-  const { moodChanged: moodChangedInPulse } = updateAndGetMood(updatedNova);
-  if (moodChangedInPulse) novaFlowChanged = true;
 
   // ── dailyFlags: сброс по календарным суткам (для 15:20, не завязан на цикл сна) ──
   if (!updatedNova.dailyFlags || updatedNova.dailyFlags.date !== today) {
@@ -1022,8 +1070,9 @@ async function handlePulse() {
   }
 
   // ══════════════════════════════════════════════════════
-  // 07:10 — Утреннее расписание уроков (только будни, без LLM)
+  // 07:10 — Утреннее расписание уроков (отключено: уроки в утренней сводке)
   // ══════════════════════════════════════════════════════
+  /*
   {
     const minStart = minutesUntilTimeToday('07:10', now);
     const minEnd   = minutesUntilTimeToday('07:15', now);
@@ -1037,6 +1086,7 @@ async function handlePulse() {
       novaFlowChanged = true;
     }
   }
+  */
 
   // ══════════════════════════════════════════════════════
   // 20:00 — Вечерняя проверка домашнего задания (через Gemini, каждый день)
@@ -1048,7 +1098,7 @@ async function handlePulse() {
       const todayIsoForHw = getChisinauIsoWeekday(now);
       const nextSchoolIsoForHw = getNextSchoolDayIsoWeekday(todayIsoForHw);
       const nextSubjectsForHw = (SCHOOL_SCHEDULE[nextSchoolIsoForHw] || []).map(l => l.s).join(', ');
-      const hwPrompt = 'Спроси у Лёши, всё ли он сделал по домашке на завтра. Перечисли предметы, которые будут в следующий учебный день, чтобы он мог свериться. Тон бро-коуча.';
+      const hwPrompt = 'Спроси, выполнено ли домашнее задание на следующий учебный день. Одно короткое предложение без оценок.';
       const hwContext = [
         `Сейчас: ${nowInChisinau()}.`,
         `Предметы на следующий учебный день: ${nextSubjectsForHw || 'нет данных'}.`,
@@ -1075,7 +1125,7 @@ async function handlePulse() {
           ['business', 'sport'].includes(g.cat)
         );
         if (!eveningTasks.length) {
-          const prompt = 'Школа закончилась, а на вечер нет задач по бизнесу или спорту. Спроси у Лёши, чем планирует занять вечер, и предложи расписать 1-2 конкретных дела - без угроз и наказаний, по-дружески, но с напором.';
+          const prompt = 'Сообщи факт: уроки окончены, запланированных задач на вечер нет. Предложи зафиксировать планы при наличии. Одно-два предложения. Без оценок.';
           const ctx = `Сейчас: ${nowInChisinau()}. Вечерних задач по business/sport на сегодня нет.`;
           await sendGeminiPush(prompt, ctx, updatedNova, lifeData);
         }
@@ -1085,19 +1135,59 @@ async function handlePulse() {
   }
 
   // ══════════════════════════════════════════════════════
-  // ЗАДАЧИ ИЗ goals (БЕЗ ИЗМЕНЕНИЙ)
+  // ПОВТОРНЫЙ ПИНГ ДЛЯ PENDING ALERT (если нет ответа >= 15 мин)
+  // ══════════════════════════════════════════════════════
+  if (updatedNova.pendingAlert && updatedNova.pendingAlert.title) {
+    const pa = updatedNova.pendingAlert;
+    const elapsed = nowMs - (pa.sentAt || 0);
+    const pings = pa.pings || 1;
+    if (elapsed >= IGNORE_THRESHOLD_MS && pings < 2 && nowMs < (pa.startAt + 10 * 60000)) {
+      await sendTelegramMessage(TG_CHAT_ID, `Нет ответа. Ты вышел на «${pa.title}»?`);
+      const fresh = normalizeNovaState(await kv.get(NOVA_KV_KEY));
+      if (fresh.pendingAlert) {
+        fresh.pendingAlert.pings = pings + 1;
+        fresh.pendingAlert.sentAt = nowMs;
+        await saveNova(fresh);
+        updatedNova.pendingAlert = fresh.pendingAlert;
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // ПРОАКТИВНЫЕ 15-МИНУТНЫЕ АЛЕРТЫ (хардкод, обычные + повторяющиеся)
+  // ══════════════════════════════════════════════════════
+  const todayCandidateGoals = getTodayGoals(lifeData, now);
+  for (const g of todayCandidateGoals) {
+    if (g.done || g.isProject || g.allDay || !g.startAt) continue;
+    const startAt = g.startAt;
+    const deltaMin = (startAt - nowMs) / 60000;
+
+    if (deltaMin > 10 && deltaMin <= 15) {
+      const alertKey = `alert15:${g.id}:${today}:${startAt}`;
+      if (!alreadyNotified(nova, alertKey)) {
+        await sendTelegramMessage(TG_CHAT_ID, `Через 15 минут: ${g.title}. Ты уже вышел?`);
+        const fresh = normalizeNovaState(await kv.get(NOVA_KV_KEY));
+        markNotified(fresh, alertKey);
+        fresh.pendingAlert = {
+          key: alertKey,
+          title: g.title,
+          startAt,
+          sentAt: nowMs,
+          pings: 1,
+        };
+        await saveNova(fresh);
+        updatedNova.pendingAlert = fresh.pendingAlert;
+        markNotified(updatedNova, alertKey);
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // ТРИГГЕРЫ ВОДЫ И ЧАСОВ (water / watch)
   // ══════════════════════════════════════════════════════
   for (const g of goals) {
     if (g.done || !g.scheduledAt) continue;
     const deltaMin = (g.scheduledAt - nowMs) / 60000;
-
-    if (deltaMin >= 0 && deltaMin <= 15) {
-      const key = `start:${g.id}`;
-      if (!alreadyNotified(nova, key)) {
-        events.push(`Через ${Math.round(deltaMin)} мин начинается: «${g.title}» (${g.cat || 'без категории'}), в ${fmtTimeChisinau(g.scheduledAt)}.`);
-        noveltyKeys.push(key);
-      }
-    }
 
     if (g.cat === 'health' && deltaMin >= 55 && deltaMin <= 65) {
       const key = `water:${g.id}`;
@@ -1132,7 +1222,7 @@ async function handlePulse() {
         : [];
       const sportToday = (nova.sportLog || []).includes(today);
       if (!doneToday.length && !sportToday) {
-        const auditPrompt = 'Напиши тёплый чек-ин: спроси, как прошло воскресенье, без задач и спорта за день - это нормально, это святой день. Если играл - предложи списать кристаллы самому, назвав число. Никаких обвинений и никакого \'поймать на лжи\' - просто дружеский интерес.';
+        const auditPrompt = 'Сообщи факт: воскресенье завершается. Спроси, требуется ли зафиксировать итоги или списать кристаллы. Одно-два предложения. Без оценок.';
         const contextLines = [`Сейчас: ${nowInChisinau()}.`, 'Воскресенье. Задач и спорта за день не зафиксировано.'];
         await sendGeminiPush(auditPrompt, contextLines.join('\n'), updatedNova, lifeData);
         const freshNovaAudit = normalizeNovaState(await kv.get(NOVA_KV_KEY));
@@ -1158,7 +1248,7 @@ async function handlePulse() {
   }
 
   const contextLines = [`Сейчас: ${nowInChisinau()}.`, ...events];
-  const prompt = 'Напиши короткий дерзкий пуш от Новы по перечисленным ниже событиям (можно объединить в одно сообщение, если событий несколько). Без воды, сразу суть и характер.';
+  const prompt = 'Сообщи информацию о предстоящих событиях. Одно-два предложения. Без эмоций.';
 
   const { cleanText } = await sendGeminiPush(prompt, contextLines.join('\n'), updatedNova);
 
@@ -1178,7 +1268,7 @@ async function handlePulse() {
 
 /* ─────────────────────────────────────────────────────────────
    РАЗГОВОРНЫЙ ПИНГ — раз в сутки, окно 12:00-20:00 Кишинёв.
-   Инициирует диалог вопросом "как дела/настроение", чтобы вовлечь Босса.
+   Инициирует диалог вопросом о планах на сегодня.
 ───────────────────────────────────────────────────────────── */
 async function handleRandomPing() {
   const { nova } = await loadState();
@@ -1203,11 +1293,8 @@ async function handleRandomPing() {
     return { skipped: true, reason: 'outside_window' };
   }
 
-  // Настроение (Mood Engine) — раскатываем/подтверждаем ПЕРЕД генерацией
-  const { moodChanged } = updateAndGetMood(updatedNova);
-
   const contextText = `Сейчас: ${nowInChisinau()}.`;
-  const prompt = 'Инициируй лёгкий разговорный пинг: спроси у Лёши "как дела?" или "какое настроение?" - живо, по-дружески, в 1-2 предложениях, без канцелярита. Это не проверка задач, а просто человеческий интерес.';
+  const prompt = 'Есть изменения в планах на сегодня?';
 
   await sendGeminiPush(prompt, contextText, updatedNova);
 
@@ -1218,7 +1305,6 @@ async function handleRandomPing() {
     freshNova.dailyFlags = { date: today };
   }
   freshNova.dailyFlags.randomPingSent = true;
-  if (moodChanged) freshNova.activeMood = updatedNova.activeMood;
   await saveNova(freshNova);
 
   return { skipped: false };

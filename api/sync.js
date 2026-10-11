@@ -12,7 +12,7 @@
 const { createClient } = require('@vercel/kv');
 
 const MAX_GOALS     = 400;
-const MAX_HISTORY   = 200;
+const MAX_HISTORY   = 500;
 const TTL_SECONDS   = 60 * 60 * 24 * 90; // 90 days
 const MASTER_KV_KEY = 'цель:master_admin_id'; // единственный ключ, который вообще существует
 
@@ -44,11 +44,16 @@ function sanitizeState(body, clientUserId) {
       priority:     String(g.priority||'mid').slice(0,10),
       color:        String(g.color||'').slice(0,10),
       isEvent:      !!g.isEvent,
+      allDay:       !!g.allDay,
       isProject:    !!g.isProject,
       parentId:     g.parentId ? String(g.parentId).slice(0,64) : null,
       gemsReward:   safeNum(g.gemsReward, 0),
       recurrence:   (g.recurrence && Array.isArray(g.recurrence.days))
-        ? { days: g.recurrence.days.slice(0,7).map(Number), until: g.recurrence.until ? parseInt(g.recurrence.until) : null }
+        ? {
+            days: g.recurrence.days.slice(0,7).map(Number),
+            until: g.recurrence.until ? parseInt(g.recurrence.until) : null,
+            exceptions: Array.isArray(g.recurrence.exceptions) ? g.recurrence.exceptions.slice(0, 50).map(String) : []
+          }
         : null,
       tags:         Array.isArray(g.tags)?g.tags.slice(0,10).map(String):[],
       scheduledAt:  g.scheduledAt?parseInt(g.scheduledAt):null,
@@ -75,6 +80,33 @@ function sanitizeState(body, clientUserId) {
       color:       String(h.color||'#0A84FF').slice(0,10),
       cat:         String(h.cat||'business').slice(0,20),
     })),
+    purchases: safeArr(body.purchases, 100).map(p=>({
+      id:          String(p.id||'').slice(0,32),
+      title:       String(p.title||'').slice(0,100),
+      icon:        String(p.icon||'').slice(0,10),
+      qty:         safeNum(p.qty, 1),
+      cost:        safeNum(p.cost, 0),
+      comment:     String(p.comment||'').slice(0,300),
+      purchasedAt: safeNum(p.purchasedAt, Date.now()),
+    })),
+    tags: safeArr(body.tags, 50).map(t=>({
+      id:    String(t.id||'').slice(0,32),
+      name:  String(t.name||'').slice(0,50),
+      color: String(t.color||'#FF3B30').slice(0,10),
+    })),
+    routines: safeArr(body.routines, 50).map(r=>({
+      id:      String(r.id||'').slice(0,32),
+      title:   String(r.title||'').slice(0,200),
+      trigger: String(r.trigger||'').slice(0,10),
+      actions: safeArr(r.actions, 20).map(a=>String(a).slice(0,100)),
+      days:    safeArr(r.days, 7).map(Number),
+      on:      !!r.on,
+      push:    !!r.push,
+    })),
+    sleepSettings: safeObj(body.sleepSettings, {
+      bedtime: '23:00', waketime: '07:00', eveningPrepMins: 30, eveningGratitudeMins: 15,
+      morningWaterDelay: 5, morningBrushDelay: 10, softAlarmEnabled: true, sleepLog: {}
+    }),
     tgToken:   String(body.tgToken||'').slice(0,64),
     tgChatId:  String(body.tgChatId||'').slice(0,20),
     // LWW: сохраняем клиентскую метку updatedAt — именно её сравниваем с серверной.

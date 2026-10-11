@@ -27,9 +27,9 @@
 // Only 'business' and 'health' (labelled "Sport" in the UI) earn crystals.
 // Everything else (life/study/creative) is crystal-free by design.
 const CATS = {
-  business: { label: 'Business', color: '#FF3B30', emoji: '💼', earnsGems: true },
+  business: { label: 'Business', color: '#0A84FF', emoji: '💼', earnsGems: true },
   health:   { label: 'Sport',    color: '#FF9500', emoji: '💪', earnsGems: true },
-  study:    { label: 'School',   color: '#5E5CE6', emoji: '📚', earnsGems: false },
+  study:    { label: 'School',   color: '#34C759', emoji: '📚', earnsGems: false },
   life:     { label: 'Life',     color: '#8E8E93', emoji: '🌱', earnsGems: false },
   creative: { label: 'Life',     color: '#8E8E93', emoji: '🎨', earnsGems: false },
 };
@@ -574,7 +574,10 @@ const SyncManager = (() => {
     showToast(text, 1600);
   }
 
-  async function doSync() {
+  let lastSyncTime = 0;
+
+  async function doSync(opts = {}) {
+    if (Date.now() - lastSyncTime < 3000) return;
     try {
       const s = StateManager.get();
       const localUpdatedAt = parseInt(localStorage.getItem('nova-updatedAt') || '0') || Date.now();
@@ -597,18 +600,19 @@ const SyncManager = (() => {
         }),
       });
       if (res.status === 401) {
-        if (!_syncKeyToastShown && getUid() === 'master_admin_id') {
+        if (!opts.silent && !_syncKeyToastShown && getUid() === 'master_admin_id') {
           _syncKeyToastShown = true;
           showToast('🔑 Sync key required');
         }
         return;
       }
       if (res.ok) {
+        lastSyncTime = Date.now();
         const json = await res.json();
         if (json.forceUpdate && json.data) {
           console.warn('[SyncManager] forceUpdate: server is newer, overwriting local state');
           _applyServerData(json.data);
-          setBadge('synced', '↓ Synced from server');
+          if (!opts.silent) setBadge('synced', '↓ Synced from server');
         } else if (json.updatedAt) {
           localStorage.setItem('nova-updatedAt', String(json.updatedAt));
         }
@@ -618,6 +622,11 @@ const SyncManager = (() => {
 
   function _applyServerData(data) {
     if (!data || !data.goals) return;
+    const isModalOpen = document.body.classList.contains('modal-open') || !!document.querySelector('.modal:not(.hidden)');
+    if (isModalOpen) {
+      console.warn('[SyncManager] Modal is active, skipping server data overwrite during editing');
+      return;
+    }
     const s = StateManager.get();
     // Run migration on server data in case it came from an older client
     if (Array.isArray(data.macroGoals) && data.macroGoals.length) {
@@ -668,7 +677,7 @@ const SyncManager = (() => {
       // Skip if server data is not newer than local
       const localTs = parseInt(localStorage.getItem('nova-updatedAt') || '0') || 0;
       if (data.updatedAt && data.updatedAt <= localTs) {
-        if (data.updatedAt < localTs) { clearTimeout(kvTimer); kvTimer = setTimeout(doSync, 300); }
+        if (data.updatedAt < localTs) { clearTimeout(kvTimer); kvTimer = setTimeout(() => doSync(), 300); }
         return;
       }
       if (opts.silent && document.querySelector('.modal:not(.hidden)')) return;
@@ -677,10 +686,21 @@ const SyncManager = (() => {
     } catch (e) { console.warn('[KV load]', e); }
   }
   return {
-    scheduleSync:()=>{ clearTimeout(kvTimer); kvTimer=setTimeout(doSync,1500); },
+    scheduleSync: () => { clearTimeout(kvTimer); kvTimer = setTimeout(() => doSync(), 1500); },
+    doSync,
     loadFromCloud, getUid, getSyncKey,
   };
 })();
+
+// Фоновая синхронизация для iOS Safari / переключения вкладок
+document.addEventListener('visibilitychange', () => {
+  if (document.documentElement.classList.contains('lite')) return;
+  if (!document.hidden) SyncManager.doSync({ silent: true });
+});
+window.addEventListener('pageshow', (e) => {
+  if (document.documentElement.classList.contains('lite')) return;
+  if (e.persisted) SyncManager.doSync({ silent: true });
+});
 
 // Keeps every on-screen copy of the profile name in sync regardless of
 // which view is currently active. Runs unconditionally, independent of
@@ -1158,11 +1178,10 @@ const TaskController = {
       if (taskFilter==='done') return g.done;
       if (g.done) return false;
       if (taskFilter==='all') return true;
-      if (!g.scheduledAt) return taskFilter==='today';
-      const dk=dateKey(g.scheduledAt);
-      if (taskFilter==='today')    return dk===tKey;
-      if (taskFilter==='tomorrow') return dk===tomKey;
-      if (taskFilter==='week')     return g.scheduledAt<=weekEnd.getTime();
+      const dk = g.scheduledAt ? dateKey(g.scheduledAt) : null;
+      if (taskFilter==='today')    return !dk || dk <= tKey;
+      if (taskFilter==='tomorrow') return dk === tomKey;
+      if (taskFilter==='week')     return g.scheduledAt <= weekEnd.getTime();
       return true;
     });
     if (taskTagFilter) list = list.filter(g=>g.tags?.includes(taskTagFilter));
@@ -1181,7 +1200,7 @@ const TaskController = {
     const sub = document.getElementById('tasks-view-subtitle');
     if (sub) {
       const todayDone = st.history.filter(h=>dateKey(h.completedAt)===tKey).length;
-      const pendingToday = goals.filter(g=>!g.done&&g.scheduledAt&&dateKey(g.scheduledAt)===tKey).length;
+      const pendingToday = goals.filter(g=>!g.done&&!g.isProject&&(!g.scheduledAt||dateKey(g.scheduledAt)<=tKey)).length;
       sub.textContent = `${todayDone} done · ${pendingToday} due today`;
     }
 
@@ -1494,7 +1513,13 @@ const TaskController = {
       // A12: revoke project bonus if project is no longer fully complete
       const bonus = settleProjectRewards(g);
       const gems = Math.max(0, st.gems - revert + bonus);
-      StateManager.patch({ goals: st.goals, history, gems });
+      let streak = { ...st.streak };
+      const today = dateKey();
+      const stillHasDoneToday = history.some(h => dateKey(h.completedAt) === today);
+      if (!stillHasDoneToday && streak.lastDate === today) {
+        streak.doneToday = false;
+      }
+      StateManager.patch({ goals: st.goals, history, gems, streak });
       SyncManager.scheduleSync();
       updateCrystalChips();
 
@@ -1981,6 +2006,7 @@ function updateCrystalChips() {
   const formatted = gems.toLocaleString('en-US');
 
   const sidebarGems = document.getElementById('sidebar-gems'); if (sidebarGems) sidebarGems.textContent = formatted;
+  const tasksGems = document.getElementById('tasks-gems'); if (tasksGems) tasksGems.textContent = formatted;
   const focusGems = document.getElementById('focus-gems'); if (focusGems) focusGems.textContent = formatted;
   const focusStreak = document.getElementById('focus-streak'); if (focusStreak) focusStreak.textContent = streak.days;
   const shopGems = document.getElementById('shop-gems'); if (shopGems) shopGems.textContent = formatted;
@@ -2014,6 +2040,9 @@ const CalendarController = {
   _calDate: new Date(), _view: 'day', _nowTimer: null, _yearDate: new Date(),
   _dragGoalId: null, _didAutoScroll: false,
   _pendingGhost: null,   // 3.5 — ghost being edited in choice dialog
+  _pendingFocusId: null,
+  _flashId: null,
+  _flashUntil: 0,
   // ── Layout constants ──────────────────────────────────────
   PX_PER_MIN: 1,   // 1440px total height = 24 h × 60 min
   SNAP_MIN:   10,  // pointer drag/resize snaps to 10-min grid
@@ -2095,12 +2124,59 @@ const CalendarController = {
     if (h1) h1.textContent = text;
   },
 
+  _consumePendingFocus() {
+    if (this._pendingFocusId) {
+      const goalId = this._pendingFocusId;
+      this._pendingFocusId = null;
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-task-id="${goalId}"], [data-id="${goalId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('highlight-flash');
+          this._flashId = goalId;
+          this._flashUntil = Date.now() + 3000;
+          setTimeout(() => {
+            if (this._flashId === goalId && Date.now() >= this._flashUntil) {
+              this._flashId = null;
+              const cur = document.querySelector(`[data-task-id="${goalId}"], [data-id="${goalId}"]`);
+              if (cur) cur.classList.remove('highlight-flash');
+            }
+          }, 3000);
+        }
+      });
+    } else if (this._flashId && Date.now() < this._flashUntil) {
+      const el = document.querySelector(`[data-task-id="${this._flashId}"], [data-id="${this._flashId}"]`);
+      if (el && !el.classList.contains('highlight-flash')) {
+        el.classList.add('highlight-flash');
+      }
+    }
+  },
+
+  focusGoal(goalId) {
+    if (!goalId) return;
+    const goals = StateManager.get('goals') || [];
+    const goal = goals.find(g => String(g.id) === String(goalId));
+    if (!goal || !goal.scheduledAt) return;
+    this._calDate = new Date(goal.scheduledAt);
+    this._yearDate = new Date(goal.scheduledAt);
+    this._pendingFocusId = String(goalId);
+    if (typeof ViewRouter !== 'undefined' && ViewRouter.switchTo) {
+      ViewRouter.switchTo('calendar');
+    }
+    if (this._view === 'month' || this._view === 'year') {
+      this._view = 'day';
+      if (typeof switchSub === 'function') switchSub('calTabs', 'cal', 'day');
+    }
+    this.render();
+  },
+
   render() {
     try {
       if (this._view==='day')   this._renderDay();
       else if (this._view==='week')  this._renderWeek();
       else if (this._view==='month') this._renderMonth();
       else if (this._view==='year')  this._renderYear();
+      this._consumePendingFocus();
     } catch(e) { console.error('[CalendarController.render]', e); showToast('⚠️ Ошибка отображения'); }
   },
 
@@ -2627,7 +2703,7 @@ const CalendarController = {
       }
 
       // A9.4 — Auto-scroll to current time - 2h on first render
-      if (!this._didAutoScroll) {
+      if (!this._didAutoScroll && !this._pendingFocusId) {
         this._didAutoScroll = true;
         const calDay = document.getElementById('cal-day');
         if (calDay) {
@@ -2637,6 +2713,7 @@ const CalendarController = {
           }, 0);
         }
       }
+      this._consumePendingFocus();
     } catch(e) { console.error('[_renderDay]', e); }
   },
   _renderWeek() {
@@ -2671,7 +2748,7 @@ const CalendarController = {
       for (let i=0;i<7;i++){
         const d  = dayDates[i];
         const dk = dateKey(d.getTime());
-        head += `<div style="text-align:center;cursor:pointer;" data-day="${dk}"><p style="font-size:10px;color:rgba(255,255,255,.4);">${dayNames[i]}</p><p style="font-weight:600;border-radius:6px;${dk===todayKey?'color:#FF3B30;background:rgba(255,59,48,.12);padding:2px 4px;':''}">${d.getDate()}</p></div>`;  // 3.1 today
+        head += `<div style="text-align:center;cursor:pointer;" data-day-nav="${dk}"><p style="font-size:10px;color:rgba(255,255,255,.4);">${dayNames[i]}</p><p style="font-weight:600;border-radius:6px;${dk===todayKey?'color:#FF3B30;background:rgba(255,59,48,.12);padding:2px 4px;':''}">${d.getDate()}</p></div>`;  // 3.1 today
       }
       head += `</div>`;
 
@@ -2710,7 +2787,7 @@ const CalendarController = {
         const dk   = dateKey(d.getTime());
         const col  = document.createElement('div');
         col.style.cssText = `position:relative;height:${TOTAL}px;border-left:1px solid rgba(255,255,255,.06);${dk===todayKey?'background:rgba(255,59,48,.06);':''}`;  // 3.1 today highlight
-        col.dataset.day = dk;
+        col.dataset.colDay = dk;
         col.dataset.colDateMs = String(d.getTime());
 
         // Hour guide lines inside column
@@ -2799,7 +2876,7 @@ const CalendarController = {
       c.appendChild(bodyWrapper);
 
       // A9.4 — Auto-scroll to current time - 2h on first render
-      if (!this._didAutoScroll) {
+      if (!this._didAutoScroll && !this._pendingFocusId) {
         this._didAutoScroll = true;
         const weekScroll = c.parentElement;
         if (weekScroll) {
@@ -2811,10 +2888,11 @@ const CalendarController = {
       }
 
       // Day header click → navigate
-      c.querySelectorAll('[data-day]').forEach(el=>el.addEventListener('click',()=>this._navigateToDay(el.dataset.day)));
+      c.querySelectorAll('[data-day-nav]').forEach(el=>el.addEventListener('click',()=>this._navigateToDay(el.dataset.dayNav)));
       // All-day task chip click → open detail
       // All-day chips (not ghost time-grid cards) handled here; ghost cards handled via _attachPointerDrag
       c.querySelectorAll('[data-allday="1"]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();TaskController.openDetail(el.dataset.taskId);}));
+      this._consumePendingFocus();
     } catch(e) { console.error('[_renderWeek]', e); }
   },
   _renderMonth() {
@@ -5109,7 +5187,9 @@ async function resetData() {
   ['nova-goals','nova-history','nova-gems','nova-streak','nova-purchases','nova-macros','nova-tags',
    'nova-pomo','nova-sleep','nova-uid','nova-theme','nova-routines','nova-tg-token','nova-tg-chat',
    'nova-webhook','nova-profile-name','nova-updatedAt','nova-dim-recurring','nova-migrated-v8',
-   'nova-active-task','nova-sync-v2','nova-boot',
+   'nova-active-task','nova-sync-v2','nova-boot','nova-daily-boss','nova-achievements',
+   'nova-sprint','nova-sprint-log','nova-planner','nova-gcal-sent','nova-gcal-client-id','nova-gcal-cal-id',
+   'nova-webchat-history','nova-chat-size',
    'lifeos-goals','lifeos-history','lifeos-gems','lifeos-streak2','lifeos-purchases',
    'lifeos-macros','lifeos-tags','lifeos-pomo'].forEach(k=>localStorage.removeItem(k));
   // nova-sync-key is intentionally NOT removed so the user stays authenticated
@@ -5536,7 +5616,7 @@ function buildGoalFromDraft(it, tagsState = []) {
     isEvent,
     allDay: (allDay && !isEvent),
     isProject: false,
-    parentId: null,
+    parentId: it.projectId || null,
     recurrence: it.recurrence || null,
     notes: it.notes || '',
     location: it.location || '',
@@ -5591,10 +5671,18 @@ const DictationController = {
 
     const langSetting = localStorage.getItem('nova-voice-lang') || 'ru-RU';
     const lang = langSetting.slice(0, 2);
+    const dNow = new Date();
+    const weekday = ((dNow.getDay() + 6) % 7) + 1; // 1=Mon..7=Sun
+    const allTags = StateManager.get('tags') || [];
+    const allGoals = StateManager.get('goals') || [];
+    const projects = allGoals.filter(g => g.isProject).map(p => ({ id: p.id, title: p.title }));
     const payload = {
       text: text.trim(),
-      now: new Date().toISOString(),
+      nowIso: dNow.toISOString(),
+      weekday,
       lang: lang || 'ru',
+      tags: allTags.map(t => t.name),
+      projects,
       defaultDate: this.defaultDate || null
     };
 
@@ -5653,13 +5741,14 @@ const DictationController = {
       time: it.time || null,
       timeTo: it.timeTo || null,
       duration_min: it.duration_min || null,
-      priority: it.priority === 'mid' ? 'medium' : (it.priority || 'medium'),
+      priority: ['high', 'mid', 'low'].includes(it.priority) ? it.priority : (it.priority === 'medium' ? 'mid' : 'mid'),
       reminders: Array.isArray(it.reminders) ? [...it.reminders] : [],
       recurrence: it.recurrence || null,
       confidence: typeof it.confidence === 'number' ? it.confidence : 1.0,
       notes: it.notes || '',
       tags: Array.isArray(it.tags) ? [...it.tags] : [],
-      location: it.location || ''
+      location: it.location || '',
+      projectId: it.projectId || null
     }));
 
     const sec = document.getElementById('voice-draft-section');
@@ -8023,6 +8112,7 @@ function initGlobalEvents() {
     DictationController.commitAll();
   });
   document.getElementById('btn-open-settings')?.addEventListener('click', ()=>{ renderSettingsPanel(); openModal('modal-settings'); });
+  document.getElementById('tasks-gems-chip')?.addEventListener('click', ()=>{ ViewRouter.switchTo('focus'); switchSub('focusTabs','focus','shop'); });
   document.getElementById('btn-profile-open-shop')?.addEventListener('click', ()=>{ ViewRouter.switchTo('focus'); switchSub('focusTabs','focus','shop'); });
   document.getElementById('btn-profile-see-shop')?.addEventListener('click', ()=>{ ViewRouter.switchTo('focus'); switchSub('focusTabs','focus','shop'); });
 
@@ -8240,9 +8330,552 @@ window.__sprintSelfTest = function() {
 };
 
 /* ═══════════════════════════════════════════════════════════
+   IN-APP WEB CHAT (Nova Assistant)
+═══════════════════════════════════════════════════════════ */
+const WebChat = {
+  _window: null,
+  _fab: null,
+  _closeBtn: null,
+  _log: null,
+  _input: null,
+  _sendBtn: null,
+  _resizeHandle: null,
+  _history: [],
+  _isBusy: false,
+
+  init() {
+    this._window = document.getElementById('nova-chat-window');
+    this._fab = document.getElementById('nova-chat-fab');
+    this._closeBtn = document.getElementById('nova-chat-close');
+    this._log = document.getElementById('nova-chat-log');
+    this._input = document.getElementById('nova-chat-input');
+    this._sendBtn = document.getElementById('nova-chat-send');
+    this._resizeHandle = document.getElementById('nova-chat-resize');
+
+    if (!this._window || !this._fab || !this._input || !this._sendBtn) return;
+
+    // Load persisted history (up to 20 messages)
+    try {
+      const raw = localStorage.getItem('nova-webchat-history');
+      this._history = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(this._history)) this._history = [];
+    } catch (_) {
+      this._history = [];
+    }
+
+    // Render loaded history
+    this._log.innerHTML = '';
+    this._history.forEach(m => this._renderMessage(m.role, m.text));
+
+    // Bind event listeners
+    this._fab.addEventListener('click', () => this.toggle());
+    this._closeBtn?.addEventListener('click', () => this.close());
+    this._sendBtn.addEventListener('click', () => this.send());
+    this._input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.send();
+      }
+    });
+
+    // Escape listener: close chat only if no modal is active
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.isHidden()) {
+        const openModals = Array.from(document.querySelectorAll('.modal')).filter(m => !m.classList.contains('hidden'));
+        if (!openModals.length) {
+          this.close();
+        }
+      }
+    });
+
+    // Restore saved window size with clamp
+    this._restoreSize();
+
+    // Pointer events on top-left resize handle
+    this._initResize();
+  },
+
+  _restoreSize() {
+    try {
+      const raw = localStorage.getItem('nova-chat-size');
+      if (raw) {
+        const sz = JSON.parse(raw);
+        if (sz && typeof sz.w === 'number' && typeof sz.h === 'number') {
+          this._applySize(sz.w, sz.h);
+        }
+      }
+    } catch (_) {}
+  },
+
+  _applySize(w, h) {
+    const minW = 300, minH = 360;
+    const maxW = Math.max(minW, window.innerWidth - 24);
+    const maxH = Math.max(minH, (window.visualViewport ? window.visualViewport.height : window.innerHeight) - 120);
+    const clampedW = Math.max(minW, Math.min(maxW, w));
+    const clampedH = Math.max(minH, Math.min(maxH, h));
+    this._window.style.width = clampedW + 'px';
+    this._window.style.height = clampedH + 'px';
+    return { w: clampedW, h: clampedH };
+  },
+
+  _initResize() {
+    if (!this._resizeHandle) return;
+    let startX = 0, startY = 0, startW = 0, startH = 0;
+    let resizing = false;
+
+    const onPointerDown = (e) => {
+      if (e.button && e.button !== 0) return;
+      resizing = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = this._window.offsetWidth;
+      startH = this._window.offsetHeight;
+      this._resizeHandle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+
+    const onPointerMove = (e) => {
+      if (!resizing) return;
+      // Top-left resize on a bottom-right anchored fixed window:
+      // moving left increases width, moving up increases height
+      const newW = startW + (startX - e.clientX);
+      const newH = startH + (startY - e.clientY);
+      this._applySize(newW, newH);
+    };
+
+    const onPointerUp = (e) => {
+      if (!resizing) return;
+      resizing = false;
+      try {
+        this._resizeHandle.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      const curW = this._window.offsetWidth;
+      const curH = this._window.offsetHeight;
+      localStorage.setItem('nova-chat-size', JSON.stringify({ w: curW, h: curH }));
+    };
+
+    this._resizeHandle.addEventListener('pointerdown', onPointerDown);
+    this._resizeHandle.addEventListener('pointermove', onPointerMove);
+    this._resizeHandle.addEventListener('pointerup', onPointerUp);
+    this._resizeHandle.addEventListener('pointercancel', onPointerUp);
+  },
+
+  isHidden() {
+    return !this._window || this._window.classList.contains('hidden');
+  },
+
+  toggle() {
+    if (this.isHidden()) this.open();
+    else this.close();
+  },
+
+  open() {
+    if (!this._window) return;
+    this._window.classList.remove('hidden');
+    this._scrollToBottom();
+    setTimeout(() => {
+      if (window.innerWidth >= 768) this._input?.focus();
+    }, 50);
+  },
+
+  close() {
+    if (!this._window) return;
+    this._window.classList.add('hidden');
+  },
+
+  _scrollToBottom() {
+    if (this._log) {
+      this._log.scrollTop = this._log.scrollHeight;
+    }
+  },
+
+  _renderMessage(role, text) {
+    if (!this._log) return;
+    const isUser = (role === 'user');
+    const msgEl = document.createElement('div');
+    msgEl.className = isUser
+      ? 'self-end max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2 bg-[#0A84FF] text-white shadow-sm leading-relaxed text-[13px] break-words'
+      : 'self-start max-w-[85%] rounded-2xl rounded-tl-sm px-3.5 py-2 bg-white/10 text-white/90 border border-white/10 shadow-sm leading-relaxed text-[13px] break-words';
+    msgEl.textContent = text;
+    this._log.appendChild(msgEl);
+    this._scrollToBottom();
+  },
+
+  addMessage(role, text) {
+    if (!text || !text.trim()) return;
+    const cleanText = text.trim();
+    this._history.push({ role, text: cleanText, ts: Date.now() });
+    if (this._history.length > 20) {
+      this._history = this._history.slice(-20);
+    }
+    try {
+      localStorage.setItem('nova-webchat-history', JSON.stringify(this._history));
+    } catch (_) {}
+    this._renderMessage(role, cleanText);
+  },
+
+  _setBusy(busy) {
+    this._isBusy = busy;
+    if (this._sendBtn) this._sendBtn.disabled = busy;
+    if (this._input) this._input.disabled = busy;
+
+    const existingTyping = document.getElementById('nova-chat-typing');
+    if (busy) {
+      if (!existingTyping && this._log) {
+        const typing = document.createElement('div');
+        typing.id = 'nova-chat-typing';
+        typing.className = 'self-start rounded-2xl rounded-tl-sm px-3 py-2 bg-white/5 border border-white/10 flex items-center gap-1.5 text-white/50 text-xs';
+        typing.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style="animation-delay:0ms"></span><span class="inline-block w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style="animation-delay:150ms"></span><span class="inline-block w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style="animation-delay:300ms"></span>';
+        this._log.appendChild(typing);
+        this._scrollToBottom();
+      }
+    } else {
+      if (existingTyping) existingTyping.remove();
+    }
+  },
+
+  async send() {
+    if (this._isBusy) return;
+    const text = this._input ? this._input.value.trim() : '';
+    if (!text) return;
+
+    this._input.value = '';
+    this.addMessage('user', text);
+    this._setBusy(true);
+
+    const now = Date.now();
+    const dayMs = 86400000;
+    const minTs = now - 1 * dayMs;
+    const maxTs = now + 14 * dayMs;
+
+    const goals = (StateManager.get('goals') || [])
+      .filter(g => !g.done && !g.isProject && (!g.scheduledAt || (g.scheduledAt >= minTs && g.scheduledAt <= maxTs)))
+      .slice(0, 60)
+      .map(g => {
+        let date = null, time = null;
+        if (g.scheduledAt) {
+          date = dateKey(g.scheduledAt);
+          if (!g.allDay) time = fmtTime(g.scheduledAt);
+        }
+        return {
+          id: g.id,
+          title: g.title,
+          cat: g.cat || 'life',
+          date,
+          time,
+          duration_min: g.duration_min || 25,
+          isEvent: !!g.isEvent,
+          allDay: !!g.allDay,
+        };
+      });
+
+    const recentHistory = this._history.slice(-8).map(h => ({ role: h.role, text: h.text }));
+    const payload = {
+      message: text,
+      history: recentHistory,
+      goals,
+      nowIso: new Date().toISOString(),
+    };
+
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 20000);
+
+    try {
+      const res = await fetch('/api/web-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-nova-key': SyncManager.getSyncKey(),
+        },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        this.addMessage('model', 'Сервис недоступен.');
+        return;
+      }
+
+      const data = await res.json();
+      if (data.reply) {
+        this.addMessage('model', data.reply);
+      }
+
+      if (Array.isArray(data.actions) && data.actions.length) {
+        this.applyActions(data.actions);
+      }
+
+      if (Array.isArray(data.missing_fields) && data.missing_fields.length) {
+        this.renderMissing(data.missing_fields, data.draft || { title: text });
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error('[WebChat.send]', err);
+      this.addMessage('model', 'Сервис недоступен.');
+    } finally {
+      this._setBusy(false);
+      if (window.innerWidth >= 768) this._input?.focus();
+    }
+  },
+
+  renderMissing(fields, rawDraft) {
+    if (!this._log || !Array.isArray(fields) || !fields.length) return;
+    const draft = Object.assign({
+      title: 'Новое событие',
+      cat: 'life',
+      kind: 'event',
+      duration_min: 60,
+      priority: 'mid'
+    }, rawDraft);
+
+    const block = document.createElement('div');
+    block.className = 'self-start w-full max-w-[95%] rounded-2xl bg-white/[0.06] border border-white/10 p-3.5 flex flex-col gap-3 text-xs text-white shadow-md my-1';
+
+    const header = document.createElement('div');
+    header.className = 'font-semibold text-white/80 flex items-center gap-1.5';
+    header.textContent = `Уточнение для события: «${draft.title}»`;
+    block.appendChild(header);
+
+    const state = {
+      resolved: new Set(),
+      needed: new Set(fields)
+    };
+
+    const checkComplete = () => {
+      let allDone = true;
+      for (const f of state.needed) {
+        if (!state.resolved.has(f)) { allDone = false; break; }
+      }
+      if (allDone) {
+        block.querySelectorAll('button, input').forEach(el => el.disabled = true);
+        block.classList.add('opacity-75');
+        this.completeDraft(draft);
+      }
+    };
+
+    // 1. Color chip buttons
+    if (fields.includes('color')) {
+      const sec = document.createElement('div');
+      sec.className = 'flex flex-col gap-1.5';
+      const lbl = document.createElement('span');
+      lbl.className = 'text-white/60 text-[11px]';
+      lbl.textContent = 'Категория:';
+      sec.appendChild(lbl);
+
+      const chipsWrap = document.createElement('div');
+      chipsWrap.className = 'flex flex-wrap gap-1.5';
+
+      const catsConfig = [
+        { label: 'Business', cat: 'business', color: '#0A84FF' },
+        { label: 'Sport', cat: 'health', color: '#FF9500' },
+        { label: 'School', cat: 'study', color: '#34C759' },
+        { label: 'Life', cat: 'life', color: '#8E8E93' },
+      ];
+
+      catsConfig.forEach(c => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white flex items-center gap-1.5 text-xs transition-colors';
+        btn.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${c.color};display:inline-block;"></span><span>${c.label}</span>`;
+        btn.onclick = () => {
+          draft.cat = c.cat;
+          state.resolved.add('color');
+          chipsWrap.querySelectorAll('button').forEach(b => {
+            b.disabled = true;
+            b.classList.remove('bg-white/25', 'border-white/40');
+            b.classList.add('opacity-50');
+          });
+          btn.classList.remove('opacity-50');
+          btn.classList.add('bg-white/25', 'border-white/40');
+          checkComplete();
+        };
+        chipsWrap.appendChild(btn);
+      });
+      sec.appendChild(chipsWrap);
+      block.appendChild(sec);
+    }
+
+    // 2. Time input
+    if (fields.includes('time')) {
+      const sec = document.createElement('div');
+      sec.className = 'flex flex-col gap-1.5';
+      const lbl = document.createElement('span');
+      lbl.className = 'text-white/60 text-[11px]';
+      lbl.textContent = 'Время начала:';
+      sec.appendChild(lbl);
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2';
+
+      const inp = document.createElement('input');
+      inp.type = 'time';
+      inp.value = draft.time || '12:00';
+      inp.className = 'bg-black/30 border border-white/15 rounded-xl px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#0A84FF]';
+
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.textContent = 'OK';
+      okBtn.className = 'px-3 py-1 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white font-semibold text-xs transition-colors';
+      okBtn.onclick = () => {
+        if (!inp.value) return;
+        draft.time = inp.value;
+        draft.kind = 'event';
+        state.resolved.add('time');
+        inp.disabled = true;
+        okBtn.disabled = true;
+        okBtn.classList.add('opacity-50');
+        checkComplete();
+      };
+
+      row.appendChild(inp);
+      row.appendChild(okBtn);
+      sec.appendChild(row);
+      block.appendChild(sec);
+    }
+
+    // 3. Date input
+    if (fields.includes('date')) {
+      const sec = document.createElement('div');
+      sec.className = 'flex flex-col gap-1.5';
+      const lbl = document.createElement('span');
+      lbl.className = 'text-white/60 text-[11px]';
+      lbl.textContent = 'Дата:';
+      sec.appendChild(lbl);
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2';
+
+      const inp = document.createElement('input');
+      inp.type = 'date';
+      inp.value = draft.date || dateKey();
+      inp.className = 'bg-black/30 border border-white/15 rounded-xl px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#0A84FF]';
+
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.textContent = 'OK';
+      okBtn.className = 'px-3 py-1 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white font-semibold text-xs transition-colors';
+      okBtn.onclick = () => {
+        if (!inp.value) return;
+        draft.date = inp.value;
+        state.resolved.add('date');
+        inp.disabled = true;
+        okBtn.disabled = true;
+        okBtn.classList.add('opacity-50');
+        checkComplete();
+      };
+
+      row.appendChild(inp);
+      row.appendChild(okBtn);
+      sec.appendChild(row);
+      block.appendChild(sec);
+    }
+
+    this._log.appendChild(block);
+    this._scrollToBottom();
+  },
+
+  completeDraft(draft) {
+    if (!draft) return;
+    StateManager.pushUndoSnapshot('Web Chat: создание события');
+    const tagsState = StateManager.get('tags') || [];
+    const newGoal = buildGoalFromDraft(draft, tagsState);
+    const existing = StateManager.get('goals') || [];
+
+    StateManager.patch({
+      goals: [newGoal, ...existing],
+      tags: tagsState
+    });
+
+    SyncManager.scheduleSync();
+    TimerController.scheduleReminders();
+    refreshEverything();
+
+    if (window.innerWidth < 768) {
+      this.close();
+    }
+    if (newGoal.scheduledAt) {
+      CalendarController.focusGoal(newGoal.id);
+    }
+
+    const dStr = draft.date || (newGoal.scheduledAt ? dateKey(newGoal.scheduledAt) : '');
+    const tStr = draft.time || (newGoal.scheduledAt && !newGoal.allDay ? fmtTime(newGoal.scheduledAt) : '');
+    const dateFormatted = [dStr, tStr].filter(Boolean).join(' ');
+    this.addMessage('model', `Добавлено: ${newGoal.title}, ${dateFormatted}.`);
+  },
+
+  applyActions(actions) {
+    if (!Array.isArray(actions) || !actions.length) return;
+    StateManager.pushUndoSnapshot('Web Chat действия');
+
+    let currentGoals = [...(StateManager.get('goals') || [])];
+    const tagsState = StateManager.get('tags') || [];
+    let focusedGoalId = null;
+    let hasDeleted = false;
+
+    for (const act of actions) {
+      if (!act || !act.type) continue;
+      if (act.type === 'add_task' && act.task) {
+        const newGoal = buildGoalFromDraft(act.task, tagsState);
+        currentGoals = [newGoal, ...currentGoals];
+        if (!focusedGoalId && newGoal.scheduledAt) focusedGoalId = newGoal.id;
+      } else if (act.type === 'done_task' && act.id) {
+        TaskController.complete(act.id);
+        currentGoals = [...(StateManager.get('goals') || [])];
+      } else if (act.type === 'delete_task' && act.id) {
+        currentGoals = currentGoals.filter(g => String(g.id) !== String(act.id));
+        hasDeleted = true;
+      } else if (act.type === 'reschedule_task' && act.id) {
+        currentGoals = currentGoals.map(g => {
+          if (String(g.id) !== String(act.id)) return g;
+          const patch = {};
+          let baseDate = g.scheduledAt ? new Date(g.scheduledAt) : new Date();
+          if (act.date) {
+            const [dy, dm, dd] = act.date.split('-').map(Number);
+            baseDate.setFullYear(dy, dm - 1, dd);
+          }
+          if (act.time) {
+            const [th, tm] = act.time.split(':').map(Number);
+            baseDate.setHours(isNaN(th) ? 9 : th, isNaN(tm) ? 0 : tm, 0, 0);
+            patch.isEvent = true;
+            patch.allDay = false;
+          }
+          patch.scheduledAt = baseDate.getTime();
+          return { ...g, ...patch };
+        });
+        if (!focusedGoalId) focusedGoalId = act.id;
+      } else if (act.type === 'edit_task' && act.id && act.title) {
+        currentGoals = currentGoals.map(g => {
+          if (String(g.id) !== String(act.id)) return g;
+          return { ...g, title: act.title };
+        });
+      }
+    }
+
+    StateManager.patch({ goals: currentGoals, tags: tagsState });
+    SyncManager.scheduleSync();
+    TimerController.scheduleReminders();
+    refreshEverything();
+
+    if (hasDeleted) {
+      showToastWithUndo('🗑️ Задачи удалены');
+    }
+
+    if (focusedGoalId) {
+      if (window.innerWidth < 768) {
+        this.close();
+      }
+      CalendarController.focusGoal(focusedGoalId);
+    }
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
+  try { WebChat.init();               } catch(e) { console.error('[Init:webchat]',e); }
   try { StateManager.load();          } catch(e) { console.error('[Init:load]',e); }
   try { TaskController.init();        } catch(e) { console.error('[Init:task]',e); }
   try { CalendarController.init();    } catch(e) { console.error('[Init:cal]',e); }
